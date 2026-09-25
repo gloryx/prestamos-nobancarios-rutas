@@ -17,6 +17,8 @@ import { RolesPage } from '../pages/RolesPage';
 import { RoutesPage } from '../pages/RoutesPage';
 import { UsersPage } from '../pages/UsersPage';
 import { LoginPage } from '../pages/LoginPage';
+import { CollectorCustomersPage } from '../pages/CollectorCustomersPage';
+import { CollectorsPage } from '../pages/CollectorsPage';
 import { AuthProvider } from '../hooks/useAuth';
 import { RouteGuard } from '../components/auth/RouteGuard';
 
@@ -31,7 +33,9 @@ export function AppRouter(): ReactElement {
     <Route path="/customers/new" element={<RouteGuard permission="customers.create"><NewCustomerPage /></RouteGuard>} />
     <Route path="/customers/:id/edit" element={<RouteGuard permission="customers.update"><CustomerEditPage /></RouteGuard>} />
     <Route path="/customers/:id" element={<RouteGuard permission="customers.view"><CustomerDetailPage /></RouteGuard>} />
-    <Route path="/customers" element={<RouteGuard permission="customers.view"><CustomersPage /></RouteGuard>} />
+     <Route path="/customers" element={<RouteGuard permission="customers.view"><CustomersPage /></RouteGuard>} />
+     <Route path="/collector/customers" element={<RouteGuard permission="customers.assigned.view"><CollectorCustomersPage /></RouteGuard>} />
+     <Route path="/collectors" element={<RouteGuard permission="collectors.view"><CollectorsPage /></RouteGuard>} />
     <Route path="/settings/provinces" element={<RouteGuard permission="territorial.view"><ProvincesPage /></RouteGuard>} />
     <Route path="/settings/cantons" element={<RouteGuard permission="territorial.view"><CantonsPage /></RouteGuard>} />
     <Route path="/settings/districts" element={<RouteGuard permission="territorial.view"><DistrictsPage /></RouteGuard>} />

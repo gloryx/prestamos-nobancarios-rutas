@@ -51,6 +51,15 @@ export const navigationEntries: NavigationEntry[] = [
        { type: 'link', label: 'Nuevo cliente', path: '/customers/new', icon: 'users', requiredPermission: 'customers.create' },
        { type: 'link', label: 'Análisis financiero', path: '/customers/financial-analysis', icon: 'users', requiredPermission: 'customers.analysis.view' },
        { type: 'link', label: 'Estadísticas de clientes', path: '/customers/statistics', icon: 'users', requiredPermission: 'customers.statistics.view' },
+       { type: 'link', label: 'Clientes asignados', path: '/collector/customers', icon: 'route', requiredPermission: 'customers.assigned.view' },
+    ],
+  },
+  {
+    type: 'group',
+    label: 'Cobrador',
+    icon: 'users',
+    items: [
+       { type: 'link', label: 'Cobradores', path: '/collectors', icon: 'users', requiredPermission: 'collectors.view' },
     ],
   },
   {

@@ -16,7 +16,7 @@ export class CustomerOrmEntity {
   @Column({ type: 'varchar', nullable: true }) email!: string | null;
   @Column({ type: 'varchar' }) nationality!: string;
   @Column({ name: 'other_nationality', type: 'varchar', nullable: true }) otherNationality!: string | null;
-  @Column({ name: 'identification_front_file_key', type: 'varchar' }) identificationFrontFileKey!: string;
+  @Column({ name: 'identification_front_file_key', type: 'varchar', nullable: true }) identificationFrontFileKey!: string | null;
   @Column({ type: 'text', nullable: true }) observations!: string | null;
   @Column({ name: 'is_active', type: 'boolean', default: true }) isActive!: boolean;
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' }) createdAt!: Date;

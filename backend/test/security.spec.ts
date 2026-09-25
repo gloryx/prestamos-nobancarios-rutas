@@ -42,9 +42,10 @@ describe('security guards and permission metadata', () => {
     expect(codes).toEqual(new Set([
       'territorial.view', 'payment-methods.view', 'payment-methods.create', 'payment-methods.update', 'payment-methods.status.change', 'payment-methods.export',
       'payment-frequencies.view', 'payment-frequencies.create', 'payment-frequencies.update', 'payment-frequencies.status.change', 'payment-frequencies.export',
-      'routes.view', 'routes.create', 'routes.update', 'routes.status.change', 'routes.export',
-      'customers.view', 'customers.create', 'customers.update', 'customers.status.change', 'customers.summary.view', 'customers.files.view', 'customers.export',
-      'users.view', 'users.create', 'users.update', 'users.status.change', 'users.password.reset', 'users.role.assign', 'roles.view', 'roles.permissions.update',
+       'routes.view', 'routes.create', 'routes.update', 'routes.status.change', 'routes.export', 'routes.assign.collectors', 'routes.assign.customers',
+       'customers.view', 'customers.create', 'customers.update', 'customers.status.change', 'customers.summary.view', 'customers.files.view', 'customers.export', 'customers.assigned.view', 'customers.site.view', 'customers.site.capture', 'customers.site.replace', 'customers.site.replace.authorize',
+       'users.view', 'users.create', 'users.update', 'users.status.change', 'users.password.reset', 'users.role.assign', 'roles.view', 'roles.permissions.update',
+       'collectors.view', 'collectors.create', 'collectors.update', 'collectors.status.change', 'collectors.user.assign', 'collectors.photo.view',
     ]));
     expect(Reflect.getMetadata(PERMISSIONS_KEY, CustomerController.prototype.list)).toEqual(['customers.view']);
     expect(Reflect.getMetadata(PERMISSIONS_KEY, CustomerController.prototype.summary)).toEqual(['customers.summary.view']);
@@ -55,5 +56,28 @@ describe('security guards and permission metadata', () => {
     expect(Reflect.getMetadata(PERMISSIONS_KEY, PaymentMethodController.prototype.updateOne)).toEqual(['payment-methods.update']);
     expect(Reflect.getMetadata(PERMISSIONS_KEY, PaymentFrequencyController.prototype.changeStatus)).toEqual(['payment-frequencies.status.change']);
     expect(Reflect.getMetadata(PERMISSIONS_KEY, RouteController.prototype.createOne)).toEqual(['routes.create']);
+  });
+});
+
+describe('customer generic PATCH site boundary', () => {
+  const actor = (permissions: string[], isSuperAdmin = false) => ({ id: 'u', username: 'u', fullName: 'U', role: { id: 'r', code: 'R', name: 'R', isSuperAdmin }, permissions, sessionId: 's' });
+  const file = { buffer: Buffer.from([0xff, 0xd8, 0xff, 0]), mimetype: 'image/jpeg', size: 4 } as Express.Multer.File;
+
+  it('rejects scoped site updates instead of allowing the generic customer PATCH to bypass site authorization', async () => {
+    const update = jest.fn();
+    const controller = new CustomerController({} as never, { update } as never);
+
+    await expect(controller.update('customer-1', { latitude: '9.9', longitude: '-84.1' }, {}, actor(['customers.update']) as never)).rejects.toBeInstanceOf(ForbiddenException);
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('keeps the generic site edit path for broad admins and superadmins', async () => {
+    const update = jest.fn().mockResolvedValue({ id: 'customer-1' });
+    const controller = new CustomerController({} as never, { update } as never);
+
+    await controller.update('customer-1', { latitude: '9.9', longitude: '-84.1' }, { propertyPhoto: [file] }, actor(['customers.update', 'customers.view']) as never);
+    expect(update).toHaveBeenCalledWith('customer-1', expect.objectContaining({ latitude: 9.9, longitude: -84.1, propertyPhoto: file }));
+    await controller.update('customer-1', { latitude: '9.9', longitude: '-84.1' }, { propertyPhoto: [file] }, actor(['customers.update'], true) as never);
+    expect(update).toHaveBeenCalledTimes(2);
   });
 });

@@ -11,3 +11,7 @@ export * from './permission.orm-entity';
 export * from './role-permission.orm-entity';
 export * from './user.orm-entity';
 export * from './user-session.orm-entity';
+export * from './customer-route-assignment.orm-entity';
+export * from './collector-route-assignment.orm-entity';
+export * from './customer-site-update-authorization.orm-entity';
+export * from './collector.orm-entity';

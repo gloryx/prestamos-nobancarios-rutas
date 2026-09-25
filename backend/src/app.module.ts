@@ -3,13 +3,15 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import * as Joi from 'joi';
 import { HealthController } from './presentation/health/health.controller';
-import { CantonOrmEntity, CustomerAddressOrmEntity, CustomerOrmEntity, DistrictOrmEntity, PaymentFrequencyOrmEntity, PaymentMethodOrmEntity, ProvinceOrmEntity, RouteOrmEntity, RoleOrmEntity, PermissionOrmEntity, RolePermissionOrmEntity, UserOrmEntity, UserSessionOrmEntity } from './infrastructure/database/typeorm/entities';
+import { CantonOrmEntity, CollectorOrmEntity, CustomerAddressOrmEntity, CustomerOrmEntity, DistrictOrmEntity, PaymentFrequencyOrmEntity, PaymentMethodOrmEntity, ProvinceOrmEntity, RouteOrmEntity, RoleOrmEntity, PermissionOrmEntity, RolePermissionOrmEntity, UserOrmEntity, UserSessionOrmEntity, CustomerRouteAssignmentOrmEntity, CollectorRouteAssignmentOrmEntity, CustomerSiteUpdateAuthorizationOrmEntity } from './infrastructure/database/typeorm/entities';
 import { TerritorialModule } from './presentation/territorial/territorial.module';
 import { PaymentMethodModule } from './presentation/payment-method/payment-method.module';
 import { PaymentFrequencyModule } from './presentation/payment-frequency/payment-frequency.module';
 import { RouteModule } from './presentation/route/route.module';
 import { CustomerModule } from './presentation/customer/customer.module';
 import { SecurityModule } from './presentation/security/security.module';
+import { CustomerSiteModule } from './presentation/customer-site/customer-site.module';
+import { CollectorModule } from './presentation/collector/collector.module';
 
 @Module({
   imports: [
@@ -39,11 +41,11 @@ import { SecurityModule } from './presentation/security/security.module';
         password: config.getOrThrow<string>('DB_PASSWORD'),
         database: config.getOrThrow<string>('DB_DATABASE'),
          autoLoadEntities: true,
-         entities: [ProvinceOrmEntity, CantonOrmEntity, DistrictOrmEntity, PaymentMethodOrmEntity, PaymentFrequencyOrmEntity, RouteOrmEntity, CustomerOrmEntity, CustomerAddressOrmEntity, RoleOrmEntity, PermissionOrmEntity, RolePermissionOrmEntity, UserOrmEntity, UserSessionOrmEntity],
+         entities: [ProvinceOrmEntity, CantonOrmEntity, DistrictOrmEntity, PaymentMethodOrmEntity, PaymentFrequencyOrmEntity, RouteOrmEntity, CustomerOrmEntity, CustomerAddressOrmEntity, RoleOrmEntity, PermissionOrmEntity, RolePermissionOrmEntity, UserOrmEntity, UserSessionOrmEntity, CustomerRouteAssignmentOrmEntity, CollectorRouteAssignmentOrmEntity, CustomerSiteUpdateAuthorizationOrmEntity, CollectorOrmEntity],
         synchronize: false,
       }),
     }),
-    TerritorialModule, PaymentMethodModule, PaymentFrequencyModule, RouteModule, CustomerModule, SecurityModule,
+     TerritorialModule, PaymentMethodModule, PaymentFrequencyModule, RouteModule, CustomerModule, CustomerSiteModule, CollectorModule, SecurityModule,
   ],
   controllers: [HealthController],
 })

@@ -1,7 +1,7 @@
 import { EntityManager, In } from 'typeorm';
 import * as argon2 from 'argon2';
 import { PermissionOrmEntity, RoleOrmEntity, RolePermissionOrmEntity, UserOrmEntity } from '../entities';
-import { COLLECTION_MANAGER_DEFAULTS, PERMISSIONS } from '../../../../shared/constants/security';
+import { COLLECTION_MANAGER_DEFAULTS, COLLECTOR_DEFAULTS, PERMISSIONS } from '../../../../shared/constants/security';
 
 export async function seedSecurity(manager: EntityManager): Promise<void> {
   const permissionRepository = manager.getRepository(PermissionOrmEntity);
@@ -14,8 +14,17 @@ export async function seedSecurity(manager: EntityManager): Promise<void> {
   ];
   for (const role of roles) await roleRepository.upsert(role, ['code']);
   const managerRole = await roleRepository.findOneByOrFail({ code: 'COLLECTION_MANAGER' });
-  const configured = await manager.getRepository(RolePermissionOrmEntity).count({ where: { roleId: managerRole.id } });
-  if (configured === 0) { const defaults = await permissionRepository.findBy({ code: In([...COLLECTION_MANAGER_DEFAULTS]) }); await manager.getRepository(RolePermissionOrmEntity).insert(defaults.map((permission) => ({ roleId: managerRole.id, permissionId: permission.id }))); }
+  const rolePermissionRepository = manager.getRepository(RolePermissionOrmEntity);
+  const addMissingDefaults = async (roleId: string, defaults: readonly string[]) => {
+    const permissions = await permissionRepository.findBy({ code: In([...defaults]) });
+    const existing = await rolePermissionRepository.find({ where: { roleId } });
+    const existingIds = new Set(existing.map((item) => item.permissionId));
+    const missing = permissions.filter((permission) => !existingIds.has(permission.id));
+    if (missing.length) await rolePermissionRepository.insert(missing.map((permission) => ({ roleId, permissionId: permission.id })));
+  };
+  await addMissingDefaults(managerRole.id, COLLECTION_MANAGER_DEFAULTS);
+  const collectorRole = await roleRepository.findOneByOrFail({ code: 'COLLECTOR' });
+  await addMissingDefaults(collectorRole.id, COLLECTOR_DEFAULTS);
   const username = (process.env.BOOTSTRAP_ADMIN_USERNAME ?? 'admin').trim().toLowerCase();
   const existing = await manager.getRepository(UserOrmEntity).createQueryBuilder('u').where('lower(u.username) = :username', { username }).getOne();
   const admin = await roleRepository.findOneByOrFail({ code: 'ADMIN' });

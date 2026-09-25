@@ -17,7 +17,7 @@ export type Customer = {
   email?: string;
   nationality: Nationality;
   otherNationality?: string;
-  identificationFrontFileKey: string;
+  identificationFrontFileKey: string | null;
   observations?: string;
   isActive: boolean;
   createdAt: Date;
@@ -34,4 +34,6 @@ export type CustomerAddress = {
   propertyPhotoFileKey?: string;
   createdAt: Date;
   updatedAt: Date;
+  siteDataUpdatedByUserId?: string;
+  siteDataUpdatedAt?: Date;
 };

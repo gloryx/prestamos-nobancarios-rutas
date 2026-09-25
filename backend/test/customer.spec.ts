@@ -1,6 +1,15 @@
 import { CustomerValidationError } from '../src/domain/customer/customer.errors';
 import { CustomerManagementUseCase, normalizeForeignIdentification, normalizeNationalIdentification, RegisterCustomerUseCase } from '../src/application/customer/customer.use-case';
 describe('customer registration', () => {
+  it('persists null and does not save an identification file when omitted', async () => {
+    const saved: string[] = [];
+    let persisted: Record<string, unknown> | undefined;
+    const useCase = new RegisterCustomerUseCase({ findByIdentification: async () => null, createWithAddress: async (customer) => { persisted = customer; return { customer: { ...customer, id: 'id', isActive: true, createdAt: new Date(), updatedAt: new Date() }, address: {} } as never; } }, { save: async (_, key) => { saved.push(key); }, delete: async () => undefined }, async () => true);
+    await useCase.execute({ identificationType: 'NATIONAL', identification: '1-1234-5678', firstName: 'Ana', firstLastName: 'Lopez', gender: 'FEMALE', birthDate: '1990-01-01', primaryPhone: '8888', nationality: 'COSTA_RICAN', districtCode: 10101, exactAddress: 'Casa' });
+    expect(persisted?.identificationFrontFileKey).toBeNull();
+    expect(saved).toEqual([]);
+  });
+
   it('normalizes identification values', () => {
     expect(normalizeNationalIdentification('1-1234-5678')).toBe('112345678');
     expect(normalizeForeignIdentification(' ab-12  3 ')).toBe('AB-12  3');

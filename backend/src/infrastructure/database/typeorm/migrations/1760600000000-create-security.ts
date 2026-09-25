@@ -1,0 +1,15 @@
+import { MigrationInterface, QueryRunner } from 'typeorm';
+
+export class CreateSecurity1760600000000 implements MigrationInterface {
+  name = 'CreateSecurity1760600000000';
+  async up(q: QueryRunner): Promise<void> {
+    await q.query(`CREATE TABLE "roles" ("id" uuid NOT NULL DEFAULT gen_random_uuid(), "code" varchar NOT NULL, "name" varchar NOT NULL, "description" varchar, "is_system" boolean NOT NULL DEFAULT false, "is_super_admin" boolean NOT NULL DEFAULT false, "is_active" boolean NOT NULL DEFAULT true, "created_at" timestamptz NOT NULL DEFAULT now(), "updated_at" timestamptz NOT NULL DEFAULT now(), CONSTRAINT "PK_roles" PRIMARY KEY ("id"), CONSTRAINT "UQ_roles_code" UNIQUE ("code"))`);
+    await q.query(`CREATE TABLE "permissions" ("id" uuid NOT NULL DEFAULT gen_random_uuid(), "code" varchar NOT NULL, "name" varchar NOT NULL, "module" varchar NOT NULL, "description" varchar, "created_at" timestamptz NOT NULL DEFAULT now(), "updated_at" timestamptz NOT NULL DEFAULT now(), CONSTRAINT "PK_permissions" PRIMARY KEY ("id"), CONSTRAINT "UQ_permissions_code" UNIQUE ("code"))`);
+    await q.query(`CREATE TABLE "role_permissions" ("role_id" uuid NOT NULL, "permission_id" uuid NOT NULL, CONSTRAINT "PK_role_permissions" PRIMARY KEY ("role_id","permission_id"), CONSTRAINT "FK_role_permissions_role" FOREIGN KEY ("role_id") REFERENCES "roles"("id") ON DELETE CASCADE, CONSTRAINT "FK_role_permissions_permission" FOREIGN KEY ("permission_id") REFERENCES "permissions"("id") ON DELETE CASCADE)`);
+    await q.query(`CREATE TABLE "users" ("id" uuid NOT NULL DEFAULT gen_random_uuid(), "username" varchar NOT NULL, "full_name" varchar NOT NULL, "password_hash" varchar NOT NULL, "role_id" uuid NOT NULL, "is_active" boolean NOT NULL DEFAULT true, "last_login_at" timestamptz, "created_at" timestamptz NOT NULL DEFAULT now(), "updated_at" timestamptz NOT NULL DEFAULT now(), CONSTRAINT "PK_users" PRIMARY KEY ("id"), CONSTRAINT "FK_users_role" FOREIGN KEY ("role_id") REFERENCES "roles"("id") ON DELETE RESTRICT)`);
+    await q.query(`CREATE UNIQUE INDEX "UQ_users_username_lower" ON "users" (lower("username"))`);
+    await q.query(`CREATE TABLE "user_sessions" ("id" uuid NOT NULL DEFAULT gen_random_uuid(), "user_id" uuid NOT NULL, "token_hash" varchar NOT NULL, "expires_at" timestamptz NOT NULL, "revoked_at" timestamptz, "created_at" timestamptz NOT NULL DEFAULT now(), CONSTRAINT "PK_user_sessions" PRIMARY KEY ("id"), CONSTRAINT "UQ_user_sessions_token_hash" UNIQUE ("token_hash"), CONSTRAINT "FK_user_sessions_user" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE)`);
+    await q.query(`CREATE INDEX "IDX_user_sessions_token_hash" ON "user_sessions" ("token_hash")`);
+  }
+  async down(q: QueryRunner): Promise<void> { await q.query('DROP TABLE "user_sessions"'); await q.query('DROP INDEX "UQ_users_username_lower"'); await q.query('DROP TABLE "users"'); await q.query('DROP TABLE "role_permissions"'); await q.query('DROP TABLE "permissions"'); await q.query('DROP TABLE "roles"'); }
+}

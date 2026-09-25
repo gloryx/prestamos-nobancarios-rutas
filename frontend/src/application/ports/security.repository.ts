@@ -1,0 +1,7 @@
+import type { AuthRepository, LoginCredentials } from '../../domain/entities/auth';
+export type UserRecord = { id: string; username: string; fullName: string; role: { id: string; code: string; name: string; isSuperAdmin: boolean }; isActive: boolean; lastLoginAt: string | null };
+export type RoleRecord = { id: string; code: string; name: string; isSuperAdmin: boolean; isActive: boolean };
+export type PermissionRecord = { id: string; code: string; name: string; module: string };
+export type UserQuery = { search: string; status: 'ACTIVE' | 'INACTIVE' | 'ALL'; roleId: string; page: number; pageSize: number };
+export type SecurityRepository = AuthRepository & { listUsers(query: UserQuery): Promise<{ items: UserRecord[]; total: number; page: number; pageSize: number }>; createUser(input: { username: string; fullName: string; roleId: string; password: string }): Promise<UserRecord>; updateUser(id: string, input: { username: string; fullName: string }): Promise<UserRecord>; changeUserStatus(id: string, isActive: boolean): Promise<UserRecord>; assignUserRole(id: string, roleId: string): Promise<UserRecord>; resetUserPassword(id: string, password: string): Promise<void>; listRoles(): Promise<RoleRecord[]>; rolePermissions(id: string): Promise<{ role: RoleRecord; permissionCodes: string[] }>; listPermissions(): Promise<PermissionRecord[]>; updateRolePermissions(id: string, permissionCodes: string[]): Promise<{ success: boolean; permissionCodes: string[] }> };
+export type LoginInput = LoginCredentials;

@@ -1,0 +1,4 @@
+import type { CustomerCreated, CustomerDetail, CustomerForm, CustomerListItem, CustomerSummary } from '../../domain/entities/customer';
+export type CustomerStatusFilter = 'ACTIVE' | 'INACTIVE' | 'ALL';
+export type CustomerListResult = { items: CustomerListItem[]; total: number; page: number; pageSize: number; totalPages: number };
+export interface CustomerRepository { create(input: CustomerForm): Promise<CustomerCreated>; list(query: { search: string; status: CustomerStatusFilter; page: number; pageSize: number }): Promise<CustomerListResult>; summary(): Promise<CustomerSummary>; detail(id: string): Promise<CustomerDetail>; update(id: string, input: Partial<CustomerForm>): Promise<CustomerDetail>; changeStatus(id: string, isActive: boolean): Promise<CustomerCreated>; file(id: string, kind: 'identification' | 'property'): Promise<Blob>; }

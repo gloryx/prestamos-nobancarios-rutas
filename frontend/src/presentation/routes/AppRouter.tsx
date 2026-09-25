@@ -21,6 +21,8 @@ import { CollectorCustomersPage } from '../pages/CollectorCustomersPage';
 import { CollectorsPage } from '../pages/CollectorsPage';
 import { AuthProvider } from '../hooks/useAuth';
 import { RouteGuard } from '../components/auth/RouteGuard';
+import { FinancialOpeningPage } from '../pages/FinancialOpeningPage';
+import { CashMovementsPage } from '../pages/CashMovementsPage';
 
 export function AppRouter(): ReactElement {
   return <BrowserRouter><AuthProvider><Routes><Route path="/login" element={<LoginPage />} /><Route element={<RouteGuard><AppLayout /></RouteGuard>}>
@@ -41,7 +43,9 @@ export function AppRouter(): ReactElement {
     <Route path="/settings/districts" element={<RouteGuard permission="territorial.view"><DistrictsPage /></RouteGuard>} />
     <Route path="/settings/payment-methods" element={<RouteGuard permission="payment-methods.view"><PaymentMethodsPage /></RouteGuard>} />
     <Route path="/settings/payment-frequencies" element={<RouteGuard permission="payment-frequencies.view"><PaymentFrequenciesPage /></RouteGuard>} />
-    <Route path="/settings/routes" element={<RouteGuard permission="routes.view"><RoutesPage /></RouteGuard>} />
+     <Route path="/settings/routes" element={<RouteGuard permission="routes.view"><RoutesPage /></RouteGuard>} />
+      <Route path="/settings/financial-opening" element={<RouteGuard permission="financial-opening.view"><FinancialOpeningPage /></RouteGuard>} />
+      <Route path="/finance/cash-movements" element={<RouteGuard permission="cash-movements.view"><CashMovementsPage /></RouteGuard>} />
     <Route path="*" element={<Navigate to="/dashboard" replace />} />
   </Route></Routes></AuthProvider></BrowserRouter>;
 }

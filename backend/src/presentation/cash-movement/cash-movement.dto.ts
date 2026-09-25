@@ -1,0 +1,4 @@
+import { IsIn, IsOptional, IsString, Matches } from 'class-validator';
+export class ListCashMovementsDto { @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}$/) fromDate?: string; @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}$/) toDate?: string; @IsOptional() @IsIn(['INFLOW', 'OUTFLOW']) direction?: 'INFLOW' | 'OUTFLOW'; @IsOptional() @IsString() concept?: string; @IsOptional() @IsString() paymentMethodId?: string; @IsOptional() @IsString() search?: string; @IsOptional() page?: number; @IsOptional() pageSize?: 20 | 50 | 100; }
+export class CreateCashMovementDto { @IsString() concept!: string; @IsString() amount!: string; @Matches(/^\d{4}-\d{2}-\d{2}$/) movementDate!: string; @IsString() paymentMethodId!: string; @IsOptional() @IsString() observations?: string; @IsOptional() @IsString() idempotencyKey?: string; }
+export class ReverseCashMovementDto { @Matches(/^\d{4}-\d{2}-\d{2}$/) movementDate!: string; @IsString() reason!: string; }

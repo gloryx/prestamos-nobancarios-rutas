@@ -1,7 +1,7 @@
 import 'reflect-metadata';
 import { config } from 'dotenv';
 import { DataSource } from 'typeorm';
-import { CantonOrmEntity, CollectorOrmEntity, CustomerAddressOrmEntity, CustomerOrmEntity, DistrictOrmEntity, PaymentFrequencyOrmEntity, PaymentMethodOrmEntity, ProvinceOrmEntity, RouteOrmEntity, RoleOrmEntity, PermissionOrmEntity, RolePermissionOrmEntity, UserOrmEntity, UserSessionOrmEntity, CustomerRouteAssignmentOrmEntity, CollectorRouteAssignmentOrmEntity, CustomerSiteUpdateAuthorizationOrmEntity } from './entities';
+import { CantonOrmEntity, CollectorOrmEntity, CustomerAddressOrmEntity, CustomerOrmEntity, DistrictOrmEntity, PaymentFrequencyOrmEntity, PaymentMethodOrmEntity, ProvinceOrmEntity, RouteOrmEntity, RoleOrmEntity, PermissionOrmEntity, RolePermissionOrmEntity, UserOrmEntity, UserSessionOrmEntity, CustomerRouteAssignmentOrmEntity, CollectorRouteAssignmentOrmEntity, CustomerSiteUpdateAuthorizationOrmEntity, FinancialOpeningOrmEntity, CashMovementOrmEntity } from './entities';
 
 config();
 
@@ -18,7 +18,7 @@ export const appDataSource = new DataSource({
   username: required('DB_USERNAME'),
   password: required('DB_PASSWORD'),
   database: required('DB_DATABASE'),
-  entities: [ProvinceOrmEntity, CantonOrmEntity, DistrictOrmEntity, PaymentMethodOrmEntity, PaymentFrequencyOrmEntity, RouteOrmEntity, CustomerOrmEntity, CustomerAddressOrmEntity, RoleOrmEntity, PermissionOrmEntity, RolePermissionOrmEntity, UserOrmEntity, UserSessionOrmEntity, CustomerRouteAssignmentOrmEntity, CollectorRouteAssignmentOrmEntity, CustomerSiteUpdateAuthorizationOrmEntity, CollectorOrmEntity],
+  entities: [ProvinceOrmEntity, CantonOrmEntity, DistrictOrmEntity, PaymentMethodOrmEntity, PaymentFrequencyOrmEntity, RouteOrmEntity, CustomerOrmEntity, CustomerAddressOrmEntity, RoleOrmEntity, PermissionOrmEntity, RolePermissionOrmEntity, UserOrmEntity, UserSessionOrmEntity, CustomerRouteAssignmentOrmEntity, CollectorRouteAssignmentOrmEntity, CustomerSiteUpdateAuthorizationOrmEntity, CollectorOrmEntity, FinancialOpeningOrmEntity, CashMovementOrmEntity],
   migrations: ['src/infrastructure/database/typeorm/migrations/*{.ts,.js}'],
   synchronize: false,
 });

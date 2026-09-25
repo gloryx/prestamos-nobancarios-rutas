@@ -7,6 +7,8 @@ export const PERMISSIONS = [
   ['users.view', 'Consultar usuarios', 'Usuarios'], ['users.create', 'Crear usuarios', 'Usuarios'], ['users.update', 'Editar usuarios', 'Usuarios'], ['users.status.change', 'Cambiar estado de usuarios', 'Usuarios'], ['users.password.reset', 'Restablecer contraseñas', 'Usuarios'], ['users.role.assign', 'Asignar roles', 'Usuarios'],
   ['roles.view', 'Consultar roles y permisos', 'Seguridad'], ['roles.permissions.update', 'Editar permisos de roles', 'Seguridad'],
   ['collectors.view', 'Consultar cobradores', 'COBRADORES'], ['collectors.create', 'Crear cobradores', 'COBRADORES'], ['collectors.update', 'Editar cobradores', 'COBRADORES'], ['collectors.status.change', 'Cambiar estado de cobradores', 'COBRADORES'], ['collectors.user.assign', 'Vincular usuarios a cobradores', 'COBRADORES'], ['collectors.photo.view', 'Consultar fotografías de cobradores', 'COBRADORES'],
+  ['financial-opening.view', 'Consultar apertura financiera', 'Configuración financiera'], ['financial-opening.perform', 'Realizar apertura financiera', 'Configuración financiera'],
+  ['cash-movements.view', 'Consultar movimientos de caja', 'FINANZAS'], ['cash-movements.create', 'Crear movimientos de caja', 'FINANZAS'], ['cash-movements.reverse', 'Reversar movimientos de caja', 'FINANZAS'], ['cash-movements.export', 'Exportar movimientos de caja', 'FINANZAS'],
 ] as const;
 export const COLLECTION_MANAGER_DEFAULTS = [
   'territorial.view',

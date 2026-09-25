@@ -73,6 +73,8 @@ export const navigationEntries: NavigationEntry[] = [
        { type: 'link', label: 'Formas de pago', path: '/settings/payment-methods', icon: 'payment', requiredPermission: 'payment-methods.view' },
        { type: 'link', label: 'Periodicidades de pago', path: '/settings/payment-frequencies', icon: 'payment', requiredPermission: 'payment-frequencies.view' },
        { type: 'link', label: 'Rutas', path: '/settings/routes', icon: 'route', requiredPermission: 'routes.view' },
+        { type: 'link', label: 'Cartera inicial', path: '/settings/financial-opening', icon: 'payment', requiredPermission: 'financial-opening.view' },
     ],
   },
+  { type: 'group', label: 'Finanzas', icon: 'payment', items: [{ type: 'link', label: 'Movimientos de caja', path: '/finance/cash-movements', icon: 'payment', requiredPermission: 'cash-movements.view' }] },
 ];

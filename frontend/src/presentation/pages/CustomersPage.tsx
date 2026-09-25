@@ -4,7 +4,8 @@ import { customerUseCases } from '../../app/customers';
 import type { CustomerListItem, CustomerSummary } from '../../domain/entities/customer';
 import { generateCustomerReport as createCustomerReport } from '../../infrastructure/reports/customer-report.service';
 import { generateCustomerFileReport } from '../../infrastructure/reports/customer-file-report.service';
-import { Icon } from '../components/layout/Icon';
+import { TableActions } from '../components/TableActions';
+import { customerActionDefinitions, visibleTableActions } from '../helpers/table-action-definitions';
 import { useAuth } from '../hooks/auth-context';
 
 type Status = 'ACTIVE' | 'INACTIVE' | 'ALL';
@@ -68,13 +69,8 @@ export function CustomersPage(): ReactElement {
 }
 
 function CustomerActions({ customer, can, canAll, navigate, onStatus, onDownload }: { customer: CustomerListItem; can: (code: string) => boolean; canAll: (codes: string[]) => boolean; navigate: (path: string) => void; onStatus: () => void; onDownload: () => void }): ReactElement {
-  return <div className="icon-actions" aria-label={`Acciones de ${customer.fullName}`}>
-    {can('customers.view') && <button type="button" title="Ver información" aria-label="Ver información" onClick={() => navigate(`/customers/${customer.id}`)}><Icon name="view" /></button>}
-    {can('customers.update') && <button type="button" title="Editar cliente" aria-label="Editar cliente" onClick={() => navigate(`/customers/${customer.id}/edit`)}><Icon name="edit" /></button>}
-    <button type="button" disabled title="Disponible próximamente" aria-label="Disponible próximamente"><Icon name="payment" /></button>
-    {canAll(['customers.export', 'customers.files.view']) && <button type="button" title="Descargar expediente" aria-label="Descargar expediente" onClick={onDownload}><Icon name="download" /></button>}
-    {can('customers.status.change') && <button type="button" title={customer.isActive ? 'Inactivar cliente' : 'Activar cliente'} aria-label={customer.isActive ? 'Inactivar cliente' : 'Activar cliente'} onClick={onStatus}><Icon name={customer.isActive ? 'lock' : 'unlock'} /></button>}
-  </div>;
+  const actions = visibleTableActions(customerActionDefinitions(customer.isActive), can, canAll).map((action) => ({ ...action, onClick: action.key === 'view' ? () => navigate(`/customers/${customer.id}`) : action.key === 'edit' ? () => navigate(`/customers/${customer.id}/edit`) : action.key === 'download' ? onDownload : action.key === 'status' ? onStatus : undefined }));
+  return <TableActions actions={actions} ariaLabel={`Acciones de ${customer.fullName}`} />;
 }
 
 function Summary({ label, value }: { label: string; value?: string | number }): ReactElement { return <div className="customer-summary-card"><span>{label}</span><strong>{value ?? '—'}</strong></div>; }

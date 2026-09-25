@@ -129,3 +129,109 @@ Superadmin invariant:
 
 This rule must be implemented centrally in backend and frontend authorization
 helpers and covered by regression tests.
+
+## Standard table action pattern
+
+All current and future administrative tables that contain an `Acciones`
+column must use the same compact action pattern established by the Customers
+table.
+
+This applies to current modules and all future modules, including but not
+limited to:
+
+- Clientes
+- Usuarios
+- Cobradores
+- Préstamos
+- Cobros
+- Pagos
+- Liquidaciones
+- Rutas
+- Asignaciones
+- Garantías
+- Reportes
+- any future administrative listing
+
+### Visual standard
+
+Row actions must use:
+
+- compact icons/links;
+- consistent icon size;
+- consistent spacing;
+- consistent hover/focus treatment;
+- consistent disabled state;
+- tooltips;
+- accessible `aria-label`s;
+- the project's existing icon system.
+
+Do not use large text buttons inside table rows.
+
+Do not introduce a different action style per module.
+
+### Semantic behavior
+
+Use a navigation Link when the action navigates.
+
+Use a Button when the action performs a mutation or opens a dialog.
+
+Do not use clickable divs.
+
+### Ordering
+
+Use a consistent action order when applicable:
+
+1. View
+2. Edit
+3. Domain-specific operation
+4. Download/export/document
+5. Status action
+
+Not every table needs every category, but applicable actions should follow this
+order.
+
+### Status
+
+Activate/Inactivate actions must use the same icon and interaction pattern
+across the entire application.
+
+Do not replace status actions with switches in isolated modules unless the
+global design system is deliberately changed.
+
+### Permissions
+
+RBAC controls whether an action is available.
+
+Unauthorized actions should not be rendered.
+
+Superadmin behavior must use the centralized authorization helper.
+
+Do not hardcode role names in table components.
+
+### Future modules
+
+When creating a new table with row actions:
+
+1. Inspect the existing shared table-action component/style.
+2. Reuse it.
+3. Do not invent a new action design.
+4. Add domain-specific actions through the existing pattern.
+5. Preserve keyboard and mobile accessibility.
+
+Creating a new independent table-action visual pattern is prohibited unless
+the user explicitly requests a global redesign.
+
+### Responsive behavior
+
+All action columns must follow the same responsive strategy.
+
+If the established design switches to an overflow menu at a narrow breakpoint,
+all future tables should use that same behavior.
+
+Do not create module-specific mobile action behavior without explicit reason.
+
+### Non-regression
+
+A visual refactor must never remove existing actions.
+
+Existing capabilities remain unless explicitly removed by the user.

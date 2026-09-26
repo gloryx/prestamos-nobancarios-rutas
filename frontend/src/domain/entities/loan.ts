@@ -1,0 +1,3 @@
+export type LoanPlanEntry = { sequence: number; dueDate: string; pendingAmount: string };
+export type LoanListItem = { id: string; loanNumber: string; startDate: string; principal: string; interestAmount: string; totalAmount: string; customerName: string; identification: string; frequencyName: string; pendingTotal: string };
+export type LoanDetail = LoanListItem & { status: string; customerId: string; intervalUnit: 'DAY' | 'WEEK' | 'DAY/15' | 'MONTH'; intervalValue: number; preferredPaymentMethod: string; disbursementPaymentMethod: string; createdByName: string; observations?: string | null; updatedAt: string; plan: LoanPlanEntry[] };

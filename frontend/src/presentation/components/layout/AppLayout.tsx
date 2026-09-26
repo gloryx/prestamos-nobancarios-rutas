@@ -1,6 +1,5 @@
 import { useEffect, useState, type ReactElement } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
-import { AppHeader } from './AppHeader';
 import { AppSidebar } from './AppSidebar';
 
 export function AppLayout(): ReactElement {
@@ -18,6 +17,9 @@ export function AppLayout(): ReactElement {
   return <div className="app-shell">
     <AppSidebar isOpen={isMenuOpen} onNavigate={() => setIsMenuOpen(false)} />
     <button className={`drawer-backdrop${isMenuOpen ? ' drawer-backdrop--visible' : ''}`} type="button" aria-label="Cerrar menú" onClick={() => setIsMenuOpen(false)} />
-    <div className="app-main"><AppHeader onMenuToggle={() => setIsMenuOpen((open) => !open)} isMenuOpen={isMenuOpen} /><main className="page-content"><Outlet /></main></div>
+    <button className="menu-button shell-menu-button" type="button" onClick={() => setIsMenuOpen((open) => !open)} aria-label="Abrir menú de navegación" aria-expanded={isMenuOpen} aria-controls="app-navigation">
+      <span /><span /><span />
+    </button>
+    <main className="app-main"><div className="page-content"><Outlet /></div></main>
   </div>;
 }

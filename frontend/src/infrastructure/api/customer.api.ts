@@ -1,6 +1,6 @@
 import type { CustomerCreated, CustomerDetail, CustomerForm, CustomerListItem } from '../../domain/entities/customer';
 import type { AssignedCollector, AssignedCustomer, CustomerSite, SiteAuthorization, SiteUpdateScope } from '../../domain/entities/customer-site';
-import type { CustomerRepository, CustomerStatusFilter } from '../../application/ports/customer.repository';
+import type { CustomerRepository, CustomerStatusFilter, CustomerListSort } from '../../application/ports/customer.repository';
 import { normalizeCustomerForm } from '../../application/use-cases/customer-normalization';
 import { apiClient } from './api-client';
 
@@ -38,7 +38,7 @@ export const buildCustomerFormData = (input: Partial<CustomerForm>): FormData =>
 export class CustomerApi implements CustomerRepository {
   private request<T>(path: string, options?: RequestInit): Promise<T> { return apiClient.request<T>(path, options); }
   async create(input: CustomerForm): Promise<CustomerCreated> { return this.request('/customers', { method: 'POST', body: buildCustomerFormData(input) }); }
-  async list(query: { search: string; status: CustomerStatusFilter; page: number; pageSize: number }) { const params = new URLSearchParams({ search: query.search, status: query.status, page: String(query.page), pageSize: String(query.pageSize) }); return this.request<{ items: CustomerListItem[]; total: number; page: number; pageSize: number; totalPages: number }>(`/customers?${params}`); }
+  async list(query: { search: string; status: CustomerStatusFilter; page: number; pageSize: number } & CustomerListSort) { const params = new URLSearchParams({ search: query.search, status: query.status, page: String(query.page), pageSize: String(query.pageSize) }); if (query.sortBy) params.set('sortBy', query.sortBy); if (query.sortOrder) params.set('sortOrder', query.sortOrder); return this.request<{ items: CustomerListItem[]; total: number; page: number; pageSize: number; totalPages: number }>(`/customers?${params}`); }
   async assigned(): Promise<AssignedCustomer[]> { return this.request('/customers/assigned'); }
   async summary() { return this.request<{ totalCustomers: number; maleCustomers: number; femaleCustomers: number; activeLoans: number | null }>('/customers/summary'); }
   async detail(id: string): Promise<CustomerDetail> { return this.request(`/customers/${encodeURIComponent(id)}`); }

@@ -3,6 +3,8 @@ import { CustomerIdentificationAlreadyExistsError } from '../../../../domain/cus
 import type { Customer, CustomerAddress } from '../../../../domain/customer/customer.types';
 import type { CreateCustomerAddressInput, CreateCustomerInput, CustomerRepository, CustomerAggregate, CustomerListQuery, CustomerUpdate } from '../../../../application/customer/customer.repository';
 import { CustomerAddressOrmEntity, CustomerOrmEntity } from '../entities';
+export const CUSTOMER_SORT_COLUMNS = { identification: 'LOWER(customer.identification)', name: `LOWER(CONCAT_WS(' ', customer.first_name, customer.middle_name, customer.first_last_name, customer.second_last_name))`, phone: 'customer.primary_phone', address: 'LOWER(address.exact_address)', status: 'customer.is_active' } as const;
+export const customerSortColumn = (sortBy: keyof typeof CUSTOMER_SORT_COLUMNS | undefined): string | undefined => sortBy ? CUSTOMER_SORT_COLUMNS[sortBy] : undefined;
 export class CustomerTypeOrmRepository implements CustomerRepository {
   constructor(private readonly customers: Repository<CustomerOrmEntity>, private readonly addresses: Repository<CustomerAddressOrmEntity>) {}
   private mapCustomer(row: CustomerOrmEntity): Customer { return { id: row.id, identificationType: row.identificationType as Customer['identificationType'], identification: row.identification, firstName: row.firstName, middleName: row.middleName ?? undefined, firstLastName: row.firstLastName, secondLastName: row.secondLastName ?? undefined, gender: row.gender as Customer['gender'], birthDate: row.birthDate, primaryPhone: row.primaryPhone, secondaryPhone: row.secondaryPhone ?? undefined, email: row.email ?? undefined, nationality: row.nationality as Customer['nationality'], otherNationality: row.otherNationality ?? undefined, identificationFrontFileKey: row.identificationFrontFileKey ?? null, observations: row.observations ?? undefined, isActive: row.isActive, createdAt: row.createdAt, updatedAt: row.updatedAt }; }
@@ -20,7 +22,10 @@ export class CustomerTypeOrmRepository implements CustomerRepository {
       qb.andWhere(`(LOWER(customer.identification) LIKE :term OR LOWER(customer.first_name) LIKE :term OR LOWER(customer.middle_name) LIKE :term OR LOWER(customer.first_last_name) LIKE :term OR LOWER(customer.second_last_name) LIKE :term OR LOWER(CONCAT_WS(' ', customer.first_name, customer.middle_name, customer.first_last_name, customer.second_last_name)) LIKE :term OR LOWER(customer.primary_phone) LIKE :term OR LOWER(customer.secondary_phone) LIKE :term OR LOWER(address.exact_address) LIKE :term OR LOWER(district.name) LIKE :term OR LOWER(canton.name) LIKE :term OR LOWER(province.name) LIKE :term)`, { term });
       qb.leftJoin('address.district', 'district').leftJoin('district.canton', 'canton').leftJoin('canton.province', 'province');
     }
-    const [rows, total] = await Promise.all([qb.orderBy('customer.created_at', 'DESC').skip((query.page - 1) * query.pageSize).take(query.pageSize).getRawMany(), qb.getCount()]);
+    const sortColumn = customerSortColumn(query.sortBy);
+    if (sortColumn) { const requestedOrder = query.sortOrder ?? 'asc'; const databaseOrder = requestedOrder === 'asc' ? 'ASC' : 'DESC'; qb.orderBy(sortColumn, query.sortBy === 'status' ? (databaseOrder === 'ASC' ? 'DESC' : 'ASC') : databaseOrder).addOrderBy('customer.id', 'ASC'); }
+    else qb.orderBy('customer.created_at', 'DESC').addOrderBy('customer.id', 'DESC');
+    const [rows, total] = await Promise.all([qb.skip((query.page - 1) * query.pageSize).take(query.pageSize).getRawMany(), qb.getCount()]);
     return { items: rows.map((row) => ({ id: row.id, identification: row.identification, fullName: row.fullName, primaryPhone: row.primaryPhone, address: row.address, isActive: row.isActive === true || row.isActive === 'true' })), total };
   }
   async summary(): Promise<{ totalCustomers: number; maleCustomers: number; femaleCustomers: number; activeLoans: null }> {

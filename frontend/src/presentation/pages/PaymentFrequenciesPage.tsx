@@ -6,7 +6,7 @@ import { useAuth } from '../hooks/auth-context';
 
 type FormState = { name: string; intervalUnit: IntervalUnit; intervalValue: string; order: string };
 const emptyForm: FormState = { name: '', intervalUnit: 'DAY', intervalValue: '1', order: '1' };
-const unitLabels: Record<IntervalUnit, string> = { DAY: 'Día(s)', WEEK: 'Semana(s)', MONTH: 'Mes(es)' };
+const unitLabels: Record<IntervalUnit, string> = { DAY: 'Día(s)', WEEK: 'Semana(s)', 'DAY/15': 'Cada 15 días', MONTH: 'Mes(es)' };
 
 export function PaymentFrequenciesPage(): ReactElement {
   const { can } = useAuth();

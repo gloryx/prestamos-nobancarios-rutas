@@ -3,7 +3,7 @@ import { CashMovementConflictError } from '../src/domain/cash-movement/cash-move
 
 function queryBuilder(raw: unknown, rows: unknown[] = [], total = 0) {
   const calls: string[] = [];
-  const builder = { calls, leftJoinAndSelect: () => builder, andWhere: (sql: string) => { calls.push(sql); return builder; }, orderBy: (path: string) => { calls.push(path); return builder; }, addOrderBy: (path: string) => { calls.push(path); return builder; }, skip: () => builder, take: () => builder, select: (sql: string) => { calls.push(sql); return builder; }, addSelect: (sql: string) => { calls.push(sql); return builder; }, getManyAndCount: async () => [rows, total], getRawOne: async () => raw };
+  const builder = { calls, leftJoinAndSelect: () => builder, leftJoin: (_entity: unknown, alias: string, condition: string) => { calls.push(`${alias}:${condition}`); return builder; }, andWhere: (sql: string) => { calls.push(sql); return builder; }, orderBy: (path: string) => { calls.push(path); return builder; }, addOrderBy: (path: string) => { calls.push(path); return builder; }, skip: () => builder, take: () => builder, select: (sql: string) => { calls.push(sql); return builder; }, addSelect: (sql: string) => { calls.push(sql); return builder; }, getRawAndEntities: async () => ({ raw, entities: rows }), getCount: async () => total, getRawOne: async () => raw };
   return builder;
 }
 
@@ -14,6 +14,14 @@ describe('CashMovementTypeOrmRepository', () => {
     await repository.list({ page: 1, pageSize: 20, fromDate: '2026-01-01' });
     expect(builder.calls).toEqual(expect.arrayContaining(['m.movementDate', 'm.createdAt', 'm.movement_date >= :fromDate']));
     expect(builder.calls).not.toEqual(expect.arrayContaining(['m.movement_date', 'm.created_at']));
+  });
+
+  it('resolves loan numbers through disbursement and payment joins in the paginated query', async () => {
+    const builder = queryBuilder([{ movementId: 'movement-1', loanNumber: '42' }], [{ id: 'movement-1', direction: 'INFLOW', concept: 'LOAN_DISBURSEMENT', paymentMethod: { id: 'pm', name: 'Cash', isActive: true }, createdBy: { id: 'actor', fullName: 'Actor' } }], 1);
+    const repository = new CashMovementTypeOrmRepository({ createQueryBuilder: () => builder } as never, {} as never);
+    const result = await repository.list({ page: 2, pageSize: 20 });
+    expect(result.total).toBe(1);
+    expect(builder.calls).toEqual(expect.arrayContaining(['ld:ld.id = m.loan_disbursement_id', 'p:p.id = m.payment_id', 'COALESCE(disbursementLoan.loan_number, paymentLoan.loan_number)']));
   });
 
   it('returns SQL decimal strings exactly and null current availability without an opening', async () => {

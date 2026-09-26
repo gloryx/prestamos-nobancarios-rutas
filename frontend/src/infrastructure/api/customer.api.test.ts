@@ -42,3 +42,15 @@ describe('CustomerApi site adapters', () => {
     fetchMock.mockRestore();
   });
 });
+
+describe('CustomerApi list sorting', () => {
+  it('sends the selected server-side sort parameters', async () => {
+    const response = { ok: true, status: 200, json: async () => ({ items: [], total: 0, page: 1, pageSize: 10, totalPages: 0 }) } as Response;
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(response);
+
+    await new CustomerApi().list({ search: 'ana', status: 'ALL', page: 1, pageSize: 10, sortBy: 'address', sortOrder: 'desc' });
+
+    expect(fetchMock.mock.calls[0][0]).toContain('/customers?search=ana&status=ALL&page=1&pageSize=10&sortBy=address&sortOrder=desc');
+    fetchMock.mockRestore();
+  });
+});

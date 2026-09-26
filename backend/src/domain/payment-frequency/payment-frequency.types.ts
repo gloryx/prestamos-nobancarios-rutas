@@ -1,4 +1,4 @@
-export type IntervalUnit = 'DAY' | 'WEEK' | 'MONTH';
+export type IntervalUnit = 'DAY' | 'WEEK' | 'DAY/15' | 'MONTH';
 
 export type PaymentFrequency = {
   id: string;

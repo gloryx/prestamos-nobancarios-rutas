@@ -1,0 +1,56 @@
+schema: spec-driven
+
+context: |
+  Project: prestamos-nobancarios-rutas.
+  Stack: NestJS 11 + TypeScript backend; React 19 + Vite 7 frontend.
+  Architecture: Clean Architecture with domain/application/infrastructure/presentation boundaries.
+  Persistence: Hybrid OpenSpec and Engram.
+  Testing: Jest backend and Vitest frontend; strict TDD enabled.
+  Scope: SDD initialization only; do not implement Payments during init.
+
+strict_tdd: true
+
+testing:
+  backend:
+    runner: "npm test --prefix backend"
+    framework: Jest 30 with ts-jest
+    unit: true
+    integration: true
+    e2e: false
+    coverage: false
+    lint: "npm run lint --prefix backend"
+    typecheck: "npm run build --prefix backend"
+    formatter: "npm run format --prefix backend"
+  frontend:
+    runner: "npm test --prefix frontend"
+    framework: Vitest 3
+    unit: true
+    integration: false
+    e2e: false
+    coverage: false
+    lint: "npm run lint --prefix frontend"
+    typecheck: "npm run build --prefix frontend"
+    formatter: "not configured"
+
+rules:
+  proposal:
+    - Include rollback and non-regression plans for risky changes.
+  specs:
+    - Use Given/When/Then scenarios and RFC 2119 keywords.
+  design:
+    - Preserve Clean Architecture dependency direction and document tradeoffs.
+  tasks:
+    - Group tasks by phase and keep each task independently verifiable.
+    - Respect the 400-line review budget and ask before high-risk delivery.
+  apply:
+    guidelines:
+      - Preserve existing capabilities and keep backend and frontend independently runnable.
+      - Do not modify migrations or database schema unless explicitly requested.
+    tdd: true
+    test_command: "npm test --prefix backend && npm test --prefix frontend"
+  verify:
+    test_command: "npm test --prefix backend && npm test --prefix frontend"
+    build_command: "npm run build --prefix backend && npm run build --prefix frontend"
+    coverage_threshold: 0
+  archive:
+    - Warn before merging destructive deltas.

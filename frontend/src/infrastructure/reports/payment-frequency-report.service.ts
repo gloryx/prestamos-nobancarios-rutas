@@ -1,7 +1,7 @@
 import type { PaymentFrequency } from '../../domain/entities/payment-frequency';
 
 export function formatPaymentFrequency(item: Pick<PaymentFrequency, 'intervalUnit' | 'intervalValue'>): string {
-  const labels = { DAY: ['día', 'días'], WEEK: ['semana', 'semanas'], MONTH: ['mes', 'meses'] } as const;
+  const labels = { DAY: ['día', 'días'], WEEK: ['semana', 'semanas'], 'DAY/15': ['día', 'días'], MONTH: ['mes', 'meses'] } as const;
   const label = labels[item.intervalUnit][item.intervalValue === 1 ? 0 : 1];
   return `Cada ${item.intervalValue} ${label}`;
 }

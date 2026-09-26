@@ -5,7 +5,7 @@ import type { IntervalUnit } from '../../../../domain/payment-frequency/payment-
 export class PaymentFrequencyOrmEntity {
   @PrimaryGeneratedColumn('uuid') id!: string;
   @Column({ type: 'varchar', nullable: false }) name!: string;
-  @Column({ name: 'interval_unit', type: 'varchar', enum: ['DAY', 'WEEK', 'MONTH'], nullable: false }) intervalUnit!: IntervalUnit;
+  @Column({ name: 'interval_unit', type: 'varchar', enum: ['DAY', 'WEEK', 'DAY/15', 'MONTH'], nullable: false }) intervalUnit!: IntervalUnit;
   @Column({ name: 'interval_value', type: 'integer', nullable: false }) intervalValue!: number;
   @Column({ name: 'display_order', type: 'integer', nullable: false }) displayOrder!: number;
   @Column({ name: 'is_active', type: 'boolean', default: true, nullable: false }) isActive!: boolean;

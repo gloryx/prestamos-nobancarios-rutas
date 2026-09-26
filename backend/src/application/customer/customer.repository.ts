@@ -4,7 +4,8 @@ export type CreateCustomerInput = Omit<Customer, 'id' | 'createdAt' | 'updatedAt
 export type CreateCustomerAddressInput = Omit<CustomerAddress, 'id' | 'createdAt' | 'updatedAt'>;
 export type CustomerAggregate = { customer: Customer; address: CustomerAddress; district: { code: number; name: string; canton: { code: number; name: string; province: { code: number; name: string } } } };
 export type CustomerListItem = { id: string; identification: string; fullName: string; primaryPhone: string; address: string; isActive: boolean };
-export type CustomerListQuery = { search?: string; status: 'ACTIVE' | 'INACTIVE' | 'ALL'; page: number; pageSize: 10 | 20 | 50 };
+export type CustomerSortBy = 'identification' | 'name' | 'phone' | 'address' | 'status';
+export type CustomerListQuery = { search?: string; status: 'ACTIVE' | 'INACTIVE' | 'ALL'; sortBy?: CustomerSortBy; sortOrder?: 'asc' | 'desc'; page: number; pageSize: 10 | 20 | 50 };
 export type CustomerUpdate = Partial<Omit<Customer, 'id' | 'createdAt' | 'updatedAt' | 'identificationFrontFileKey' | 'isActive'>> & Partial<Pick<CustomerAddress, 'districtCode' | 'exactAddress' | 'latitude' | 'longitude'>> & { identificationFrontFileKey?: string | null; propertyPhotoFileKey?: string };
 
 export interface CustomerRepository {

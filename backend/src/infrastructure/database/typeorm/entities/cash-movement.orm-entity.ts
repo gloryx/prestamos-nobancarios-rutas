@@ -14,6 +14,8 @@ export class CashMovementOrmEntity {
   @Column({ name: 'reversed_movement_id', type: 'uuid', nullable: true }) reversedMovementId!: string | null;
   @ManyToOne(() => CashMovementOrmEntity, { onDelete: 'RESTRICT', nullable: true, eager: false }) @JoinColumn({ name: 'reversed_movement_id' }) reversedMovement!: CashMovementOrmEntity | null;
   @Column({ name: 'created_by_user_id', type: 'uuid' }) createdByUserId!: string;
+  @Column({ name: 'loan_disbursement_id', type: 'uuid', nullable: true }) loanDisbursementId!: string | null;
+  @Column({ name: 'payment_id', type: 'uuid', nullable: true }) paymentId!: string | null;
   @ManyToOne(() => UserOrmEntity, { onDelete: 'RESTRICT', eager: false }) @JoinColumn({ name: 'created_by_user_id' }) createdBy!: UserOrmEntity;
   @Column({ name: 'idempotency_key', type: 'varchar', length: 128, nullable: true }) idempotencyKey!: string | null;
   @Column({ name: 'idempotency_fingerprint', type: 'text', nullable: true }) idempotencyFingerprint!: string | null;

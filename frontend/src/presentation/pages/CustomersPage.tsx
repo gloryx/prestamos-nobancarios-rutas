@@ -7,6 +7,8 @@ import { generateCustomerFileReport } from '../../infrastructure/reports/custome
 import { TableActions } from '../components/TableActions';
 import { customerActionDefinitions, visibleTableActions } from '../helpers/table-action-definitions';
 import { useAuth } from '../hooks/auth-context';
+import { Icon } from '../components/layout/Icon';
+import type { CustomerSortBy, CustomerSortOrder } from '../../application/ports/customer.repository';
 
 type Status = 'ACTIVE' | 'INACTIVE' | 'ALL';
 
@@ -19,6 +21,8 @@ export function CustomersPage(): ReactElement {
   const [status, setStatus] = useState<Status>('ACTIVE');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
+  const [sortBy, setSortBy] = useState<CustomerSortBy>();
+  const [sortOrder, setSortOrder] = useState<CustomerSortOrder>();
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -29,7 +33,7 @@ export function CustomersPage(): ReactElement {
   const load = async () => {
     setLoading(true); setError('');
     try {
-      const list = await customerUseCases.list.execute({ search, status, page, pageSize });
+      const list = await customerUseCases.list.execute({ search, status, page, pageSize, sortBy, sortOrder });
       setItems(list.items); setTotal(list.total); setTotalPages(list.totalPages);
       if (can('customers.summary.view')) setSummary(await customerUseCases.summary.execute());
     } catch (cause) {
@@ -37,7 +41,13 @@ export function CustomersPage(): ReactElement {
     } finally { setLoading(false); }
   };
 
-  useEffect(() => { void load(); }, [page, pageSize, status]);
+  useEffect(() => { void load(); }, [page, pageSize, status, sortBy, sortOrder]);
+
+  const changeSort = (column: CustomerSortBy) => {
+    setPage(1);
+    if (sortBy !== column) { setSortBy(column); setSortOrder('asc'); return; }
+    setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+  };
 
   const changeStatus = async () => {
     if (!confirming || !can('customers.status.change')) return;
@@ -61,11 +71,17 @@ export function CustomersPage(): ReactElement {
   return <section className="customer-admin" aria-labelledby="customer-title">
     <div className="customer-admin__heading"><div><p className="eyebrow">GESTIÓN</p><h2 id="customer-title">Clientes</h2></div>{can('customers.create') && <Link className="button button--primary" to="/customers/new">Nuevo cliente</Link>}</div>
     {can('customers.summary.view') && <div className="customer-summary-cards"><Summary label="Total de clientes" value={summary?.totalCustomers} /><Summary label="Masculino" value={summary?.maleCustomers} /><Summary label="Femenino" value={summary?.femaleCustomers} /><Summary label="Con préstamo activo" value={summary?.activeLoans ?? '—'} /></div>}
-    <div className="customer-toolbar"><label>Buscar<input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Identificación, nombre, teléfono o dirección" onKeyDown={(event) => { if (event.key === 'Enter') { setPage(1); void load(); } }} /></label><label>Estado<select value={status} onChange={(event) => { setStatus(event.target.value as Status); setPage(1); }}><option value="ACTIVE">Activos</option><option value="INACTIVE">Inactivos</option><option value="ALL">Todos</option></select></label><button className="button button--secondary" type="button" onClick={() => { setPage(1); void load(); }}>Buscar</button>{can('customers.export') && <button className="button button--secondary" type="button" disabled={loading || !total} onClick={() => void createCustomerReport({ search, status })}>Exportar PDF</button>}</div>
+     <div className="customer-toolbar"><label>Buscar<input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Identificación, nombre, teléfono o dirección" onKeyDown={(event) => { if (event.key === 'Enter') { setPage(1); void load(); } }} /></label><label>Estado<select value={status} onChange={(event) => { setStatus(event.target.value as Status); setPage(1); }}><option value="ACTIVE">Activos</option><option value="INACTIVE">Inactivos</option><option value="ALL">Todos</option></select></label><button className="button button--secondary" type="button" onClick={() => { setPage(1); void load(); }}>Buscar</button>{can('customers.export') && <button className="button button--secondary" type="button" disabled={loading || !total} onClick={() => void createCustomerReport({ search, status, sortBy, sortOrder })}>Exportar PDF</button>}</div>
     {error && <div className="catalog-message catalog-message--error" role="alert">{error}</div>}{loading && <div className="catalog-message">Cargando clientes…</div>}
     {!loading && !error && !items.length && <div className="catalog-message"><strong>No hay clientes registrados.</strong>{can('customers.create') && <><br /><Link className="button button--primary" to="/customers/new">Nuevo cliente</Link></>}</div>}
-    {!loading && !error && items.length > 0 && <><div className="catalog-table-wrap"><table className="catalog-table customer-table"><thead><tr><th>Identificación</th><th>Cliente</th><th>Teléfono</th><th>Dirección</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>{items.map((item) => <tr key={item.id}><td>{item.identification}</td><td>{item.fullName}</td><td>{item.primaryPhone}</td><td>{item.address}</td><td><span className={`status-badge ${item.isActive ? 'status-badge--active' : 'status-badge--inactive'}`}>{item.isActive ? 'Activo' : 'Inactivo'}</span></td><td><CustomerActions customer={item} can={can} canAll={canAll} navigate={navigate} onStatus={() => setConfirming(item)} onDownload={() => void downloadFile(item.id)} /></td></tr>)}</tbody></table></div><div className="customer-pagination"><button className="button button--secondary" type="button" disabled={page <= 1} onClick={() => setPage(page - 1)}>Anterior</button><span>Página {page} de {totalPages || 1} · {total} clientes</span><button className="button button--secondary" type="button" disabled={page >= totalPages} onClick={() => setPage(page + 1)}>Siguiente</button><label>Mostrar<select value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); setPage(1); }}><option value="10">10</option><option value="20">20</option><option value="50">50</option></select></label></div></>}
+     {!loading && !error && items.length > 0 && <><div className="catalog-table-wrap"><table className="catalog-table customer-table"><thead><tr><SortableHeader column="identification" label="Identificación" sortBy={sortBy} sortOrder={sortOrder} onSort={changeSort} /><SortableHeader column="name" label="Cliente" sortBy={sortBy} sortOrder={sortOrder} onSort={changeSort} /><SortableHeader column="phone" label="Teléfono" sortBy={sortBy} sortOrder={sortOrder} onSort={changeSort} /><SortableHeader column="address" label="Dirección" sortBy={sortBy} sortOrder={sortOrder} onSort={changeSort} /><SortableHeader column="status" label="Estado" sortBy={sortBy} sortOrder={sortOrder} onSort={changeSort} /><th>Acciones</th></tr></thead><tbody>{items.map((item) => <tr key={item.id}><td>{item.identification}</td><td>{item.fullName}</td><td>{item.primaryPhone}</td><td>{item.address}</td><td><span className={`status-badge ${item.isActive ? 'status-badge--active' : 'status-badge--inactive'}`}>{item.isActive ? 'Activo' : 'Inactivo'}</span></td><td><CustomerActions customer={item} can={can} canAll={canAll} navigate={navigate} onStatus={() => setConfirming(item)} onDownload={() => void downloadFile(item.id)} /></td></tr>)}</tbody></table></div><div className="customer-pagination"><button className="button button--secondary" type="button" disabled={page <= 1} onClick={() => setPage(page - 1)}>Anterior</button><span>Página {page} de {totalPages || 1} · {total} clientes</span><button className="button button--secondary" type="button" disabled={page >= totalPages} onClick={() => setPage(page + 1)}>Siguiente</button><label>Mostrar<select value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); setPage(1); }}><option value="10">10</option><option value="20">20</option><option value="50">50</option></select></label></div></>}
   </section>;
+}
+
+function SortableHeader({ column, label, sortBy, sortOrder, onSort }: { column: CustomerSortBy; label: string; sortBy?: CustomerSortBy; sortOrder?: CustomerSortOrder; onSort: (column: CustomerSortBy) => void }): ReactElement {
+  const active = sortBy === column;
+  const nextOrder = active && sortOrder === 'asc' ? 'desc' : 'asc';
+  return <th aria-sort={active ? sortOrder === 'asc' ? 'ascending' : 'descending' : 'none'}><button className="customer-sort-button" type="button" onClick={() => onSort(column)} aria-label={`${label}: ordenar ${nextOrder === 'asc' ? 'ascendente' : 'descendente'}`}><span>{label}</span><Icon name={active ? sortOrder === 'asc' ? 'sort-asc' : 'sort-desc' : 'sort'} /></button></th>;
 }
 
 function CustomerActions({ customer, can, canAll, navigate, onStatus, onDownload }: { customer: CustomerListItem; can: (code: string) => boolean; canAll: (codes: string[]) => boolean; navigate: (path: string) => void; onStatus: () => void; onDownload: () => void }): ReactElement {

@@ -1,7 +1,7 @@
 import type { ReactElement } from 'react';
 import type { NavigationIcon } from '../../navigation/navigationConfig';
 
-export type TableActionIcon = NavigationIcon | 'edit' | 'view' | 'lock' | 'unlock' | 'download' | 'key' | 'photo' | 'user-link' | 'reverse';
+export type TableActionIcon = NavigationIcon | 'edit' | 'view' | 'lock' | 'unlock' | 'download' | 'key' | 'photo' | 'user-link' | 'reverse' | 'sort' | 'sort-asc' | 'sort-desc';
 type IconProps = { name: TableActionIcon };
 
 export function Icon({ name }: IconProps): ReactElement {
@@ -17,7 +17,10 @@ export function Icon({ name }: IconProps): ReactElement {
     if (name === 'photo') return <svg {...common}><rect x="3" y="4" width="18" height="16" rx="2" /><circle cx="8.5" cy="9" r="1.5" /><path d="m4 17 5-5 3 3 2-2 6 5" /></svg>;
     if (name === 'user-link') return <svg {...common}><circle cx="8" cy="8" r="3" /><path d="M2.5 19a5.5 5.5 0 0 1 11 0M15 8h5M17.5 5.5 20 8l-2.5 2.5" /></svg>;
     if (name === 'lock' || name === 'unlock') return <svg {...common}><rect x="5" y="10" width="14" height="10" rx="2" /><path d={name === 'lock' ? 'M8 10V7a4 4 0 0 1 8 0v3' : 'M8 10V7a4 4 0 0 1 7-2'} /></svg>;
-    if (name === 'reverse') return <svg {...common}><path d="M4 7h10a6 6 0 1 1-4.2 10.2M4 7l3-3M4 7l3 3" /></svg>;
+     if (name === 'reverse') return <svg {...common}><path d="M4 7h10a6 6 0 1 1-4.2 10.2M4 7l3-3M4 7l3 3" /></svg>;
+     if (name === 'sort-asc') return <svg {...common}><path d="M8 17V5M4 9l4-4 4 4M16 19V7M13 16l3 3 3-3" /></svg>;
+     if (name === 'sort-desc') return <svg {...common}><path d="M8 5v12M4 13l4 4 4-4M16 7v12M13 16l3 3 3-3" /></svg>;
+     if (name === 'sort') return <svg {...common}><path d="M8 5v14M4 9l4-4 4 4M16 19V5M13 8l3-3 3 3" /></svg>;
   if (name === 'roles') return <svg {...common}><path d="M12 3 4 6v5c0 5 3.4 8.4 8 10 4.6-1.6 8-5 8-10V6l-8-3Z" /><path d="m9 12 2 2 4-4" /></svg>;
   if (name === 'location') return <svg {...common}><path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z" /><circle cx="12" cy="10" r="2.5" /></svg>;
   if (name === 'payment') return <svg {...common}><rect x="3" y="5" width="18" height="14" rx="2" /><path d="M3 10h18M7 15h3" /></svg>;

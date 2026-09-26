@@ -17,3 +17,5 @@ export * from './customer-site-update-authorization.orm-entity';
 export * from './collector.orm-entity';
 export * from './financial-opening.orm-entity';
 export * from './cash-movement.orm-entity';
+export * from './loan.orm-entities';
+export * from './payment.orm-entities';

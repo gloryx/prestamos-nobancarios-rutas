@@ -5,7 +5,7 @@ import { ListCashMovementsUseCase, RecordManualCashMovementUseCase, ReverseCashM
 import { CurrentUser, RequirePermissions } from '../security/security.decorators';
 import type { CurrentIdentity } from '../../domain/security/security.types';
 import { CreateCashMovementDto, ListCashMovementsDto, ReverseCashMovementDto } from './cash-movement.dto';
-const response = (movement: Awaited<ReturnType<ListCashMovementsUseCase['execute']>>['items'][number]) => ({ id: movement.id, direction: movement.direction, concept: movement.concept, amount: movement.amount, movementDate: movement.movementDate, paymentMethod: movement.paymentMethod, observations: movement.observations, reversedMovementId: movement.reversedMovementId, createdBy: movement.createdBy, createdAt: movement.createdAt });
+const response = (movement: Awaited<ReturnType<ListCashMovementsUseCase['execute']>>['items'][number]) => ({ id: movement.id, direction: movement.direction, concept: movement.concept, amount: movement.amount, movementDate: movement.movementDate, loanNumber: movement.loanNumber, paymentMethod: movement.paymentMethod, observations: movement.observations, reversedMovementId: movement.reversedMovementId, createdBy: movement.createdBy, createdAt: movement.createdAt });
 @Controller('cash-movements')
 export class CashMovementController {
   constructor(private readonly list: ListCashMovementsUseCase, private readonly summary: SummarizeCashMovementsUseCase, private readonly create: RecordManualCashMovementUseCase, private readonly reverse: ReverseCashMovementUseCase) {}

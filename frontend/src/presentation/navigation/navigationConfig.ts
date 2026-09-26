@@ -10,7 +10,7 @@ export type NavigationGroup = {
   type: 'group';
   label: string;
   icon: NavigationIcon;
-  items: NavigationLink[];
+  items: NavigationEntry[];
   requiredPermission?: string;
 };
 
@@ -25,6 +25,39 @@ export type NavigationIcon =
   | 'payment'
   | 'route'
   | 'settings';
+
+export type NavigationPermissionChecker = (permission: string) => boolean;
+
+export function filterNavigationEntries(
+  entries: NavigationEntry[],
+  can: NavigationPermissionChecker,
+): NavigationEntry[] {
+  return entries
+    .map((entry) => entry.type === 'group'
+      ? { ...entry, items: filterNavigationEntries(entry.items, can) }
+      : entry)
+    .filter((entry) => {
+      if (entry.requiredPermission && !can(entry.requiredPermission)) return false;
+      return entry.type === 'link' || entry.items.length > 0;
+    });
+}
+
+export function isNavigationEntryActive(entry: NavigationEntry, pathname: string): boolean {
+  return entry.type === 'link'
+    ? pathname === entry.path || pathname.startsWith(`${entry.path}/`)
+    : entry.items.some((item) => isNavigationEntryActive(item, pathname));
+}
+
+export function getActiveGroupLabels(entries: NavigationEntry[], pathname: string): string[] {
+  return entries.flatMap((entry) => {
+    if (entry.type !== 'group' || !isNavigationEntryActive(entry, pathname)) return [];
+    return [entry.label, ...getActiveGroupLabels(entry.items, pathname)];
+  });
+}
+
+export function toggleExpandedGroup(labels: string[], label: string): string[] {
+  return labels.includes(label) ? labels.filter((item) => item !== label) : [...labels, label];
+}
 
 export const navigationEntries: NavigationEntry[] = [
   {
@@ -63,13 +96,21 @@ export const navigationEntries: NavigationEntry[] = [
     ],
   },
   {
-    type: 'group',
-    label: 'Configuración',
-    icon: 'settings',
-    items: [
-       { type: 'link', label: 'Provincias', path: '/settings/provinces', icon: 'location', requiredPermission: 'territorial.view' },
-       { type: 'link', label: 'Cantones', path: '/settings/cantons', icon: 'location', requiredPermission: 'territorial.view' },
-       { type: 'link', label: 'Distritos', path: '/settings/districts', icon: 'location', requiredPermission: 'territorial.view' },
+      type: 'group',
+      label: 'Configuración',
+      icon: 'settings',
+      items: [
+       {
+         type: 'group',
+         label: 'División territorial',
+         icon: 'location',
+         requiredPermission: 'territorial.view',
+         items: [
+           { type: 'link', label: 'Provincias', path: '/settings/provinces', icon: 'location', requiredPermission: 'territorial.view' },
+           { type: 'link', label: 'Cantones', path: '/settings/cantons', icon: 'location', requiredPermission: 'territorial.view' },
+           { type: 'link', label: 'Distritos', path: '/settings/districts', icon: 'location', requiredPermission: 'territorial.view' },
+         ],
+       },
        { type: 'link', label: 'Formas de pago', path: '/settings/payment-methods', icon: 'payment', requiredPermission: 'payment-methods.view' },
        { type: 'link', label: 'Periodicidades de pago', path: '/settings/payment-frequencies', icon: 'payment', requiredPermission: 'payment-frequencies.view' },
        { type: 'link', label: 'Rutas', path: '/settings/routes', icon: 'route', requiredPermission: 'routes.view' },
@@ -77,4 +118,6 @@ export const navigationEntries: NavigationEntry[] = [
     ],
   },
   { type: 'group', label: 'Finanzas', icon: 'payment', items: [{ type: 'link', label: 'Movimientos de caja', path: '/finance/cash-movements', icon: 'payment', requiredPermission: 'cash-movements.view' }] },
+  { type: 'group', label: 'PRÉSTAMOS', icon: 'payment', items: [{ type: 'link', label: 'Préstamos', path: '/loans', icon: 'payment', requiredPermission: 'loans.view' }, { type: 'link', label: 'Nuevo préstamo', path: '/loans/new', icon: 'payment', requiredPermission: 'loans.create' }] },
+  { type: 'group', label: 'PAGOS', icon: 'payment', items: [{ type: 'link', label: 'Pagos', path: '/payments', icon: 'payment', requiredPermission: 'payments.view' }] },
 ];

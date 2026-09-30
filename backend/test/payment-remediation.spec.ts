@@ -15,13 +15,14 @@ describe('payment remediation invariants', () => {
         { id: 'paid', dueDate: '2026-09-01', sequence: 1, pendingAmount: '0.00' },
         { id: 'pending', dueDate: '2026-10-01', sequence: 2, pendingAmount: '50.00' },
       ],
+      validPayments: [],
       lastValidPayment: null,
       refinanceEligibility: false,
       preferredMethod: { id: 'method-1', activeMethods: ['method-1'], collectors: ['collector-1'] },
     });
 
     expect(Object.keys(result).sort()).toEqual([
-      'balances', 'combinedPlan', 'firstOperationalRow', 'lastValidPayment',
+       'balances', 'combinedPlan', 'firstOperationalRow', 'lastValidPayment', 'validPayments',
       'preferredMethod', 'refinanceEligibility', 'summary',
     ].sort());
     expect(result.combinedPlan).toEqual([
@@ -36,6 +37,18 @@ describe('payment remediation invariants', () => {
       { id: 'open', dueDate: '2026-10-01', sequence: 2, pendingAmount: '10.00' },
     ];
     expect(filterPositivePendingEntries(entries)).toEqual([entries[1]]);
+  });
+
+  it('sorts positive obligations with mixed driver dates without mutating inputs', () => {
+    const entries = [
+      { id: 'late', dueDate: new Date(2026, 9, 1), sequence: 1, pendingAmount: '1.00' },
+      { id: 'early', dueDate: '2026-09-30', sequence: 1, pendingAmount: '1.00' },
+    ];
+    const context = buildPaymentContext({ summary: {}, balances: {}, combinedPlan: entries, validPayments: [], lastValidPayment: null, refinanceEligibility: false, preferredMethod: null });
+    expect(context.combinedPlan.map((entry) => entry.id)).toEqual(['early', 'late']);
+    expect(context.firstOperationalRow).toBe(entries[1]);
+    expect(entries[0].dueDate).toBeInstanceOf(Date);
+    expect(entries.map((entry) => entry.id)).toEqual(['late', 'early']);
   });
 
   it('accepts valid pending-only customization and rejects stale or non-reconciling plans', () => {

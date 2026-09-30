@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactElement } from 'react';
 import { useParams } from 'react-router-dom';
-import type { LoanDetail } from '../../domain/entities/loan';
+import type { LoanOperationalDetail } from '../../domain/entities/loan';
 import { loanApi } from '../../infrastructure/api/loan.api';
 import { generateLoanPaymentPlanReport } from '../../infrastructure/reports/loan-payment-plan-report.service';
 import { formatDateOnlyForDisplay, formatDateTimeForDisplay } from '../../shared/utils/date';
@@ -12,11 +12,18 @@ import { formatLoanStatus } from '../helpers/loan';
 export function LoanDetailPage(): ReactElement {
   const { id = '' } = useParams();
   const { can } = useAuth();
-  const [loan, setLoan] = useState<LoanDetail>();
+  const [loan, setLoan] = useState<LoanOperationalDetail>();
+  const [exportError, setExportError] = useState('');
 
   useEffect(() => {
     void loanApi.detail(id).then(setLoan);
   }, [id]);
+
+  const download = async () => {
+    setExportError('');
+    try { await generateLoanPaymentPlanReport(await loanApi.detail(id)); }
+    catch (cause) { setExportError(cause instanceof Error ? cause.message : 'No se pudo mostrar el plan de pago.'); }
+  };
 
   if (!loan) return <p>Cargando préstamo…</p>;
 
@@ -28,11 +35,12 @@ export function LoanDetailPage(): ReactElement {
           <h1>{loan.customerName}</h1>
         </div>
         {can('loans.export') && (
-          <button className="button button--secondary" type="button" onClick={() => void generateLoanPaymentPlanReport(loan)}>
+          <button className="button button--secondary" type="button" onClick={() => void download()}>
             Descargar plan de pago
           </button>
         )}
       </header>
+      {exportError && <p role="alert">{exportError}</p>}
 
       <section className="loan-detail__info" aria-labelledby="loan-detail-info-title">
         <h2 id="loan-detail-info-title">INFORMACIÓN DEL PRÉSTAMO</h2>

@@ -14,9 +14,9 @@ const mapError = (error: unknown): never => { if (error instanceof SecurityRateL
 export class AuthController {
   constructor(private readonly security: SecurityService) {}
   @Public() @Post('login') async login(@Body() body: LoginDto, @Res({ passthrough: true }) response: Response) { try { const result = await this.security.login(body.username, body.password); response.cookie(SESSION_COOKIE, result.token, { ...cookieOptions(), maxAge: Number(process.env.AUTH_SESSION_TTL_HOURS ?? 12) * 3600000 }); return this.security.profile(result.identity); } catch (error) { return mapError(error); } }
-  @Post('logout') async logout(@CurrentUser() identity: CurrentIdentity, @Res({ passthrough: true }) response: Response) { await this.security.logout(identity); response.clearCookie(SESSION_COOKIE, cookieOptions()); return { success: true }; }
-  @Get('me') me(@CurrentUser() identity: CurrentIdentity) { return this.security.profile(identity); }
-  @Post('change-password') async change(@CurrentUser() identity: CurrentIdentity, @Body() body: ChangePasswordDto) { try { await this.security.changePassword(identity, body.currentPassword, body.newPassword); return { success: true }; } catch (error) { return mapError(error); } }
+  @RequirePermissions() @Post('logout') async logout(@CurrentUser() identity: CurrentIdentity, @Res({ passthrough: true }) response: Response) { await this.security.logout(identity); response.clearCookie(SESSION_COOKIE, cookieOptions()); return { success: true }; }
+  @RequirePermissions() @Get('me') me(@CurrentUser() identity: CurrentIdentity) { return this.security.profile(identity); }
+  @RequirePermissions() @Post('change-password') async change(@CurrentUser() identity: CurrentIdentity, @Body() body: ChangePasswordDto) { try { await this.security.changePassword(identity, body.currentPassword, body.newPassword); return { success: true }; } catch (error) { return mapError(error); } }
 }
 
 @Controller('users')

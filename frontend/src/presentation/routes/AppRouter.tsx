@@ -24,6 +24,8 @@ import { RouteGuard } from '../components/auth/RouteGuard';
 import { FinancialOpeningPage } from '../pages/FinancialOpeningPage';
 import { CashMovementsPage } from '../pages/CashMovementsPage';
 import { LoansPage } from '../pages/LoansPage';
+import { CancelledLoansPage } from '../pages/CancelledLoansPage';
+import { LoanManagementPage } from '../pages/LoanManagementPage';
 import { LoanDetailPage } from '../pages/LoanDetailPage';
 import { NewLoanPage } from '../pages/NewLoanPage';
 import { PaymentsPage } from '../pages/PaymentsPage';
@@ -51,9 +53,12 @@ export function AppRouter(): ReactElement {
       <Route path="/settings/financial-opening" element={<RouteGuard permission="financial-opening.view"><FinancialOpeningPage /></RouteGuard>} />
        <Route path="/finance/cash-movements" element={<RouteGuard permission="cash-movements.view"><CashMovementsPage /></RouteGuard>} />
      <Route path="/loans/new" element={<RouteGuard permission="loans.create"><NewLoanPage /></RouteGuard>} />
+      <Route path="/loans/cancelled" element={<RouteGuard permission="loans.view"><CancelledLoansPage /></RouteGuard>} />
+      <Route path="/loans/uncollectible-management" element={<RouteGuard permission="loans.view"><LoanManagementPage /></RouteGuard>} />
      <Route path="/loans/:id" element={<RouteGuard permission="loans.view"><LoanDetailPage /></RouteGuard>} />
       <Route path="/loans" element={<RouteGuard permission="loans.view"><LoansPage /></RouteGuard>} />
-      <Route path="/payments" element={<RouteGuard permission="payments.view"><PaymentsPage /></RouteGuard>} />
+       <Route path="/payments" element={<Navigate to="/payments/new" replace />} />
+       <Route path="/payments/new" element={<RouteGuard permission="payments.view"><PaymentsPage /></RouteGuard>} />
     <Route path="*" element={<Navigate to="/dashboard" replace />} />
   </Route></Routes></AuthProvider></BrowserRouter>;
 }

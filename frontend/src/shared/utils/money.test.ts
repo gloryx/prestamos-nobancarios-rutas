@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatCRC, formatCRCForPdf, formatMoneyInput, normalizeMoney, parseMoneyCents, parseMoneyInput } from './money';
+import { formatCRC, formatCRCAggregate, formatCRCForPdf, formatMoneyInput, normalizeMoney, parseMoneyCents, parseMoneyInput } from './money';
 
 describe('money utilities', () => {
   it('groups CRC amounts without Number precision loss', () => {
@@ -31,5 +31,12 @@ describe('money utilities', () => {
     expect(normalizeMoney('0')).toBe('0');
     expect(normalizeMoney('0,25')).toBe('0.25');
     expect(parseMoneyCents('1234567890123456.78')).toBe(123456789012345678n);
+  });
+  it('formats large read-only totals without weakening the 16-digit editable input limit', () => {
+    expect(formatCRCAggregate('30000000000000000.25')).toBe('₡30.000.000.000.000.000,25');
+    expect(formatCRCAggregate('0.00')).toBe('₡0,00');
+    expect(formatCRCAggregate('undefined')).toBe('₡0,00');
+    expect(formatCRCAggregate('100.999')).toBe('₡0,00');
+    expect(normalizeMoney('30000000000000000.25')).toBe('');
   });
 });

@@ -33,6 +33,18 @@ describe('payment workflow rules', () => {
     expect(isLastValidPayment('a', payments)).toBe(false);
   });
 
+  it('compares mixed date-only values by day and mixed creation timestamps by instant', () => {
+    const payments = [
+      { id: 'older-date', status: 'VALID' as const, paymentDate: '2026-09-29', createdAt: new Date('2026-10-01T00:00:00Z') },
+      { id: 'early-instant', status: 'VALID' as const, paymentDate: new Date(2026, 8, 30), createdAt: '2026-09-30T08:00:00+02:00' },
+      { id: 'a', status: 'VALID' as const, paymentDate: '2026-09-30', createdAt: new Date('2026-09-30T07:00:00Z') },
+      { id: 'b', status: 'VALID' as const, paymentDate: new Date(2026, 8, 30), createdAt: '2026-09-30T07:00:00.000Z' },
+    ];
+    expect(isLastValidPayment('b', payments)).toBe(true);
+    expect(isLastValidPayment('early-instant', payments)).toBe(false);
+    expect(payments[1].paymentDate).toBeInstanceOf(Date);
+  });
+
   it('creates stable fingerprints independent of object key order', () => {
     expect(paymentFingerprint({ amount: '10.00', loanId: 'loan', paymentDate: '2026-09-26', methodId: 'method' }))
       .toBe(paymentFingerprint({ methodId: 'method', paymentDate: '2026-09-26', loanId: 'loan', amount: '10.00' }));

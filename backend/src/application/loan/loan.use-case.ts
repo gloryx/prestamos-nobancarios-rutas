@@ -2,6 +2,7 @@ import { createHash } from 'crypto';
 import type { DataSource, EntityManager } from 'typeorm';
 import type { TransactionalCashMovementRecorder } from '../cash-movement/cash-movement.use-cases';
 import type { ActiveLoanListQuery, CreateLoanInput, LoanSortBy } from '../../domain/loan/loan.types';
+import { ACTIVE_LOAN_OVERDUE_SQL } from './active-loan-condition.sql';
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const MONEY = /^(?:0|[1-9]\d{0,15})(?:\.\d{1,2})?$/;
@@ -20,6 +21,7 @@ const LOAN_SORT_COLUMNS: Record<LoanSortBy, string> = {
   total: 'l.total_amount',
   frequency: 'LOWER(pf.name)',
   pending: PENDING_TOTAL_SQL,
+  condition: '"isOverdue"',
 };
 
 export class LoanValidationError extends Error {}
@@ -58,12 +60,17 @@ export class CreateLoanUseCase {
       if (!activeFrequency[0]) throw new LoanValidationError('La frecuencia no existe o está inactiva.');
       if (activeMethods.length !== new Set([input.preferredPaymentMethodId, input.disbursementPaymentMethodId]).size) throw new LoanValidationError('Las formas de pago deben existir y estar activas.');
       let loanId: string;
+      let loanInserted = false;
       try {
          const totalAmount = calculateLoanTotal(input.principal, input.interestAmount);
-         const loan = await manager.transaction(async (nestedManager) => nestedManager.query('INSERT INTO loans (customer_id, payment_frequency_id, preferred_payment_method_id, start_date, principal, interest_amount, total_amount, observations, status, created_by_user_id, idempotency_key, idempotency_fingerprint) VALUES ($1,$2,$3,$4,$5::numeric(18,2),$6::numeric(18,2),$7::numeric(18,2),$8,\'ACTIVE\',$9,$10,$11) RETURNING id', [input.customerId, input.paymentFrequencyId, input.preferredPaymentMethodId, input.startDate, input.principal, input.interestAmount, totalAmount, input.observations ?? null, actorId, input.idempotencyKey ?? null, fp]));
-        loanId = loan[0].id;
+         loanId = await manager.transaction(async (nestedManager) => {
+            const loan: { id: string; created_at: Date; created_by_user_id: string }[] = await nestedManager.query('INSERT INTO loans (customer_id, payment_frequency_id, preferred_payment_method_id, start_date, principal, interest_amount, total_amount, observations, status, created_by_user_id, idempotency_key, idempotency_fingerprint) VALUES ($1,$2,$3,$4,$5::numeric(18,2),$6::numeric(18,2),$7::numeric(18,2),$8,\'ACTIVE\',$9,$10,$11) RETURNING id, created_at, created_by_user_id', [input.customerId, input.paymentFrequencyId, input.preferredPaymentMethodId, input.startDate, input.principal, input.interestAmount, totalAmount, input.observations ?? null, actorId, input.idempotencyKey ?? null, fp]);
+           loanInserted = true;
+            await nestedManager.query('INSERT INTO loan_status_history (loan_id, event_sequence, event_kind, from_status, to_status, changed_at, changed_by_user_id, reason, payment_id, payment_annulment_id) VALUES ($1,1,\'CREATED\',NULL,\'ACTIVE\',$2,$3,NULL,NULL,NULL)', [loan[0].id, loan[0].created_at, loan[0].created_by_user_id]);
+           return loan[0].id;
+         });
       } catch (error) {
-        if (input.idempotencyKey && (error as { code?: string }).code === '23505') {
+        if (!loanInserted && input.idempotencyKey && (error as { code?: string; constraint?: string }).code === '23505' && (error as { constraint?: string }).constraint === 'UQ_loans_idempotency') {
           const existing = await manager.query('SELECT id, idempotency_fingerprint AS "fingerprint" FROM loans WHERE idempotency_key = $1 FOR SHARE', [input.idempotencyKey]);
           if (existing[0]?.fingerprint === fp) return this.detail(manager, existing[0].id);
           throw new LoanConflictError('La clave de idempotencia ya fue utilizada con otros datos.');
@@ -77,13 +84,22 @@ export class CreateLoanUseCase {
     });
   }
 
-  async detail(manager: Pick<EntityManager, 'query'>, id: string) {
-     const rows = await manager.query(`SELECT l.id, l.loan_number AS "loanNumber", l.status, l.start_date AS "startDate", l.principal, l.interest_amount AS "interestAmount", l.total_amount AS "totalAmount", l.observations, l.updated_at AS "updatedAt", c.id AS "customerId", concat_ws(' ',c.first_name,c.middle_name,c.first_last_name,c.second_last_name) AS "customerName", c.identification, pf.name AS "frequencyName", pf.interval_unit AS "intervalUnit", pf.interval_value AS "intervalValue", u.full_name AS "createdByName", pm.name AS "preferredPaymentMethod", dm.name AS "disbursementPaymentMethod", COALESCE((SELECT SUM(pe.pending_amount) FROM payment_plan_entries pe WHERE pe.loan_id=l.id AND pe.pending_amount > 0),0)::numeric(18,2)::text AS "pendingTotal" FROM loans l JOIN customers c ON c.id=l.customer_id JOIN payment_frequencies pf ON pf.id=l.payment_frequency_id JOIN payment_methods pm ON pm.id=l.preferred_payment_method_id JOIN loan_disbursements d ON d.loan_id=l.id JOIN payment_methods dm ON dm.id=d.payment_method_id JOIN users u ON u.id=l.created_by_user_id WHERE l.id=$1`, [id]);
+  async detail(manager: Pick<EntityManager, 'query'>, id: string, includeOperational = false) {
+     const rows = await manager.query(`SELECT l.id, l.loan_number AS "loanNumber", l.status, l.start_date AS "startDate", l.principal, l.interest_amount AS "interestAmount", l.total_amount AS "totalAmount", l.observations, l.updated_at AS "updatedAt", c.id AS "customerId", concat_ws(' ',c.first_name,c.middle_name,c.first_last_name,c.second_last_name) AS "customerName", c.identification, pf.id AS "paymentFrequencyId", pf.name AS "frequencyName", pf.interval_unit AS "intervalUnit", pf.interval_value AS "intervalValue", u.full_name AS "createdByName", pm.id AS "preferredPaymentMethodId", pm.name AS "preferredPaymentMethod", dm.name AS "disbursementPaymentMethod", COALESCE((SELECT SUM(pe.pending_amount) FROM payment_plan_entries pe WHERE pe.loan_id=l.id AND pe.pending_amount > 0),0)::numeric(18,2)::text AS "pendingTotal" FROM loans l JOIN customers c ON c.id=l.customer_id JOIN payment_frequencies pf ON pf.id=l.payment_frequency_id JOIN payment_methods pm ON pm.id=l.preferred_payment_method_id JOIN loan_disbursements d ON d.loan_id=l.id JOIN payment_methods dm ON dm.id=d.payment_method_id JOIN users u ON u.id=l.created_by_user_id WHERE l.id=$1`, [id]);
     if (!rows[0]) throw new LoanValidationError('El préstamo no existe.');
-    const plan = await manager.query('SELECT sequence, due_date AS "dueDate", pending_amount AS "pendingAmount" FROM payment_plan_entries WHERE loan_id=$1 ORDER BY sequence', [id]);
+    const plan = await manager.query(includeOperational
+      ? 'SELECT id, sequence, due_date::text AS "dueDate", pending_amount AS "pendingAmount" FROM payment_plan_entries WHERE loan_id=$1 ORDER BY sequence'
+      : 'SELECT sequence, due_date AS "dueDate", pending_amount AS "pendingAmount" FROM payment_plan_entries WHERE loan_id=$1 ORDER BY sequence', [id]);
     return { ...rows[0], plan };
   }
-  get(id: string) { return this.detail(this.dataSource.manager, id); }
+  async get(id: string) {
+    return this.dataSource.transaction('REPEATABLE READ', async (manager) => {
+      const loan = await this.detail(manager, id, true);
+      const validPayments: Array<{ id: string; amount: string; paymentDate: string; status: 'VALID' }> = await manager.query('SELECT id, amount::text AS amount, payment_date::text AS "paymentDate", status FROM payments WHERE loan_id=$1 AND status=\'VALID\' ORDER BY payment_date, id', [id]);
+      const paid = validPayments.reduce((sum, payment) => sum + cents(payment.amount), 0n);
+      return { ...loan, financialBalance: moneyFromCents(cents(loan.totalAmount) - paid), validPayments };
+    });
+  }
 }
 
 export class ListLoansUseCase {
@@ -95,7 +111,7 @@ export class ListLoansUseCase {
      const offset = (query.page - 1) * query.pageSize; const listParams = [...params, query.pageSize, offset];
      const sortColumn = LOAN_SORT_COLUMNS[query.sortBy ?? 'number']; const direction = (query.sortOrder ?? 'desc').toUpperCase();
      const orderBy = query.sortBy === 'number' || !query.sortBy ? `ORDER BY l.loan_number ${direction}, l.id ASC` : `ORDER BY ${sortColumn} ${direction}, l.loan_number DESC, l.id ASC`;
-     const rows = await this.dataSource.query(`SELECT l.id,l.loan_number AS "loanNumber",l.start_date AS "startDate",l.principal,l.interest_amount AS "interestAmount",l.total_amount AS "totalAmount", concat_ws(' ',c.first_name,c.middle_name,c.first_last_name,c.second_last_name) AS "customerName",c.identification,pf.name AS "frequencyName", ${PENDING_TOTAL_SQL}::text AS "pendingTotal" FROM loans l JOIN customers c ON c.id=l.customer_id JOIN payment_frequencies pf ON pf.id=l.payment_frequency_id WHERE ${conditions.join(' AND ')} ${orderBy} LIMIT $${listParams.length - 1} OFFSET $${listParams.length}`, listParams);
+      const rows = await this.dataSource.query(`SELECT l.id,l.loan_number AS "loanNumber",l.start_date AS "startDate",l.principal,l.interest_amount AS "interestAmount",l.total_amount AS "totalAmount", concat_ws(' ',c.first_name,c.middle_name,c.first_last_name,c.second_last_name) AS "customerName",c.identification,pf.name AS "frequencyName", ${PENDING_TOTAL_SQL}::text AS "pendingTotal", ${ACTIVE_LOAN_OVERDUE_SQL} AS "isOverdue" FROM loans l JOIN customers c ON c.id=l.customer_id JOIN payment_frequencies pf ON pf.id=l.payment_frequency_id WHERE ${conditions.join(' AND ')} ${orderBy} LIMIT $${listParams.length - 1} OFFSET $${listParams.length}`, listParams);
     const count = await this.dataSource.query(`SELECT COUNT(*)::int AS total FROM loans l JOIN customers c ON c.id=l.customer_id WHERE ${conditions.join(' AND ')}`, params);
     return { items: rows, total: count[0]?.total ?? 0, page: query.page, pageSize: query.pageSize };
   }

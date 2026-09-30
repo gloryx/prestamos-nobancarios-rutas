@@ -1,7 +1,16 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import * as XLSX from 'xlsx';
 import type { CashMovement, CashMovementSummary } from '../../domain/entities/cash-movement';
-import { buildCashMovementWorkbook } from './cash-movement-report.service';
+import { buildCashMovementWorkbook, generateCashMovementReport } from './cash-movement-report.service';
+
+const pdf = vi.hoisted(() => ({ setFontSize: vi.fn(), text: vi.fn(), save: vi.fn(), autoTable: vi.fn() }));
+vi.mock('jspdf', () => ({ jsPDF: class {
+  lastAutoTable = { finalY: 55 };
+  setFontSize = pdf.setFontSize;
+  text = pdf.text;
+  save = pdf.save;
+} }));
+vi.mock('jspdf-autotable', () => ({ autoTable: pdf.autoTable }));
 
 const summary: CashMovementSummary = { inflows: '1500.00', outflows: '250.00', net: '1250.00', currentAvailable: '1250.00', openingDate: '2026-09-01' };
 const items: CashMovement[] = [
@@ -36,5 +45,28 @@ describe('cash movement Excel workbook', () => {
     const workbook = buildCashMovementWorkbook(XLSX, [items[1]], summary);
     const sheet = workbook.Sheets['Movimientos de caja'];
     expect(sheet.D11.v).toBe('');
+  });
+});
+
+describe('cash movement PDF', () => {
+  it('sends PDF-safe CRC amounts with ASCII direction signs to the table and summary', async () => {
+    const reportItems: CashMovement[] = [
+      { ...items[0], amount: '70000.00' },
+      { ...items[1], amount: '160000.00' },
+      { ...items[0], id: 'internal-id-3', amount: '1320000.00', loanNumber: undefined },
+    ];
+    const reportSummary: CashMovementSummary = { ...summary, inflows: '1390000.00', outflows: '160000.00', net: '1230000.00' };
+
+    await generateCashMovementReport(reportItems, reportSummary, '2026-09-01', '2026-09-30');
+
+    expect(pdf.autoTable).toHaveBeenCalledTimes(1);
+    const { body, startY } = pdf.autoTable.mock.calls[0][1];
+    expect(startY).toBe(28);
+    expect(body.map((row: string[]) => row[4])).toEqual(['+¢70.000,00', '-¢160.000,00', '+¢1.320.000,00']);
+    expect(body[0][2]).toBe('Desembolso de préstamo · Préstamo #42');
+    expect(body[2][2]).toBe('Desembolso de préstamo');
+    expect(pdf.text).toHaveBeenCalledWith('Entradas: ¢1.390.000,00   Salidas: ¢160.000,00   Neto: ¢1.230.000,00', 10, 65);
+    expect(JSON.stringify([body, pdf.text.mock.calls])).not.toContain('₡');
+    expect(pdf.save).toHaveBeenCalledWith(`movimientos-caja-${new Date().toISOString().slice(0, 10)}.pdf`);
   });
 });

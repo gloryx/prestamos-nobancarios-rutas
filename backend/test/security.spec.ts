@@ -2,13 +2,17 @@ import { ExecutionContext, ForbiddenException, UnauthorizedException } from '@ne
 import { Reflector } from '@nestjs/core';
 import { AuthenticationGuard } from '../src/presentation/security/auth.guard';
 import { PermissionGuard } from '../src/presentation/security/permission.guard';
-import { PERMISSIONS_KEY } from '../src/presentation/security/security.decorators';
+import { PERMISSIONS_KEY, PUBLIC_KEY } from '../src/presentation/security/security.decorators';
 import { CustomerController } from '../src/presentation/customer/customer.controller';
 import { PaymentMethodController } from '../src/presentation/payment-method/payment-method.controller';
 import { PaymentFrequencyController } from '../src/presentation/payment-frequency/payment-frequency.controller';
 import { RouteController } from '../src/presentation/route/route.controller';
-import { PERMISSIONS } from '../src/shared/constants/security';
+import { COLLECTION_MANAGER_DEFAULTS, COLLECTOR_DEFAULTS, PERMISSIONS } from '../src/shared/constants/security';
 import { SecurityUnauthorizedError } from '../src/application/security/security.errors';
+import { AuthController } from '../src/presentation/security/security.controller';
+import { PaymentController } from '../src/presentation/payment/payment.controller';
+import { SecurityService } from '../src/application/security/security.service';
+import { SESSION_COOKIE } from '../src/shared/constants/security';
 
 const context = (handler: object, request: Record<string, unknown>): ExecutionContext => ({ getHandler: () => handler, getClass: () => Object, switchToHttp: () => ({ getRequest: () => request }) } as unknown as ExecutionContext);
 const identity = (permissions: string[], isSuperAdmin = false) => ({ id: 'u', username: 'u', fullName: 'U', role: { id: 'r', code: 'R', name: 'R', isSuperAdmin }, permissions, sessionId: 's' });
@@ -37,6 +41,41 @@ describe('security guards and permission metadata', () => {
     expect(() => guard.canActivate(context(handler, request))).toThrow(ForbiddenException);
   });
 
+  it('authenticates /auth/me for non-superadmins without making it public or granting payment access', async () => {
+    const manager = identity(['payments.view']);
+    manager.role.code = 'COLLECTION_MANAGER';
+    const authenticate = jest.fn().mockImplementation(async (token?: string) => {
+      if (!token) throw new SecurityUnauthorizedError();
+      return manager;
+    });
+    const auth = new AuthenticationGuard(new Reflector(), { authenticate } as never);
+    const permissions = new PermissionGuard(new Reflector());
+    const request: Record<string, unknown> = { headers: { cookie: `${SESSION_COOKIE}=valid-session` } };
+    const me = context(AuthController.prototype.me, request);
+    expect(Reflect.getMetadata(PERMISSIONS_KEY, AuthController.prototype.me)).toEqual([]);
+    expect(Reflect.getMetadata(PUBLIC_KEY, AuthController.prototype.me)).toBeUndefined();
+    expect(await auth.canActivate(me)).toBe(true);
+    expect(authenticate).toHaveBeenCalledWith('valid-session');
+    expect(permissions.canActivate(me)).toBe(true);
+    expect(permissions.canActivate(context(AuthController.prototype.logout, request))).toBe(true);
+    expect(permissions.canActivate(context(AuthController.prototype.change, request))).toBe(true);
+    const profile = new SecurityService({} as never, {} as never, {} as never, 12).profile(manager);
+    expect(profile.permissions).toEqual(['payments.view']);
+    const loans = context(PaymentController.prototype.loans, request);
+    expect(permissions.canActivate(loans)).toBe(true);
+    const collector = identity([]);
+    collector.role.code = 'COLLECTOR';
+    request.currentUser = collector;
+    expect(permissions.canActivate(me)).toBe(true);
+    expect(() => permissions.canActivate(loans)).toThrow(ForbiddenException);
+    expect(() => permissions.canActivate(context(() => undefined, request))).toThrow(ForbiddenException);
+    request.currentUser = identity([], true);
+    expect(permissions.canActivate(loans)).toBe(true);
+    const unauthenticated = context(AuthController.prototype.me, { headers: {} });
+    await expect(auth.canActivate(unauthenticated)).rejects.toBeInstanceOf(UnauthorizedException);
+    expect(() => permissions.canActivate(unauthenticated)).toThrow(ForbiddenException);
+  });
+
   it('registers the exact customer and catalog permission codes', () => {
     const codes = new Set(PERMISSIONS.map(([code]) => code));
     expect(codes).toEqual(new Set([
@@ -46,7 +85,7 @@ describe('security guards and permission metadata', () => {
        'customers.view', 'customers.create', 'customers.update', 'customers.status.change', 'customers.summary.view', 'customers.files.view', 'customers.export', 'customers.assigned.view', 'customers.site.view', 'customers.site.capture', 'customers.site.replace', 'customers.site.replace.authorize',
        'users.view', 'users.create', 'users.update', 'users.status.change', 'users.password.reset', 'users.role.assign', 'roles.view', 'roles.permissions.update',
        'collectors.view', 'collectors.create', 'collectors.update', 'collectors.status.change', 'collectors.user.assign', 'collectors.photo.view',
-       'financial-opening.view', 'financial-opening.perform', 'cash-movements.view', 'cash-movements.create', 'cash-movements.reverse', 'cash-movements.export', 'loans.view', 'loans.create', 'loans.export', 'payments.view', 'payments.create', 'payments.annul', 'payments.plan.customize',
+          'financial-opening.view', 'financial-opening.perform', 'cash-movements.view', 'cash-movements.create', 'cash-movements.reverse', 'cash-movements.export', 'loans.view', 'loans.create', 'loans.update', 'loans.export', 'loans.status.uncollectible', 'loans.status.reactivate', 'payments.view', 'payments.create', 'payments.annul', 'payments.plan.customize',
     ]));
     expect(Reflect.getMetadata(PERMISSIONS_KEY, CustomerController.prototype.list)).toEqual(['customers.view']);
     expect(Reflect.getMetadata(PERMISSIONS_KEY, CustomerController.prototype.summary)).toEqual(['customers.summary.view']);
@@ -57,6 +96,18 @@ describe('security guards and permission metadata', () => {
     expect(Reflect.getMetadata(PERMISSIONS_KEY, PaymentMethodController.prototype.updateOne)).toEqual(['payment-methods.update']);
     expect(Reflect.getMetadata(PERMISSIONS_KEY, PaymentFrequencyController.prototype.changeStatus)).toEqual(['payment-frequencies.status.change']);
     expect(Reflect.getMetadata(PERMISSIONS_KEY, RouteController.prototype.createOne)).toEqual(['routes.create']);
+  });
+
+  it('keeps loans.update in the dynamic catalog without granting a role access or exposing a PATCH route', () => {
+    expect(PERMISSIONS.filter(([code]) => code === 'loans.update')).toEqual([['loans.update', 'Editar préstamos', 'PRÉSTAMOS']]);
+    expect(COLLECTION_MANAGER_DEFAULTS).not.toContain('loans.update');
+    expect(COLLECTOR_DEFAULTS).not.toContain('loans.update');
+    const guard = new PermissionGuard(new Reflector());
+    const futureHandler = () => undefined;
+    Reflect.defineMetadata(PERMISSIONS_KEY, ['loans.update'], futureHandler);
+    expect(() => guard.canActivate(context(futureHandler, { currentUser: identity(['loans.view']) }))).toThrow(ForbiddenException);
+    expect(guard.canActivate(context(futureHandler, { currentUser: identity(['loans.update']) }))).toBe(true);
+    expect(guard.canActivate(context(futureHandler, { currentUser: identity([], true) }))).toBe(true);
   });
 });
 

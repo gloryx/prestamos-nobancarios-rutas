@@ -3,7 +3,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import * as Joi from 'joi';
 import { HealthController } from './presentation/health/health.controller';
-import { CantonOrmEntity, CollectorOrmEntity, CustomerAddressOrmEntity, CustomerOrmEntity, DistrictOrmEntity, PaymentFrequencyOrmEntity, PaymentMethodOrmEntity, ProvinceOrmEntity, RouteOrmEntity, RoleOrmEntity, PermissionOrmEntity, RolePermissionOrmEntity, UserOrmEntity, UserSessionOrmEntity, CustomerRouteAssignmentOrmEntity, CollectorRouteAssignmentOrmEntity, CustomerSiteUpdateAuthorizationOrmEntity, FinancialOpeningOrmEntity, CashMovementOrmEntity, LoanOrmEntity, LoanDisbursementOrmEntity, PaymentPlanEntryOrmEntity, PaymentOrmEntity, PaymentApplicationOrmEntity, PaymentAnnulmentOrmEntity } from './infrastructure/database/typeorm/entities';
+import { CantonOrmEntity, CollectorOrmEntity, CustomerAddressOrmEntity, CustomerOrmEntity, DistrictOrmEntity, PaymentFrequencyOrmEntity, PaymentMethodOrmEntity, ProvinceOrmEntity, RouteOrmEntity, RoleOrmEntity, PermissionOrmEntity, RolePermissionOrmEntity, UserOrmEntity, UserSessionOrmEntity, CustomerRouteAssignmentOrmEntity, CollectorRouteAssignmentOrmEntity, CustomerSiteUpdateAuthorizationOrmEntity, FinancialOpeningOrmEntity, CashMovementOrmEntity, LoanOrmEntity, LoanDisbursementOrmEntity, PaymentPlanEntryOrmEntity, LoanEditOperationOrmEntity, LoanStatusHistoryOrmEntity, PaymentOrmEntity, PaymentApplicationOrmEntity, PaymentAnnulmentOrmEntity } from './infrastructure/database/typeorm/entities';
 import { TerritorialModule } from './presentation/territorial/territorial.module';
 import { PaymentMethodModule } from './presentation/payment-method/payment-method.module';
 import { PaymentFrequencyModule } from './presentation/payment-frequency/payment-frequency.module';
@@ -45,7 +45,7 @@ import { PaymentModule } from './presentation/payment/payment.module';
         password: config.getOrThrow<string>('DB_PASSWORD'),
         database: config.getOrThrow<string>('DB_DATABASE'),
          autoLoadEntities: true,
-             entities: [ProvinceOrmEntity, CantonOrmEntity, DistrictOrmEntity, PaymentMethodOrmEntity, PaymentFrequencyOrmEntity, RouteOrmEntity, CustomerOrmEntity, CustomerAddressOrmEntity, RoleOrmEntity, PermissionOrmEntity, RolePermissionOrmEntity, UserOrmEntity, UserSessionOrmEntity, CustomerRouteAssignmentOrmEntity, CollectorRouteAssignmentOrmEntity, CustomerSiteUpdateAuthorizationOrmEntity, CollectorOrmEntity, FinancialOpeningOrmEntity, CashMovementOrmEntity, LoanOrmEntity, LoanDisbursementOrmEntity, PaymentPlanEntryOrmEntity, PaymentOrmEntity, PaymentApplicationOrmEntity, PaymentAnnulmentOrmEntity],
+               entities: [ProvinceOrmEntity, CantonOrmEntity, DistrictOrmEntity, PaymentMethodOrmEntity, PaymentFrequencyOrmEntity, RouteOrmEntity, CustomerOrmEntity, CustomerAddressOrmEntity, RoleOrmEntity, PermissionOrmEntity, RolePermissionOrmEntity, UserOrmEntity, UserSessionOrmEntity, CustomerRouteAssignmentOrmEntity, CollectorRouteAssignmentOrmEntity, CustomerSiteUpdateAuthorizationOrmEntity, CollectorOrmEntity, FinancialOpeningOrmEntity, CashMovementOrmEntity, LoanOrmEntity, LoanDisbursementOrmEntity, PaymentPlanEntryOrmEntity, LoanEditOperationOrmEntity, LoanStatusHistoryOrmEntity, PaymentOrmEntity, PaymentApplicationOrmEntity, PaymentAnnulmentOrmEntity],
         synchronize: false,
       }),
     }),

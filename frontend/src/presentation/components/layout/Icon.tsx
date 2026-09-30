@@ -1,7 +1,7 @@
 import type { ReactElement } from 'react';
 import type { NavigationIcon } from '../../navigation/navigationConfig';
 
-export type TableActionIcon = NavigationIcon | 'edit' | 'view' | 'lock' | 'unlock' | 'download' | 'key' | 'photo' | 'user-link' | 'reverse' | 'sort' | 'sort-asc' | 'sort-desc';
+export type TableActionIcon = NavigationIcon | 'edit' | 'view' | 'lock' | 'unlock' | 'download' | 'key' | 'photo' | 'user-link' | 'reverse' | 'delete' | 'sort' | 'sort-asc' | 'sort-desc';
 type IconProps = { name: TableActionIcon };
 
 export function Icon({ name }: IconProps): ReactElement {
@@ -11,6 +11,7 @@ export function Icon({ name }: IconProps): ReactElement {
    if (name === 'dashboard') return <svg {...common}><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></svg>;
    if (name === 'users') return <svg {...common}><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" /></svg>;
    if (name === 'edit') return <svg {...common}><path d="m4 16 10-10 4 4L8 20H4v-4Z" /><path d="m13 7 4 4M14 20h6" /></svg>;
+   if (name === 'delete') return <svg {...common}><path d="M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7m4 4v5m4-5v5" /></svg>;
    if (name === 'view') return <svg {...common}><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z" /><circle cx="12" cy="12" r="2.5" /></svg>;
     if (name === 'download') return <svg {...common}><path d="M12 3v12M7 10l5 5 5-5M4 21h16" /></svg>;
     if (name === 'key') return <svg {...common}><circle cx="8" cy="15" r="3" /><path d="m10.5 12.5 8-8M15 7l2 2M17 5l2 2" /></svg>;

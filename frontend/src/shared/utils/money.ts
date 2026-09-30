@@ -67,6 +67,13 @@ export function formatCRC(value: string): string {
   return `₡${grouped},${decimalPart.padEnd(2, '0')}`;
 }
 
+/** Formats read-only aggregate decimals without the input control's 16-digit limit. */
+export function formatCRCAggregate(value: string): string {
+  if (typeof value !== 'string' || !/^(?:0|[1-9]\d*)(?:\.\d{1,2})?$/.test(value)) return '₡0,00';
+  const [integer, fraction = ''] = value.split('.');
+  return `₡${integer.replace(/\B(?=(\d{3})+(?!\d))/g, '.')},${fraction.padEnd(2, '0')}`;
+}
+
 /** Formats CRC for PDF presentation using the same centralized money rules. */
 export function formatCRCForPdf(value: string): string {
   return formatCRC(value).replace(/^₡/, '¢');

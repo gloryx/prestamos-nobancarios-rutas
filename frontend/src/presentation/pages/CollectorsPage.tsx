@@ -1,7 +1,8 @@
-import { useEffect, useState, type ReactElement } from 'react';
+import { useEffect, useRef, useState, type ReactElement } from 'react';
 import { collectorUseCases } from '../../app/collectors';
 import type { Collector, EligibleCollectorUser } from '../../domain/entities/collector';
-import type { CollectorInput, CollectorUpdateInput } from '../../application/ports/collector.repository';
+import type { CollectorInput, CollectorListQuery, CollectorUpdateInput } from '../../application/ports/collector.repository';
+import { generateCollectorReport } from '../../infrastructure/reports/collector-report.service';
 import { CompactImageUploader } from '../components/CompactImageUploader';
 import { useAuth } from '../hooks/auth-context';
 import { collectorUserLabel } from '../helpers/collector-user-label';
@@ -16,9 +17,33 @@ export function CollectorsPage(): ReactElement {
   const { can } = useAuth();
   const [items, setItems] = useState<Collector[]>([]); const [total, setTotal] = useState(0); const [query, setQuery] = useState({ search: '', status: 'ACTIVE' as 'ACTIVE' | 'INACTIVE' | 'ALL', page: 1, pageSize: 10 as 10 | 20 | 50 });
   const [loading, setLoading] = useState(true); const [error, setError] = useState(''); const [modal, setModal] = useState<Modal>(null); const [selected, setSelected] = useState<Collector>(); const [form, setForm] = useState<Form>(emptyForm); const [saving, setSaving] = useState(false); const [formError, setFormError] = useState(''); const [users, setUsers] = useState<EligibleCollectorUser[]>([]); const [photoUrl, setPhotoUrl] = useState('');
+  const [appliedFilters, setAppliedFilters] = useState<Pick<CollectorListQuery, 'search' | 'status'> | null>(null);
+  const [exporting, setExporting] = useState(false); const [exportError, setExportError] = useState('');
+  const exportingRef = useRef(false);
 
-  const load = async () => { setLoading(true); setError(''); try { const result = await collectorUseCases.list.execute(query); setItems(result.items); setTotal(result.total); } catch (cause) { setError(cause instanceof Error ? cause.message : 'No se pudieron cargar los cobradores.'); } finally { setLoading(false); } };
+  const load = async () => { const filters = { search: query.search, status: query.status }; setLoading(true); setError(''); try { const result = await collectorUseCases.list.execute(query); setItems(result.items); setTotal(result.total); setAppliedFilters(filters); } catch (cause) { setError(cause instanceof Error ? cause.message : 'No se pudieron cargar los cobradores.'); } finally { setLoading(false); } };
   useEffect(() => { void load(); }, [query.status, query.page, query.pageSize]);
+  const exportCollectors = async () => {
+    if (!can('collectors.view') || !appliedFilters || exportingRef.current) return;
+    exportingRef.current = true;
+    setExporting(true); setExportError('');
+    try {
+      const filters = { ...appliedFilters };
+      const first = await collectorUseCases.list.execute({ ...filters, page: 1, pageSize: 50 });
+      const records: Collector[] = [...first.items];
+      for (let page = 2; page <= first.pages; page += 1) {
+        const next = await collectorUseCases.list.execute({ ...filters, page, pageSize: 50 });
+        records.push(...next.items);
+      }
+      if (!records.length) setExportError('No hay cobradores para exportar.');
+      else await generateCollectorReport(records, filters);
+    } catch {
+      setExportError('No fue posible exportar los cobradores a PDF.');
+    } finally {
+      exportingRef.current = false;
+      setExporting(false);
+    }
+  };
   const update = (patch: Partial<Form>) => setForm((current) => ({ ...current, ...patch }));
   const openCreate = async () => { if (!can('collectors.create')) return; setSelected(undefined); setForm({ ...emptyForm }); setFormError(''); if (can('collectors.user.assign')) { try { setUsers(await collectorUseCases.eligibleUsers.execute()); } catch (cause) { setFormError(cause instanceof Error ? cause.message : 'No se pudieron cargar los usuarios elegibles.'); } } setModal('create'); };
   const openEdit = async (item: Collector) => { if (!can('collectors.update')) return; setFormError(''); try { const value = await collectorUseCases.get.execute(item.id); setSelected(value); setForm({ identification: value.identification, firstName: value.firstName, firstLastName: value.firstLastName, secondLastName: value.secondLastName ?? '', phone: value.phone, alternativePhone: value.alternativePhone ?? '', email: value.email ?? '', birthDate: value.birthDate, address: value.address, userId: '' }); setModal('edit'); } catch (cause) { setError(cause instanceof Error ? cause.message : 'No se pudo cargar el cobrador.'); } };
@@ -28,9 +53,9 @@ export function CollectorsPage(): ReactElement {
   const changeStatus = async () => { if (!selected) return; setSaving(true); try { await collectorUseCases.changeStatus.execute(selected.id, !selected.isActive); setModal(null); await load(); } catch (cause) { setFormError(cause instanceof Error ? cause.message : 'No fue posible actualizar el estado.'); } finally { setSaving(false); } };
   const viewPhoto = async (item: Collector) => { try { const blob = await collectorUseCases.photo.execute(item.id); setPhotoUrl(URL.createObjectURL(blob)); } catch (cause) { setError(cause instanceof Error ? cause.message : 'No se pudo cargar la fotografía.'); } };
 
-  return <section className="collector-admin"><div className="payment-heading"><div><p className="eyebrow">GESTIÓN</p><h2>Cobradores</h2></div>{can('collectors.create') && <button className="button button--primary" type="button" onClick={openCreate}>Nuevo cobrador</button>}</div>
+  return <section className="collector-admin"><div className="payment-heading"><div><p className="eyebrow">GESTIÓN</p><h2>Cobradores</h2></div><div className="payment-actions">{can('collectors.create') && <button className="button button--primary" type="button" onClick={openCreate}>Nuevo cobrador</button>}{can('collectors.view') && <button className="button button--secondary" type="button" disabled={exporting || !appliedFilters} aria-busy={exporting} onClick={() => void exportCollectors()}>{exporting ? 'Exportando…' : 'Exportar PDF'}</button>}</div></div>
     <div className="payment-toolbar"><label>Buscar<input value={query.search} onChange={(event) => setQuery({ ...query, search: event.target.value, page: 1 })} onKeyDown={(event) => { if (event.key === 'Enter') void load(); }} placeholder="Identificación, nombre o teléfono" /></label><label>Estado<select value={query.status} onChange={(event) => setQuery({ ...query, status: event.target.value as typeof query.status, page: 1 })}><option value="ACTIVE">Activos</option><option value="INACTIVE">Inactivos</option><option value="ALL">Todos</option></select></label><button className="button button--secondary" type="button" onClick={() => void load()}>Buscar</button></div>
-    {error && <div className="catalog-message catalog-message--error" role="alert">{error}</div>}{loading ? <div className="catalog-message">Cargando cobradores…</div> : !items.length ? <div className="catalog-message">No se encontraron cobradores.</div> : <div className="catalog-table-wrap"><table className="catalog-table collector-table"><thead><tr><th>Identificación</th><th>Cobrador</th><th>Teléfono</th><th>Usuario</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>{items.map((item) => { const actions = visibleTableActions(collectorActionDefinitions(item.isActive, Boolean(item.photoFileKey), Boolean(item.userId)), can).map((action) => ({ ...action, onClick: action.key === 'photo' ? () => void viewPhoto(item) : action.key === 'edit' ? () => void openEdit(item) : action.key === 'user' ? () => void openUsers(item) : () => { setSelected(item); setFormError(''); setModal('status'); } })); return <tr key={item.id}><td>{item.identification}</td><td>{item.firstName} {item.firstLastName} {item.secondLastName ?? ''}</td><td>{item.phone}</td><td>{collectorUserLabel(item)}</td><td><span className={`status-badge ${item.isActive ? 'status-badge--active' : 'status-badge--inactive'}`}>{item.isActive ? 'Activo' : 'Inactivo'}</span></td><td><TableActions actions={actions} ariaLabel={`Acciones de ${item.firstName} ${item.firstLastName}`} /></td></tr>; })}</tbody></table></div>}
+    {error && <div className="catalog-message catalog-message--error" role="alert">{error}</div>}{exportError && <div className="catalog-message catalog-message--error" role="alert">{exportError}</div>}{loading ? <div className="catalog-message">Cargando cobradores…</div> : !items.length ? <div className="catalog-message">No se encontraron cobradores.</div> : <div className="catalog-table-wrap"><table className="catalog-table collector-table"><thead><tr><th>Identificación</th><th>Cobrador</th><th>Teléfono</th><th>Usuario</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>{items.map((item) => { const actions = visibleTableActions(collectorActionDefinitions(item.isActive, Boolean(item.photoFileKey), Boolean(item.userId)), can).map((action) => ({ ...action, onClick: action.key === 'photo' ? () => void viewPhoto(item) : action.key === 'edit' ? () => void openEdit(item) : action.key === 'user' ? () => void openUsers(item) : () => { setSelected(item); setFormError(''); setModal('status'); } })); return <tr key={item.id}><td>{item.identification}</td><td>{item.firstName} {item.firstLastName} {item.secondLastName ?? ''}</td><td>{item.phone}</td><td>{collectorUserLabel(item)}</td><td><span className={`status-badge ${item.isActive ? 'status-badge--active' : 'status-badge--inactive'}`}>{item.isActive ? 'Activo' : 'Inactivo'}</span></td><td><TableActions actions={actions} ariaLabel={`Acciones de ${item.firstName} ${item.firstLastName}`} /></td></tr>; })}</tbody></table></div>}
     <div className="security-pagination"><button className="button button--secondary" disabled={query.page <= 1} onClick={() => setQuery({ ...query, page: query.page - 1 })}>Anterior</button><span>Página {query.page} · {total} cobradores</span><label>Mostrar<select value={query.pageSize} onChange={(event) => setQuery({ ...query, page: 1, pageSize: Number(event.target.value) as 10 | 20 | 50 })}><option value="10">10</option><option value="20">20</option><option value="50">50</option></select></label><button className="button button--secondary" disabled={query.page * query.pageSize >= total} onClick={() => setQuery({ ...query, page: query.page + 1 })}>Siguiente</button></div>
     {modal && <CollectorDialog modal={modal} selected={selected} form={form} update={update} users={users} allowUser={can('collectors.user.assign')} saving={saving} error={formError} close={() => setModal(null)} save={modal === 'status' ? changeStatus : modal === 'user' ? () => void linkUser(form.userId) : save} />}{photoUrl && <button className="image-modal" type="button" onClick={() => { URL.revokeObjectURL(photoUrl); setPhotoUrl(''); }}><img src={photoUrl} alt="Foto del cobrador" /></button>}</section>;
 }

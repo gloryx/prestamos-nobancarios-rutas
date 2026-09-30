@@ -9,7 +9,7 @@ export const PERMISSIONS = [
   ['collectors.view', 'Consultar cobradores', 'COBRADORES'], ['collectors.create', 'Crear cobradores', 'COBRADORES'], ['collectors.update', 'Editar cobradores', 'COBRADORES'], ['collectors.status.change', 'Cambiar estado de cobradores', 'COBRADORES'], ['collectors.user.assign', 'Vincular usuarios a cobradores', 'COBRADORES'], ['collectors.photo.view', 'Consultar fotografías de cobradores', 'COBRADORES'],
   ['financial-opening.view', 'Consultar apertura financiera', 'Configuración financiera'], ['financial-opening.perform', 'Realizar apertura financiera', 'Configuración financiera'],
   ['cash-movements.view', 'Consultar movimientos de caja', 'FINANZAS'], ['cash-movements.create', 'Crear movimientos de caja', 'FINANZAS'], ['cash-movements.reverse', 'Reversar movimientos de caja', 'FINANZAS'], ['cash-movements.export', 'Exportar movimientos de caja', 'FINANZAS'],
-  ['loans.view', 'Consultar préstamos', 'PRÉSTAMOS'], ['loans.create', 'Crear préstamos', 'PRÉSTAMOS'], ['loans.export', 'Exportar préstamos', 'PRÉSTAMOS'],
+  ['loans.view', 'Consultar préstamos', 'PRÉSTAMOS'], ['loans.create', 'Crear préstamos', 'PRÉSTAMOS'], ['loans.update', 'Editar préstamos', 'PRÉSTAMOS'], ['loans.export', 'Exportar préstamos', 'PRÉSTAMOS'], ['loans.status.uncollectible', 'Marcar préstamo como incobrable', 'PRÉSTAMOS'], ['loans.status.reactivate', 'Reactivar préstamo incobrable', 'PRÉSTAMOS'],
   ['payments.view', 'Consultar pagos', 'PAGOS'], ['payments.create', 'Registrar pagos', 'PAGOS'], ['payments.annul', 'Anular pagos', 'PAGOS'], ['payments.plan.customize', 'Personalizar planes de pago', 'PAGOS'],
 ] as const;
 export const COLLECTION_MANAGER_DEFAULTS = [

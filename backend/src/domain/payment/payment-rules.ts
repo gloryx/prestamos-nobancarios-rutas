@@ -1,10 +1,11 @@
 import { createHash } from 'crypto';
+import { paymentDateOnlyKey } from './payment-date-only';
 
 type PaymentFact = {
   id: string;
   status: 'VALID' | 'ANNULLED';
-  paymentDate: string;
-  createdAt: string;
+  paymentDate: string | Date;
+  createdAt: string | Date;
 };
 
 const cents = (value: string): bigint => {
@@ -42,8 +43,9 @@ export function calculatePaymentBalances(
 export function isLastValidPayment(paymentId: string, payments: PaymentFact[]): boolean {
   const valid = payments
     .filter((payment) => payment.status === 'VALID')
-    .sort((left, right) => right.paymentDate.localeCompare(left.paymentDate)
-      || right.createdAt.localeCompare(left.createdAt)
+    .sort((left, right) => paymentDateOnlyKey(right.paymentDate).localeCompare(paymentDateOnlyKey(left.paymentDate))
+      || (right.createdAt instanceof Date ? right.createdAt.getTime() : Date.parse(right.createdAt))
+        - (left.createdAt instanceof Date ? left.createdAt.getTime() : Date.parse(left.createdAt))
       || right.id.localeCompare(left.id));
   return valid[0]?.id === paymentId;
 }

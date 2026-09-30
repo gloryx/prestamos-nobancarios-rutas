@@ -118,6 +118,6 @@ export const navigationEntries: NavigationEntry[] = [
     ],
   },
   { type: 'group', label: 'Finanzas', icon: 'payment', items: [{ type: 'link', label: 'Movimientos de caja', path: '/finance/cash-movements', icon: 'payment', requiredPermission: 'cash-movements.view' }] },
-  { type: 'group', label: 'PRÉSTAMOS', icon: 'payment', items: [{ type: 'link', label: 'Préstamos', path: '/loans', icon: 'payment', requiredPermission: 'loans.view' }, { type: 'link', label: 'Nuevo préstamo', path: '/loans/new', icon: 'payment', requiredPermission: 'loans.create' }] },
-  { type: 'group', label: 'PAGOS', icon: 'payment', items: [{ type: 'link', label: 'Pagos', path: '/payments', icon: 'payment', requiredPermission: 'payments.view' }] },
+  { type: 'group', label: 'PRÉSTAMOS', icon: 'payment', items: [{ type: 'link', label: 'Préstamos', path: '/loans', icon: 'payment', requiredPermission: 'loans.view' }, { type: 'link', label: 'Préstamos cancelados', path: '/loans/cancelled', icon: 'payment', requiredPermission: 'loans.view' }, { type: 'link', label: 'Préstamos incobrables', path: '/loans/uncollectible-management', icon: 'payment', requiredPermission: 'loans.view' }, { type: 'link', label: 'Nuevo préstamo', path: '/loans/new', icon: 'payment', requiredPermission: 'loans.create' }] },
+  { type: 'group', label: 'PAGOS', icon: 'payment', items: [{ type: 'link', label: 'Registrar pago', path: '/payments/new', icon: 'payment', requiredPermission: 'payments.view' }] },
 ];

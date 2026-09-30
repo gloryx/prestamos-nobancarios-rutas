@@ -60,7 +60,7 @@ type NavigationRenderContext = {
 
 function renderEntry(entry: NavigationEntry, context: NavigationRenderContext): ReactElement {
   if (entry.type === 'link') {
-    return <NavLink key={entry.path} to={entry.path} end={entry.path === '/dashboard'} onClick={context.onNavigate} className={({ isActive }) => `nav-link${context.depth > 0 ? ' nav-link--child' : ''}${isActive ? ' nav-link--active' : ''}`}>
+    return <NavLink key={entry.path} to={entry.path} end={entry.path === '/dashboard' || entry.path === '/loans'} onClick={context.onNavigate} className={({ isActive }) => `nav-link${context.depth > 0 ? ' nav-link--child' : ''}${isActive ? ' nav-link--active' : ''}`}>
       <Icon name={entry.icon} /><span>{entry.label}</span>
     </NavLink>;
   }

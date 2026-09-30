@@ -1,5 +1,5 @@
 import { CASH_MOVEMENT_CONCEPT_LABELS, type CashMovement, type CashMovementSummary } from '../../domain/entities/cash-movement';
-import { formatCRC, signedCRC } from '../../shared/utils/money';
+import { formatCRCForPdf } from '../../shared/utils/money';
 import type { WorkBook } from 'xlsx';
 
 type XlsxModule = typeof import('xlsx');
@@ -25,6 +25,10 @@ function signedNumber(amount: string, direction: CashMovement['direction']): num
 function summaryNumber(value: string): number {
   const number = Number(value);
   return Number.isFinite(number) ? number : 0;
+}
+
+function signedPdfCRC(amount: string, direction: CashMovement['direction']): string {
+  return `${direction === 'INFLOW' ? '+' : '-'}${formatCRCForPdf(amount)}`;
 }
 
 export function buildCashMovementWorkbook(XLSX: XlsxModule, items: CashMovement[], summary: CashMovementSummary, fromDate?: string, toDate?: string): WorkBook {
@@ -82,4 +86,4 @@ export async function generateCashMovementExcel(items: CashMovement[], summary: 
   XLSX.writeFile(workbook, `movimientos-caja-${new Date().toISOString().slice(0, 10)}.xlsx`);
 }
 
-export async function generateCashMovementReport(items: CashMovement[], summary: CashMovementSummary, fromDate?: string, toDate?: string): Promise<void> { const { jsPDF } = await import('jspdf'); const { autoTable } = await import('jspdf-autotable'); const doc = new jsPDF(); const now = new Date(); doc.setFontSize(15); doc.text('Movimientos de caja', 10, 14); doc.setFontSize(9); doc.text(`Período: ${fromDate || 'Inicio'} a ${toDate || 'Hoy'}`, 10, 21); autoTable(doc, { head: [['Fecha', 'Tipo', 'Concepto', 'Forma de pago', 'Monto', 'Registrado por']], body: items.map((item) => [item.movementDate, item.direction === 'INFLOW' ? 'Entrada' : 'Salida', `${CASH_MOVEMENT_CONCEPT_LABELS[item.concept]}${item.loanNumber ? ` · Préstamo #${item.loanNumber}` : ''}`, item.paymentMethod.name, signedCRC(item.amount, item.direction), item.createdBy.fullName]), startY: 28 }); const finalY = (doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? 35; doc.text(`Entradas: ${formatCRC(summary.inflows)}   Salidas: ${formatCRC(summary.outflows)}   Neto: ${formatCRC(summary.net)}`, 10, finalY + 10); doc.save(`movimientos-caja-${now.toISOString().slice(0, 10)}.pdf`); }
+export async function generateCashMovementReport(items: CashMovement[], summary: CashMovementSummary, fromDate?: string, toDate?: string): Promise<void> { const { jsPDF } = await import('jspdf'); const { autoTable } = await import('jspdf-autotable'); const doc = new jsPDF(); const now = new Date(); doc.setFontSize(15); doc.text('Movimientos de caja', 10, 14); doc.setFontSize(9); doc.text(`Período: ${fromDate || 'Inicio'} a ${toDate || 'Hoy'}`, 10, 21); autoTable(doc, { head: [['Fecha', 'Tipo', 'Concepto', 'Forma de pago', 'Monto', 'Registrado por']], body: items.map((item) => [item.movementDate, item.direction === 'INFLOW' ? 'Entrada' : 'Salida', `${CASH_MOVEMENT_CONCEPT_LABELS[item.concept]}${item.loanNumber ? ` · Préstamo #${item.loanNumber}` : ''}`, item.paymentMethod.name, signedPdfCRC(item.amount, item.direction), item.createdBy.fullName]), startY: 28 }); const finalY = (doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? 35; doc.text(`Entradas: ${formatCRCForPdf(summary.inflows)}   Salidas: ${formatCRCForPdf(summary.outflows)}   Neto: ${formatCRCForPdf(summary.net)}`, 10, finalY + 10); doc.save(`movimientos-caja-${now.toISOString().slice(0, 10)}.pdf`); }

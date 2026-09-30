@@ -1,6 +1,23 @@
 export type LoanStatus = 'ACTIVE' | 'CANCELLED' | 'REFINANCED' | 'UNCOLLECTIBLE' | 'ANNULLED';
+export type LoanStatusHistoryEventKind = 'CREATED' | 'TRANSITION';
+export type LoanStatusHistory = {
+  id: string;
+  loanId: string;
+  eventSequence: number;
+  eventKind: LoanStatusHistoryEventKind;
+  fromStatus: LoanStatus | null;
+  toStatus: LoanStatus;
+  changedAt: Date;
+  changedByUserId: string | null;
+  reason: string | null;
+  paymentId: string | null;
+  paymentAnnulmentId: string | null;
+  idempotencyKey: string | null;
+  idempotencyFingerprint: string | null;
+  createdAt: Date;
+};
 export type IntervalUnit = 'DAY' | 'WEEK' | 'DAY/15' | 'MONTH';
-export type LoanSortBy = 'number' | 'customer' | 'startDate' | 'principal' | 'interest' | 'total' | 'frequency' | 'pending';
+export type LoanSortBy = 'number' | 'customer' | 'startDate' | 'principal' | 'interest' | 'total' | 'frequency' | 'pending' | 'condition';
 export type LoanSortOrder = 'asc' | 'desc';
 export type ActiveLoanListQuery = { page: number; pageSize: number; search?: string; frequencyId?: string; fromDate?: string; toDate?: string; sortBy?: LoanSortBy; sortOrder?: LoanSortOrder };
 export type LoanPlanEntryInput = { sequence: number; dueDate: string; pendingAmount: string };

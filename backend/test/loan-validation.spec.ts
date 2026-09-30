@@ -26,11 +26,13 @@ describe('loan validation seams', () => {
       }),
       transaction: jest.fn(),
     };
-     manager.transaction.mockImplementation(async (callback: (nestedManager: typeof manager) => Promise<unknown>) => callback({ ...manager, query: jest.fn(async (sql: string, params?: unknown[]) => { if (sql.startsWith('INSERT INTO loans')) { winningFingerprint = String(params?.[10]); throw { code: '23505' }; } return manager.query(sql); }) as typeof manager.query }));
+     const nestedQuery = jest.fn(async (sql: string, params?: unknown[]) => { if (sql.startsWith('INSERT INTO loans')) { winningFingerprint = String(params?.[10]); throw { code: '23505', constraint: 'UQ_loans_idempotency' }; } return manager.query(sql); });
+     manager.transaction.mockImplementation(async (callback: (nestedManager: typeof manager) => Promise<unknown>) => callback({ ...manager, query: nestedQuery as typeof manager.query }));
     const dataSource = { transaction: jest.fn(async (callback: (transactionManager: typeof manager) => Promise<unknown>) => callback(manager)) } as never;
     const result = await new CreateLoanUseCase(dataSource, {} as never).execute({ ...base, idempotencyKey: 'same-key' }, 'actor');
     expect(result).toEqual({ ...detail, plan: [] });
     expect(manager.transaction).toHaveBeenCalledTimes(1);
+    expect(nestedQuery.mock.calls.some(([sql]) => sql.startsWith('INSERT INTO loan_status_history'))).toBe(false);
     await expect(new CreateLoanUseCase(dataSource, {} as never).execute({ ...base, principal: '101.00', plan: [{ ...base.plan[0], pendingAmount: '111' }], idempotencyKey: 'same-key' }, 'actor')).rejects.toBeInstanceOf(LoanConflictError);
   });
   it('always constrains both active loan rows and count to ACTIVE', async () => {

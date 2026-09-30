@@ -2,7 +2,7 @@ import { useEffect, useId, useMemo, useState, type ReactElement } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import {
   filterNavigationEntries,
-  getActiveGroupLabels,
+  getActiveGroupIds,
   navigationEntries,
   toggleExpandedGroup,
   type NavigationEntry,
@@ -17,16 +17,16 @@ export function AppSidebar({ isOpen, onNavigate }: AppSidebarProps): ReactElemen
   const { can, user, logout } = useAuth();
   const sidebarId = useId();
   const visibleEntries = useMemo(() => filterNavigationEntries(navigationEntries, can), [can]);
-  const activeGroupLabels = useMemo(() => getActiveGroupLabels(visibleEntries, location.pathname), [location.pathname, visibleEntries]);
-  const [openGroups, setOpenGroups] = useState<string[]>(activeGroupLabels);
+  const activeGroupIds = useMemo(() => getActiveGroupIds(visibleEntries, location.pathname), [location.pathname, visibleEntries]);
+  const [openGroupIds, setOpenGroupIds] = useState<string[]>(activeGroupIds);
 
   useEffect(() => {
-    const activeLabels = getActiveGroupLabels(visibleEntries, location.pathname);
-    setOpenGroups((current) => Array.from(new Set([...current, ...activeLabels])));
+    const activeIds = getActiveGroupIds(visibleEntries, location.pathname);
+    setOpenGroupIds((current) => Array.from(new Set([...current, ...activeIds])));
   }, [location.pathname, visibleEntries]);
 
-  const toggleGroup = (label: string) => {
-    setOpenGroups((current) => toggleExpandedGroup(current, label));
+  const toggleGroup = (groupId: string) => {
+    setOpenGroupIds((current) => toggleExpandedGroup(current, groupId));
   };
 
   return (
@@ -36,7 +36,7 @@ export function AppSidebar({ isOpen, onNavigate }: AppSidebarProps): ReactElemen
         <div><strong>Préstamos</strong><span>Gestión de cartera</span></div>
       </div>
       <nav className="sidebar-nav">
-          {visibleEntries.map((entry) => renderEntry(entry, { activeGroupLabels, openGroups, onNavigate, sidebarId, toggleGroup, depth: 0 }))}
+          {visibleEntries.map((entry) => renderEntry(entry, { activeGroupIds, openGroupIds, onNavigate, sidebarId, toggleGroup, depth: 0 }))}
        </nav>
        <footer className="sidebar-footer">
          <div className="sidebar-user" aria-label={`Usuario actual: ${user?.fullName ?? ''}`}>
@@ -50,25 +50,25 @@ export function AppSidebar({ isOpen, onNavigate }: AppSidebarProps): ReactElemen
 }
 
 type NavigationRenderContext = {
-  activeGroupLabels: string[];
-  openGroups: string[];
+  activeGroupIds: string[];
+  openGroupIds: string[];
   onNavigate: () => void;
   sidebarId: string;
-  toggleGroup: (label: string) => void;
+  toggleGroup: (groupId: string) => void;
   depth: number;
 };
 
 function renderEntry(entry: NavigationEntry, context: NavigationRenderContext): ReactElement {
   if (entry.type === 'link') {
-    return <NavLink key={entry.path} to={entry.path} end={entry.path === '/dashboard' || entry.path === '/loans'} onClick={context.onNavigate} className={({ isActive }) => `nav-link${context.depth > 0 ? ' nav-link--child' : ''}${isActive ? ' nav-link--active' : ''}`}>
+    return <NavLink key={entry.id} to={entry.path} end={entry.path === '/dashboard' || entry.path === '/loans'} onClick={context.onNavigate} className={({ isActive }) => `nav-link${context.depth > 0 ? ' nav-link--child' : ''}${isActive ? ' nav-link--active' : ''}`}>
       <Icon name={entry.icon} /><span>{entry.label}</span>
     </NavLink>;
   }
 
-  const isOpen = context.openGroups.includes(entry.label);
-  const groupId = `${context.sidebarId}-${slugify(entry.label)}`;
-  return <div className={`nav-group${context.activeGroupLabels.includes(entry.label) ? ' nav-group--active' : ''}`} key={entry.label}>
-    <button className="nav-group-button" type="button" aria-expanded={isOpen} aria-controls={groupId} onClick={() => context.toggleGroup(entry.label)}>
+  const isOpen = context.openGroupIds.includes(entry.id);
+  const groupId = `${context.sidebarId}-${entry.id.replace(/[^a-z0-9_-]+/gi, '-')}`;
+  return <div className={`nav-group${context.activeGroupIds.includes(entry.id) ? ' nav-group--active' : ''}`} key={entry.id}>
+    <button className="nav-group-button" type="button" aria-expanded={isOpen} aria-controls={groupId} onClick={() => context.toggleGroup(entry.id)}>
       <span className="nav-group-label"><Icon name={entry.icon} /><span>{entry.label}</span></span><span className="nav-group-chevron" aria-hidden="true">⌄</span>
     </button>
     <div className={`nav-group-items${isOpen ? ' nav-group-items--open' : ''}`} id={groupId} hidden={!isOpen}>
@@ -77,6 +77,3 @@ function renderEntry(entry: NavigationEntry, context: NavigationRenderContext): 
   </div>;
 }
 
-function slugify(label: string): string {
-  return label.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-');
-}

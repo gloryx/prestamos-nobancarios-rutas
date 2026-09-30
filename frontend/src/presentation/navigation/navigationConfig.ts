@@ -1,4 +1,5 @@
 export type NavigationLink = {
+  id: string;
   type: 'link';
   label: string;
   path: string;
@@ -7,6 +8,7 @@ export type NavigationLink = {
 };
 
 export type NavigationGroup = {
+  id: string;
   type: 'group';
   label: string;
   icon: NavigationIcon;
@@ -48,76 +50,84 @@ export function isNavigationEntryActive(entry: NavigationEntry, pathname: string
     : entry.items.some((item) => isNavigationEntryActive(item, pathname));
 }
 
-export function getActiveGroupLabels(entries: NavigationEntry[], pathname: string): string[] {
+export function getActiveGroupIds(entries: NavigationEntry[], pathname: string): string[] {
   return entries.flatMap((entry) => {
     if (entry.type !== 'group' || !isNavigationEntryActive(entry, pathname)) return [];
-    return [entry.label, ...getActiveGroupLabels(entry.items, pathname)];
+    return [entry.id, ...getActiveGroupIds(entry.items, pathname)];
   });
 }
 
-export function toggleExpandedGroup(labels: string[], label: string): string[] {
-  return labels.includes(label) ? labels.filter((item) => item !== label) : [...labels, label];
+export function toggleExpandedGroup(groupIds: string[], groupId: string): string[] {
+  return groupIds.includes(groupId)
+    ? groupIds.filter((item) => item !== groupId)
+    : [...groupIds, groupId];
 }
 
 export const navigationEntries: NavigationEntry[] = [
   {
+    id: 'dashboard',
     type: 'link',
     label: 'Inicio',
     path: '/dashboard',
     icon: 'dashboard',
   },
   {
+    id: 'administration',
     type: 'group',
     label: 'Administración',
     icon: 'administration',
     items: [
-       { type: 'link', label: 'Usuarios', path: '/users', icon: 'users', requiredPermission: 'users.view' },
-       { type: 'link', label: 'Roles y permisos', path: '/roles', icon: 'roles', requiredPermission: 'roles.view' },
+       { id: 'administration.users', type: 'link', label: 'Usuarios', path: '/users', icon: 'users', requiredPermission: 'users.view' },
+       { id: 'administration.roles', type: 'link', label: 'Roles y permisos', path: '/roles', icon: 'roles', requiredPermission: 'roles.view' },
     ],
   },
   {
+    id: 'customers',
     type: 'group',
     label: 'Clientes',
     icon: 'users',
     items: [
-       { type: 'link', label: 'Clientes', path: '/customers', icon: 'users', requiredPermission: 'customers.view' },
-       { type: 'link', label: 'Nuevo cliente', path: '/customers/new', icon: 'users', requiredPermission: 'customers.create' },
-       { type: 'link', label: 'Análisis financiero', path: '/customers/financial-analysis', icon: 'users', requiredPermission: 'customers.analysis.view' },
-       { type: 'link', label: 'Estadísticas de clientes', path: '/customers/statistics', icon: 'users', requiredPermission: 'customers.statistics.view' },
-       { type: 'link', label: 'Clientes asignados', path: '/collector/customers', icon: 'route', requiredPermission: 'customers.assigned.view' },
+       { id: 'customers.list', type: 'link', label: 'Clientes', path: '/customers', icon: 'users', requiredPermission: 'customers.view' },
+       { id: 'customers.new', type: 'link', label: 'Nuevo cliente', path: '/customers/new', icon: 'users', requiredPermission: 'customers.create' },
+       { id: 'customers.financial-analysis', type: 'link', label: 'Análisis financiero', path: '/customers/financial-analysis', icon: 'users', requiredPermission: 'customers.analysis.view' },
+       { id: 'customers.statistics', type: 'link', label: 'Estadísticas de clientes', path: '/customers/statistics', icon: 'users', requiredPermission: 'customers.statistics.view' },
+       { id: 'customers.assigned', type: 'link', label: 'Clientes asignados', path: '/collector/customers', icon: 'route', requiredPermission: 'customers.assigned.view' },
     ],
   },
   {
+    id: 'collector',
     type: 'group',
     label: 'Cobrador',
     icon: 'users',
     items: [
-       { type: 'link', label: 'Cobradores', path: '/collectors', icon: 'users', requiredPermission: 'collectors.view' },
+       { id: 'collector.collectors', type: 'link', label: 'Cobradores', path: '/collectors', icon: 'users', requiredPermission: 'collectors.view' },
     ],
   },
   {
+      id: 'settings',
       type: 'group',
       label: 'Configuración',
       icon: 'settings',
       items: [
        {
+         id: 'settings.territorial',
          type: 'group',
          label: 'División territorial',
          icon: 'location',
          requiredPermission: 'territorial.view',
          items: [
-           { type: 'link', label: 'Provincias', path: '/settings/provinces', icon: 'location', requiredPermission: 'territorial.view' },
-           { type: 'link', label: 'Cantones', path: '/settings/cantons', icon: 'location', requiredPermission: 'territorial.view' },
-           { type: 'link', label: 'Distritos', path: '/settings/districts', icon: 'location', requiredPermission: 'territorial.view' },
+           { id: 'settings.territorial.provinces', type: 'link', label: 'Provincias', path: '/settings/provinces', icon: 'location', requiredPermission: 'territorial.view' },
+           { id: 'settings.territorial.cantons', type: 'link', label: 'Cantones', path: '/settings/cantons', icon: 'location', requiredPermission: 'territorial.view' },
+           { id: 'settings.territorial.districts', type: 'link', label: 'Distritos', path: '/settings/districts', icon: 'location', requiredPermission: 'territorial.view' },
          ],
        },
-       { type: 'link', label: 'Formas de pago', path: '/settings/payment-methods', icon: 'payment', requiredPermission: 'payment-methods.view' },
-       { type: 'link', label: 'Periodicidades de pago', path: '/settings/payment-frequencies', icon: 'payment', requiredPermission: 'payment-frequencies.view' },
-       { type: 'link', label: 'Rutas', path: '/settings/routes', icon: 'route', requiredPermission: 'routes.view' },
-        { type: 'link', label: 'Cartera inicial', path: '/settings/financial-opening', icon: 'payment', requiredPermission: 'financial-opening.view' },
+       { id: 'settings.payment-methods', type: 'link', label: 'Formas de pago', path: '/settings/payment-methods', icon: 'payment', requiredPermission: 'payment-methods.view' },
+       { id: 'settings.payment-frequencies', type: 'link', label: 'Periodicidades de pago', path: '/settings/payment-frequencies', icon: 'payment', requiredPermission: 'payment-frequencies.view' },
+       { id: 'settings.routes', type: 'link', label: 'Rutas', path: '/settings/routes', icon: 'route', requiredPermission: 'routes.view' },
+        { id: 'settings.financial-opening', type: 'link', label: 'Cartera inicial', path: '/settings/financial-opening', icon: 'payment', requiredPermission: 'financial-opening.view' },
     ],
   },
-  { type: 'group', label: 'Finanzas', icon: 'payment', items: [{ type: 'link', label: 'Movimientos de caja', path: '/finance/cash-movements', icon: 'payment', requiredPermission: 'cash-movements.view' }] },
-  { type: 'group', label: 'PRÉSTAMOS', icon: 'payment', items: [{ type: 'link', label: 'Préstamos', path: '/loans', icon: 'payment', requiredPermission: 'loans.view' }, { type: 'link', label: 'Préstamos cancelados', path: '/loans/cancelled', icon: 'payment', requiredPermission: 'loans.view' }, { type: 'link', label: 'Préstamos incobrables', path: '/loans/uncollectible-management', icon: 'payment', requiredPermission: 'loans.view' }, { type: 'link', label: 'Nuevo préstamo', path: '/loans/new', icon: 'payment', requiredPermission: 'loans.create' }] },
-  { type: 'group', label: 'PAGOS', icon: 'payment', items: [{ type: 'link', label: 'Registrar pago', path: '/payments/new', icon: 'payment', requiredPermission: 'payments.view' }] },
+  { id: 'finance', type: 'group', label: 'Finanzas', icon: 'payment', items: [{ id: 'finance.cash-movements', type: 'link', label: 'Movimientos de caja', path: '/finance/cash-movements', icon: 'payment', requiredPermission: 'cash-movements.view' }] },
+  { id: 'loans', type: 'group', label: 'PRÉSTAMOS', icon: 'payment', items: [{ id: 'loans.list', type: 'link', label: 'Préstamos', path: '/loans', icon: 'payment', requiredPermission: 'loans.view' }, { id: 'loans.cancelled', type: 'link', label: 'Préstamos cancelados', path: '/loans/cancelled', icon: 'payment', requiredPermission: 'loans.view' }, { id: 'loans.uncollectible', type: 'link', label: 'Préstamos incobrables', path: '/loans/uncollectible-management', icon: 'payment', requiredPermission: 'loans.view' }, { id: 'loans.new', type: 'link', label: 'Nuevo préstamo', path: '/loans/new', icon: 'payment', requiredPermission: 'loans.create' }] },
+  { id: 'payments', type: 'group', label: 'PAGOS', icon: 'payment', items: [{ id: 'payments.new', type: 'link', label: 'Registrar pago', path: '/payments/new', icon: 'payment', requiredPermission: 'payments.view' }] },
 ];

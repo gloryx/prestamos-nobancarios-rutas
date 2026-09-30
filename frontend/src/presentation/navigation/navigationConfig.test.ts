@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   filterNavigationEntries,
-  getActiveGroupLabels,
+  getActiveGroupIds,
   isNavigationEntryActive,
   navigationEntries,
   toggleExpandedGroup,
@@ -73,7 +73,7 @@ describe('sidebar navigation configuration', () => {
     });
     if (payments?.type !== 'group') return;
     expect(payments.items).toHaveLength(1);
-    expect(getActiveGroupLabels(navigationEntries, '/payments/new')).toEqual(['PAGOS']);
+    expect(getActiveGroupIds(navigationEntries, '/payments/new')).toEqual(['payments']);
   });
 
   it('filters registration by payments.view using the existing navigation helper', () => {
@@ -93,8 +93,8 @@ describe('sidebar navigation configuration', () => {
     expect(loans.items.map((entry) => entry.label)).toEqual(['Préstamos', 'Préstamos cancelados', 'Préstamos incobrables', 'Nuevo préstamo']);
     expect(loans.items[1]).toMatchObject({ path: '/loans/cancelled', requiredPermission: 'loans.view' });
     expect(loans.items[2]).toMatchObject({ type: 'link', path: '/loans/uncollectible-management', icon: 'payment', requiredPermission: 'loans.view' });
-    expect(getActiveGroupLabels(navigationEntries, '/loans/cancelled')).toEqual(['PRÉSTAMOS']);
-    expect(getActiveGroupLabels(navigationEntries, '/loans/uncollectible-management')).toEqual(['PRÉSTAMOS']);
+    expect(getActiveGroupIds(navigationEntries, '/loans/cancelled')).toEqual(['loans']);
+    expect(getActiveGroupIds(navigationEntries, '/loans/uncollectible-management')).toEqual(['loans']);
     const denied = filterNavigationEntries(navigationEntries, () => false).find((entry) => entry.label === 'PRÉSTAMOS');
     expect(denied).toBeUndefined();
     expect(filterNavigationEntries(navigationEntries, (permission) => permission === 'loans.status.uncollectible')
@@ -104,9 +104,9 @@ describe('sidebar navigation configuration', () => {
   });
 
   it('opens both parent groups and identifies the active territorial child route', () => {
-    expect(getActiveGroupLabels(navigationEntries, '/settings/cantons')).toEqual([
-      'Configuración',
-      'División territorial',
+    expect(getActiveGroupIds(navigationEntries, '/settings/cantons')).toEqual([
+      'settings',
+      'settings.territorial',
     ]);
 
     const territorial = navigationEntries
@@ -121,10 +121,23 @@ describe('sidebar navigation configuration', () => {
   });
 
   it('supports the existing group expand/collapse behavior', () => {
-    expect(toggleExpandedGroup(['Configuración'], 'División territorial')).toEqual([
-      'Configuración',
-      'División territorial',
+    expect(toggleExpandedGroup(['settings'], 'settings.territorial')).toEqual([
+      'settings',
+      'settings.territorial',
     ]);
-    expect(toggleExpandedGroup(['Configuración', 'División territorial'], 'División territorial')).toEqual(['Configuración']);
+    expect(toggleExpandedGroup(['settings', 'settings.territorial'], 'settings.territorial')).toEqual(['settings']);
   });
+  it('uses stable and unique ids for every navigation entry', () => {
+    const collectIds = (entries: typeof navigationEntries): string[] => entries.flatMap((entry) => [
+      entry.id,
+      ...(entry.type === 'group' ? collectIds(entry.items) : []),
+    ]);
+
+    const ids = collectIds(navigationEntries);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(ids).toContain('customers');
+    expect(ids).toContain('settings.territorial');
+    expect(ids).toContain('loans.new');
+  });
+
 });

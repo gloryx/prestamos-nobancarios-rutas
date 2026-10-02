@@ -35,3 +35,23 @@ export type LoanManagementSummary = { total: number; lentAmount: LoanMoneyAmount
 export type LoanManagementResult<Row extends LoanManagementRow> = { items: Row[]; total: number; page: number; pageSize: LoanManagementPageSize; summary: LoanManagementSummary };
 export type LoanTransitionBody = { reason: string; idempotencyKey: string };
 export type LoanTransitionReply<Status extends 'ACTIVE' | 'UNCOLLECTIBLE'> = { loanId: string; status: Status; event: { id: string; sequence: number; changedAt: string } };
+
+export type AnnulmentSummary = { total: number; capital: string; interest: string; contractualTotal: string };
+export type AnnulmentCustomer = { id: string; identification: string; fullName: string };
+export type AnnullableLoanItem = {
+  loanId: string; loanNumber: string; customer: AnnulmentCustomer; startDate: string;
+  principal: string; interestAmount: string; totalAmount: string; status: 'ACTIVE';
+  disbursement: { id: string; amount: string; date: string };
+};
+export type AnnulledLoanItem = Omit<AnnullableLoanItem, 'status'> & {
+  status: 'ANNULLED'; annulledAt: string; annulledBusinessDate: string; reason: string;
+  actorId: string; disbursementResolution: 'NOT_DELIVERED' | 'RETURNED_IN_FULL';
+};
+export type AnnulmentSort = 'loanNumber' | 'customer' | 'startDate' | 'principal' | 'interest' | 'contractualTotal' | 'annulledDate';
+export type AnnulmentQuery<Sort extends AnnulmentSort> = LoanManagementQuery<Sort>;
+export type AnnulmentResult<Row extends AnnullableLoanItem | AnnulledLoanItem> = {
+  items: Row[]; total: number; page: number; pageSize: LoanManagementPageSize; summary: AnnulmentSummary;
+};
+export type LoanAnnulmentBody = { reason: string; disbursementResolution: AnnulledLoanItem['disbursementResolution']; idempotencyKey: string };
+export type LoanAnnulmentReceipt = { loanId: string; status: 'ANNULLED'; annulledAt: string; annulledBusinessDate: string;
+  reason: string; disbursementResolution: AnnulledLoanItem['disbursementResolution'] };

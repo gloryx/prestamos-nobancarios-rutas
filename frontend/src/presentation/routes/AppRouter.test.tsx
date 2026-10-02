@@ -10,6 +10,7 @@ import { AuthContext } from '../hooks/auth-context';
 import { PaymentsPage } from '../pages/PaymentsPage';
 import { CancelledLoansPage } from '../pages/CancelledLoansPage';
 import { LoanManagementPage } from '../pages/LoanManagementPage';
+import { LoanAnnulmentManagementPage } from '../pages/LoanAnnulmentManagementPage';
 import { AppRouter } from './AppRouter';
 
 const elements = (node: ReactNode): ReactElement[] => Children.toArray(node).flatMap((child) =>
@@ -72,7 +73,7 @@ describe('uncollectible loan publication', () => {
     const routes = elements(AppRouter()).filter((element) => element.type === Route);
     const loanPaths = routes.map((route) => (route.props as { path?: string }).path)
       .filter((route) => route?.startsWith('/loans'));
-    expect(loanPaths).toEqual(['/loans/new', '/loans/cancelled', path, '/loans/:id', '/loans']);
+    expect(loanPaths).toEqual(['/loans/new', '/loans/cancelled', path, '/loans/annulments', '/loans/:id', '/loans']);
     expect(routes.map((route) => (route.props as { path?: string }).path)).toEqual(expect.arrayContaining(['/payments', '/payments/new', '/customers']));
     const managementRoute = routes.find((route) => (route.props as { path?: string }).path === path);
     expect((managementRoute?.props as { element?: ReactNode }).element).toMatchObject({
@@ -105,5 +106,23 @@ describe('uncollectible loan publication', () => {
     const html = renderRoute(path, superAdmin);
     expect(html).toContain('Gestión de incobrables');
     expect(html).toContain(`href="${path}"`);
+  });
+});
+
+describe('loan annulment publication', () => {
+  const path = '/loans/annulments';
+  it('guards the direct URL by loans.view and renders its candidate tab', () => {
+    const routes = elements(AppRouter()).filter((element) => element.type === Route);
+    const entry = routes.find((route) => (route.props as { path?: string }).path === path);
+    expect((entry?.props as { element?: ReactNode }).element).toMatchObject({
+      type: RouteGuard, props: { permission: 'loans.view', children: { type: LoanAnnulmentManagementPage } },
+    });
+    const allowed = renderRoute(path, { ...identity, permissions: ['loans.view'] });
+    expect(allowed).toContain('Gestión de anulaciones');
+    expect(allowed).toContain('role="tab" id="loan-annulment-candidates-tab"');
+    expect(allowed).toContain(`href="${path}"`);
+    expect(allowed).toContain('nav-link--active" href="/loans/annulments"');
+    expect(renderRoute(path, { ...identity, permissions: ['loans.status.annul'] })).toContain('No tienes permiso');
+    expect(renderRoute(path, undefined)).not.toContain('Gestión de anulaciones');
   });
 });

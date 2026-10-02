@@ -91,17 +91,19 @@ describe('sidebar navigation configuration', () => {
     const loans = navigationEntries.find((entry) => entry.label === 'PRÉSTAMOS');
     expect(loans?.type).toBe('group');
     if (loans?.type !== 'group') return;
-    expect(loans.items.map((entry) => entry.label)).toEqual(['Préstamos', 'Préstamos cancelados', 'Préstamos incobrables', 'Nuevo préstamo']);
+    expect(loans.items.map((entry) => entry.label)).toEqual(['Préstamos', 'Préstamos cancelados', 'Préstamos incobrables', 'Préstamos anulados', 'Nuevo préstamo']);
     expect(loans.items[1]).toMatchObject({ path: '/loans/cancelled', requiredPermission: 'loans.view' });
     expect(loans.items[2]).toMatchObject({ type: 'link', path: '/loans/uncollectible-management', icon: 'payment', requiredPermission: 'loans.view' });
+    expect(loans.items[3]).toMatchObject({ type: 'link', path: '/loans/annulments', icon: 'payment', requiredPermission: 'loans.view' });
     expect(getActiveGroupIds(navigationEntries, '/loans/cancelled')).toEqual(['loans']);
     expect(getActiveGroupIds(navigationEntries, '/loans/uncollectible-management')).toEqual(['loans']);
+    expect(getActiveGroupIds(navigationEntries, '/loans/annulments')).toEqual(['loans']);
     const denied = filterNavigationEntries(navigationEntries, () => false).find((entry) => entry.label === 'PRÉSTAMOS');
     expect(denied).toBeUndefined();
     expect(filterNavigationEntries(navigationEntries, (permission) => permission === 'loans.status.uncollectible')
       .some((entry) => entry.label === 'PRÉSTAMOS')).toBe(false);
     const allowed = filterNavigationEntries(navigationEntries, (permission) => permission === 'loans.view').find((entry) => entry.label === 'PRÉSTAMOS');
-    expect(allowed?.type === 'group' && allowed.items.map((entry) => entry.label)).toEqual(['Préstamos', 'Préstamos cancelados', 'Préstamos incobrables']);
+    expect(allowed?.type === 'group' && allowed.items.map((entry) => entry.label)).toEqual(['Préstamos', 'Préstamos cancelados', 'Préstamos incobrables', 'Préstamos anulados']);
   });
 
   it('opens both parent groups and identifies the active territorial child route', () => {

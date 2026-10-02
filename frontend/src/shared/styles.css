@@ -587,5 +587,10 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--focus); outline
 .loan-management__stale { margin: 0; padding: .5rem 1rem; color: var(--muted); font-size: .8rem; }
 .loan-management .loan-list__pagination select { margin-left: .3rem; padding: .35rem; border: 1px solid var(--border); border-radius: .3rem; background: var(--surface); }
 .loan-management .loan-list__table-wrap:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+.loan-annulment__warning { padding: .7rem; border-radius: .35rem; background: #fff3eb; color: #7b3618; font-weight: 700; }
+.loan-annulment__resolution { display: grid; gap: .5rem; margin: .8rem 0; padding: 0; border: 0; }
+.loan-annulment__resolution legend { margin-bottom: .4rem; font-weight: 700; }
+.loan-annulment__resolution label { display: flex; align-items: center; gap: .5rem; }
+.loan-annulment__counter { display: block; color: var(--muted); font-size: .8rem; text-align: right; }
 @media (max-width: 760px) { .loan-management__summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } .loan-management .loan-list__toolbar { grid-template-columns: 1fr; } .loan-management .loan-list__toolbar label:first-child { grid-column: auto; } }
 @media (max-width: 420px) { .loan-management__summary { grid-template-columns: 1fr; } .loan-management__dialog { padding: 1rem; } }

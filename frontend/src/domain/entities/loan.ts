@@ -5,6 +5,16 @@ export type LoanListItem = { id: string; loanNumber: string; startDate: string; 
 export type ActiveLoanListItem = LoanListItem & { isOverdue: boolean };
 export type LoanDetail = LoanListItem & { status: string; customerId: string; intervalUnit: 'DAY' | 'WEEK' | 'DAY/15' | 'MONTH'; intervalValue: number; preferredPaymentMethod: string; disbursementPaymentMethod: string; createdByName: string; observations?: string | null; updatedAt: string; plan: LoanPlanEntry[] };
 export type LoanOperationalDetail = Omit<LoanDetail, 'plan'> & { plan: Array<LoanPlanEntry & { id: string }>; financialBalance: string; validPayments: Array<{ id: string; paymentDate: string; amount: string; status: 'VALID' }> };
+export type LoanEditBaseline = { interestAmount: string; paymentFrequencyId: string; preferredPaymentMethodId: string; observations: string | null; financialBalance: string; plan: Array<{ id: string; dueDate: string; pendingAmount: string }> };
+export type LoanEditContext = {
+  loan: { id: string; loanNumber: string; customer: { id: string; identification: string; fullName: string }; status: string; principal: string; interestAmount: string; totalAmount: string; startDate: string; paymentFrequencyId: string; paymentFrequencyName: string; preferredPaymentMethodId: string; preferredPaymentMethodName: string; observations: string | null };
+  baseline: LoanEditBaseline;
+  paymentFrequencyOptions: Array<{ id: string; name: string; active: boolean }>;
+  preferredPaymentMethodOptions: Array<{ id: string; name: string; active: boolean }>;
+};
+export type LoanEditChanges = { interestAmount?: string; paymentFrequencyId?: string; preferredPaymentMethodId?: string; observations?: string | null };
+export type LoanEditBody = { idempotencyKey: string; baseline: LoanEditBaseline; changes: LoanEditChanges; plan?: Array<{ id: string | null; dueDate: string; pendingAmount: string }> };
+export type LoanEditReceipt = { operationId: string; loanId: string; createdAt: string };
 export type CancelledLoan = { id: string; loanNumber: string; customerName: string; identification: string; startDate: string; cancelledDate: string | null; principal: string; recoveredInterest: string; totalRecovered: string };
 export type CancelledLoansResult = { items: CancelledLoan[]; total: number; page: number; pageSize: number; summary: { cancelledLoansCount: number; recoveredAmount: string; realizedProfit: string } };
 

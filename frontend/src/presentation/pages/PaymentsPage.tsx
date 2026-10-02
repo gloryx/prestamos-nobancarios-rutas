@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 import { useLocation, useSearchParams } from 'react-router-dom';
+import { loanApi } from '../../infrastructure/api/loan.api';
 import { paymentApi, type PaymentContext, type PaymentLoan, type PendingPaymentEntry, type PlanBaseline, type ValidPayment } from '../../infrastructure/api/payment.api';
+import { generateLoanPaymentPlanReport } from '../../infrastructure/reports/loan-payment-plan-report.service';
 import { formatDateOnlyForDisplay } from '../../shared/utils/date';
 import { formatCRC, moneyFromCents, parseMoneyCents } from '../../shared/utils/money';
 import { MoneyInput } from '../components/MoneyInput';
@@ -13,6 +15,22 @@ import { localDateOnly, paymentTimeline, persistPlanAndRefresh, planBaselineFrom
 import { useAuth } from '../hooks/auth-context';
 
 const errorMessage = (cause: unknown) => cause instanceof Error ? cause.message : 'No se pudo completar la solicitud.';
+export const canDownloadPaymentPlan = (can: (permission: string) => boolean) => can('loans.export') && can('loans.view');
+type DownloadLock = { current: { selection: number } | null };
+export async function downloadPaymentPlan(
+  selectedLoanId: () => string | null, selection: number, isCurrent: () => boolean, lock: DownloadLock,
+  api: Pick<typeof loanApi, 'detail'> = loanApi, report: typeof generateLoanPaymentPlanReport = generateLoanPaymentPlanReport,
+): Promise<void> {
+  const loanId = selectedLoanId();
+  if (!loanId || !isCurrent() || lock.current?.selection === selection) return;
+  const ticket = { selection };
+  lock.current = ticket;
+  try {
+    const detail = await api.detail(loanId);
+    if (isCurrent()) await report(detail);
+  } catch (cause) { if (isCurrent()) throw cause; }
+  finally { if (lock.current === ticket) lock.current = null; }
+}
 type CaptureBody = Omit<Parameters<typeof paymentApi.create>[0], 'idempotencyKey'>;
 type CaptureAttempt = { fingerprint: string; key: string };
 
@@ -169,8 +187,8 @@ export function PaymentAnnulDialog({ context, payment, reason, busy, eligible, e
   </div></div>;
 }
 
-export function SelectedPaymentDetails({ context, canCreate, canCustomize, canAnnul, annulBusy, onPay, onCustomize, onAnnul, onChangeLoan, onCloseLoan, triggerRef, paymentTriggerRef, planTriggerRef, annulTriggerRef }: {
-  context: PaymentContext; canCreate: boolean; canCustomize: boolean; canAnnul: boolean; annulBusy: boolean; onPay: () => void; onCustomize: () => void; onAnnul: (paymentId: string) => void;
+export function SelectedPaymentDetails({ context, canCreate, canCustomize, canAnnul, canExport, annulBusy, downloadBusy, onPay, onCustomize, onAnnul, onDownload, onChangeLoan, onCloseLoan, triggerRef, paymentTriggerRef, planTriggerRef, annulTriggerRef }: {
+  context: PaymentContext; canCreate: boolean; canCustomize: boolean; canAnnul: boolean; canExport: boolean; annulBusy: boolean; downloadBusy: boolean; onPay: () => void; onCustomize: () => void; onAnnul: (paymentId: string) => void; onDownload: () => void;
   onChangeLoan: () => void; onCloseLoan: () => void;
   triggerRef: RefObject<HTMLButtonElement | null>; paymentTriggerRef: RefObject<HTMLButtonElement | null>; planTriggerRef: RefObject<HTMLButtonElement | null>; annulTriggerRef: RefObject<HTMLButtonElement | null>;
 }) {
@@ -197,7 +215,10 @@ export function SelectedPaymentDetails({ context, canCreate, canCustomize, canAn
       </dl>
     </section>
     <section className="payment-selected__plan" aria-labelledby="payment-selected-plan">
-      <div className="payment-selected__plan-header"><h2 id="payment-selected-plan">Plan de pagos</h2>{canCustomize && <button className="button button--secondary" type="button" ref={planTriggerRef} onClick={onCustomize}>Personalizar plan</button>}</div>
+      <div className="payment-selected__plan-header"><h2 id="payment-selected-plan">Plan de pagos</h2><div className="payment-selected__actions">
+        {canCustomize && <button className="button button--secondary" type="button" ref={planTriggerRef} onClick={onCustomize}>Personalizar plan</button>}
+        {canExport && <button className="button button--secondary" type="button" title="Descargar plan de pago" aria-label="Descargar plan de pago" aria-busy={downloadBusy} disabled={downloadBusy} onClick={onDownload}><Icon name="download" />{downloadBusy ? 'Descargando…' : 'Descargar plan de pago'}</button>}
+      </div></div>
       <div className="payment-selected__table-wrap"><table className="catalog-table payment-selected__table">
         <thead><tr><th scope="col">N.º</th><th scope="col">Fecha</th><th scope="col">Monto pendiente</th><th scope="col">Monto pagado</th><th scope="col">Estado</th><th scope="col">Acción</th></tr></thead>
         <tbody>{rows.map((row, index) => {
@@ -236,6 +257,9 @@ export function PaymentsPage() {
   const skipAutoFetch = useRef<{ search: string; page: number } | null>(null);
   const [selection, setSelected] = useState<PaymentContext | null>(null);
   const selected = isNewPayment ? (urlLoanId && selection?.summary.loanId === urlLoanId ? selection : null) : selection;
+  const selectedLoanId = useRef<string | null>(null);
+  const downloadLock = useRef<DownloadLock['current']>(null);
+  const [downloadingSelection, setDownloadingSelection] = useState<number | null>(null);
   const [selectionError, setSelectionError] = useState<{ id: string; message: string } | null>(null);
   const [showSelector, setShowSelector] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -425,6 +449,7 @@ export function PaymentsPage() {
 
   const select = useCallback(async (loanId: string) => {
     const token = ++selectionToken.current;
+    selectedLoanId.current = null;
     ++annulOpenToken.current; setShowAnnul(false); setAnnulTarget(null); setAnnulError(''); annulAttempt.current = null;
     ++planOpenToken.current; setShowPlan(false); setPlanBase(null); setPlanDraft([]); planAttempt.current = null;
     setShowPayment(false); captureAttempt.current = null;
@@ -432,6 +457,7 @@ export function PaymentsPage() {
     try {
       const context = await loadActivePaymentContext(loanId, () => token === selectionToken.current);
       if (!context) return;
+      selectedLoanId.current = context.summary.loanId;
       setSelected(context);
       setMethodId(context.preferredMethod.activeMethods.some((method) => method.id === context.preferredMethod.id) ? context.preferredMethod.id ?? '' : '');
     } catch (cause) { if (token === selectionToken.current) { setSelectionError({ id: loanId, message: errorMessage(cause) }); setError(errorMessage(cause)); triggerRef.current?.focus(); } }
@@ -440,14 +466,24 @@ export function PaymentsPage() {
   useEffect(() => {
     if (!isNewPayment) return;
     if (urlLoanId) void select(urlLoanId);
-    else { ++selectionToken.current; ++planOpenToken.current; setSelected(null); setSelecting(false); setSelectionError(null); }
+    else { ++selectionToken.current; ++planOpenToken.current; selectedLoanId.current = null; setSelected(null); setSelecting(false); setSelectionError(null); }
     return () => { ++selectionToken.current; };
   }, [isNewPayment, urlLoanId, select]);
   const clearLoan = () => {
     ++selectionToken.current; ++planOpenToken.current;
+    selectedLoanId.current = null;
     setSelected(null); setSelecting(false); setSelectionError(null); setError(''); setPlanSuccess('');
     setShowPayment(false); setShowPlan(false); setPlanBase(null); setPlanDraft([]);
     setSearchParams(paymentSearchWithLoan(searchParams.toString(), null));
+  };
+  const download = async () => {
+    const loanId = selected?.summary.loanId;
+    const token = selectionToken.current;
+    if (!loanId || selectedLoanId.current !== loanId || !canDownloadPaymentPlan(can) || downloadLock.current?.selection === token) return;
+    setDownloadingSelection(token); setError('');
+    try { await downloadPaymentPlan(() => selectedLoanId.current, token, () => token === selectionToken.current && selectedLoanId.current === loanId, downloadLock); }
+    catch (cause) { if (token === selectionToken.current) setError(errorMessage(cause)); }
+    finally { setDownloadingSelection((current) => current === token ? null : current); }
   };
   const register = async () => {
     if (!selected || !amount || !methodId) return;
@@ -558,7 +594,7 @@ export function PaymentsPage() {
         <button className="button button--primary" type="button" ref={triggerRef} onClick={() => setShowSelector(true)}>Seleccionar préstamo</button>
       </section>}
     </div>
-    {showSelector && <PaymentLoanDialog loans={loans} total={total} page={page} loading={loading} refreshing={refreshing} retainRowsOnError={retainRowsOnError} error={listError} search={search} onSearch={searchLoans} onPage={setPage} onSelect={(id) => { if (annulLocked.current) return; setShowSelector(false); selectPaymentLoanFromDialog(id, urlLoanId, selectionError?.id ?? null, (loanId) => { void select(loanId); }, (loanId) => setSearchParams(paymentSearchWithLoan(searchParams.toString(), loanId))); }} onRefresh={refreshLoans} onClose={closeSelector} dialogRef={dialogRef} searchRef={searchRef} />}
+    {showSelector && <PaymentLoanDialog loans={loans} total={total} page={page} loading={loading} refreshing={refreshing} retainRowsOnError={retainRowsOnError} error={listError} search={search} onSearch={searchLoans} onPage={setPage} onSelect={(id) => { if (annulLocked.current) return; setShowSelector(false); selectPaymentLoanFromDialog(id, urlLoanId, selectionError?.id ?? null, (loanId) => { void select(loanId); }, (loanId) => { selectedLoanId.current = null; setSearchParams(paymentSearchWithLoan(searchParams.toString(), loanId)); }); }} onRefresh={refreshLoans} onClose={closeSelector} dialogRef={dialogRef} searchRef={searchRef} />}
   </>
   ) : <><h1>Pagos</h1>
     {!isNewPayment && <PaymentSelector loans={loans} total={total} page={page} loading={loading} error={listError} search={search} onSearch={searchLoans} onPage={setPage} onSelect={(id) => { void select(id); }} />}
@@ -568,7 +604,7 @@ export function PaymentsPage() {
     {planSuccess && <div className="success-message" role="status">{planSuccess}</div>}
     {(selectionPending || (!isNewPayment && selecting)) && <p role="status">Cargando contexto de pago…</p>}
     {selected && <div ref={detailsRef} tabIndex={-1}>{isNewPayment
-      ? <SelectedPaymentDetails context={selected} canCreate={can('payments.create')} canCustomize={can('payments.plan.customize')} canAnnul={can('payments.annul')} annulBusy={annulSaving} onPay={openPayment} onCustomize={() => { void openPlan(); }} onAnnul={openAnnul} onChangeLoan={() => { if (annulLocked.current) return; clearLoan(); setShowSelector(true); }} onCloseLoan={() => { if (annulLocked.current) return; if (showAnnul) closeAnnul(); clearLoan(); setShowSelector(false); }} triggerRef={triggerRef} paymentTriggerRef={paymentTriggerRef} planTriggerRef={planTriggerRef} annulTriggerRef={annulTriggerRef} />
+      ? <SelectedPaymentDetails context={selected} canCreate={can('payments.create')} canCustomize={can('payments.plan.customize')} canAnnul={can('payments.annul')} canExport={canDownloadPaymentPlan(can)} annulBusy={annulSaving} downloadBusy={downloadingSelection === selectionToken.current} onPay={openPayment} onCustomize={() => { void openPlan(); }} onAnnul={openAnnul} onDownload={() => { void download(); }} onChangeLoan={() => { if (annulLocked.current) return; clearLoan(); setShowSelector(true); }} onCloseLoan={() => { if (annulLocked.current) return; if (showAnnul) closeAnnul(); clearLoan(); setShowSelector(false); }} triggerRef={triggerRef} paymentTriggerRef={paymentTriggerRef} planTriggerRef={planTriggerRef} annulTriggerRef={annulTriggerRef} />
       : <><button type="button" onClick={() => { selectionToken.current += 1; setSelected(null); setError(''); }}>Cerrar préstamo</button><PaymentDetails context={selected} canCreate={can('payments.create')} amount={amount} methodId={methodId} busy={busy} onAmount={setAmount} onMethod={setMethodId} onSubmit={() => { void register(); }} /></>}
     </div>}
     {isNewPayment && showPayment && selected?.firstOperationalRow && can('payments.create') && <PaymentCaptureDialog

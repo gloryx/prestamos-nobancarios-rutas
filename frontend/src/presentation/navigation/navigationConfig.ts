@@ -63,6 +63,24 @@ export function toggleExpandedGroup(groupIds: string[], groupId: string): string
     : [...groupIds, groupId];
 }
 
+export function toggleAccordionGroup(
+  groupIds: string[],
+  groupId: string,
+  depth: number,
+  activeGroupIds: string[] = [],
+): string[] {
+  if (depth > 0) return toggleExpandedGroup(groupIds, groupId);
+
+  if (groupIds.includes(groupId)) {
+    return groupIds.filter((item) => item !== groupId && !item.startsWith(`${groupId}.`));
+  }
+
+  return [
+    groupId,
+    ...activeGroupIds.filter((item) => item !== groupId && item.startsWith(`${groupId}.`)),
+  ];
+}
+
 export const navigationEntries: NavigationEntry[] = [
   {
     id: 'dashboard',

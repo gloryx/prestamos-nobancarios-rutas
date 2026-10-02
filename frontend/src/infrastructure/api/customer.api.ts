@@ -1,6 +1,6 @@
-import type { CustomerCreated, CustomerDetail, CustomerForm, CustomerListItem } from '../../domain/entities/customer';
+import type { CustomerCreated, CustomerDetail, CustomerForm, CustomerListItem, CustomerSummary } from '../../domain/entities/customer';
 import type { AssignedCollector, AssignedCustomer, CustomerSite, SiteAuthorization, SiteUpdateScope } from '../../domain/entities/customer-site';
-import type { CustomerRepository, CustomerStatusFilter, CustomerListSort } from '../../application/ports/customer.repository';
+import type { CustomerRepository, CustomerStatusFilter, CustomerListSort, CustomerSummaryQuery } from '../../application/ports/customer.repository';
 import { normalizeCustomerForm } from '../../application/use-cases/customer-normalization';
 import { apiClient } from './api-client';
 
@@ -40,7 +40,7 @@ export class CustomerApi implements CustomerRepository {
   async create(input: CustomerForm): Promise<CustomerCreated> { return this.request('/customers', { method: 'POST', body: buildCustomerFormData(input) }); }
   async list(query: { search: string; status: CustomerStatusFilter; page: number; pageSize: number } & CustomerListSort) { const params = new URLSearchParams({ search: query.search, status: query.status, page: String(query.page), pageSize: String(query.pageSize) }); if (query.sortBy) params.set('sortBy', query.sortBy); if (query.sortOrder) params.set('sortOrder', query.sortOrder); return this.request<{ items: CustomerListItem[]; total: number; page: number; pageSize: number; totalPages: number }>(`/customers?${params}`); }
   async assigned(): Promise<AssignedCustomer[]> { return this.request('/customers/assigned'); }
-  async summary() { return this.request<{ totalCustomers: number; maleCustomers: number; femaleCustomers: number; activeLoans: number | null }>('/customers/summary'); }
+  async summary(query: CustomerSummaryQuery): Promise<CustomerSummary> { return this.request(`/customers/summary?${new URLSearchParams(query)}`); }
   async detail(id: string): Promise<CustomerDetail> { return this.request(`/customers/${encodeURIComponent(id)}`); }
   async update(id: string, input: Partial<CustomerForm>): Promise<CustomerDetail> { return this.request(`/customers/${encodeURIComponent(id)}`, { method: 'PATCH', body: buildCustomerFormData(input) }); }
   async site(id: string): Promise<CustomerSite> { return this.request(`/customers/${encodeURIComponent(id)}/site`); }

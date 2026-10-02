@@ -1,6 +1,7 @@
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, '') ?? 'http://localhost:3000';
 
 export class UnauthorizedApiError extends Error { constructor() { super('Sesión no válida.'); this.name = 'UnauthorizedApiError'; } }
+export class HttpApiError extends Error { constructor(readonly status: number, message: string) { super(message); this.name = 'HttpApiError'; } }
 let unauthorizedHandler: (() => void) | undefined;
 export const apiClient = {
   onUnauthorized(handler: () => void): () => void { unauthorizedHandler = handler; return () => { if (unauthorizedHandler === handler) unauthorizedHandler = undefined; }; },
@@ -12,7 +13,7 @@ export const apiClient = {
     if (!response.ok) {
       const payload = await response.json().catch(() => undefined) as { message?: string | string[] } | undefined;
       const message = Array.isArray(payload?.message) ? payload.message.join(' ') : payload?.message;
-      throw new Error(message ?? 'No fue posible completar la solicitud.');
+      throw new HttpApiError(response.status, message ?? 'No fue posible completar la solicitud.');
     }
     if (response.status === 204) return undefined as T;
     return response.json() as Promise<T>;

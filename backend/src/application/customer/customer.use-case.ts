@@ -1,5 +1,5 @@
 import { CustomerFileNotFoundError, CustomerIdentificationAlreadyExistsError, CustomerNotFoundError, CustomerValidationError, DistrictNotFoundError } from '../../domain/customer/customer.errors';
-import type { CustomerAggregate, CustomerListQuery, CustomerRepository, CustomerUpdate } from './customer.repository';
+import type { CustomerAggregate, CustomerListQuery, CustomerRepository, CustomerSummaryQuery, CustomerUpdate } from './customer.repository';
 import type { Gender, IdentificationType, Nationality } from '../../domain/customer/customer.types';
 import type { FileStorage, RegistrationFileStorage, UploadFile } from './file-storage';
 import { normalizeBusinessText, normalizeEmail, normalizeForeignIdentification, normalizeNationalIdentification, normalizeOptionalBusinessText } from './customer.normalization';
@@ -66,7 +66,7 @@ const replacementKey = (identification: string, folder: string, fileOrExtension:
 export class CustomerManagementUseCase {
   constructor(private readonly repository: CustomerRepository, private readonly storage: FileStorage, private readonly districtExists: (code: number) => Promise<boolean>) {}
   async list(query: CustomerListQuery) { const result = await this.repository.list(query); return { ...result, page: query.page, pageSize: query.pageSize, totalPages: Math.ceil(result.total / query.pageSize) }; }
-  async summary() { return this.repository.summary(); }
+  async summary(query: CustomerSummaryQuery = { status: 'ALL' }) { return this.repository.summary(query); }
   async detail(id: string) { const result = await this.repository.findAggregateById(id); if (!result) throw new CustomerNotFoundError(); return detailOutput(result); }
   async status(id: string, isActive: boolean) { try { return await this.repository.updateStatus(id, isActive); } catch { throw new CustomerNotFoundError(); } }
   async file(id: string, kind: 'identification' | 'property') { const key = await this.repository.findFileKey(id, kind); if (!key) throw new CustomerFileNotFoundError(); try { return await this.storage.read(key); } catch { throw new CustomerFileNotFoundError(); } }

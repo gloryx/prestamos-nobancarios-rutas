@@ -31,11 +31,11 @@ export function CustomersPage(): ReactElement {
   const [confirming, setConfirming] = useState<CustomerListItem | null>(null);
 
   const load = async () => {
-    setLoading(true); setError('');
+    setLoading(true); setError(''); setSummary(undefined);
     try {
       const list = await customerUseCases.list.execute({ search, status, page, pageSize, sortBy, sortOrder });
       setItems(list.items); setTotal(list.total); setTotalPages(list.totalPages);
-      if (can('customers.summary.view')) setSummary(await customerUseCases.summary.execute());
+      if (can('customers.summary.view')) setSummary(await customerUseCases.summary.execute({ search, status }));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'No se pudieron cargar los clientes.');
     } finally { setLoading(false); }
@@ -70,7 +70,7 @@ export function CustomersPage(): ReactElement {
   if (confirming) return <CustomerStatusDialog customer={confirming} busy={changing === confirming.id} onCancel={() => setConfirming(null)} onConfirm={() => void changeStatus()} />;
   return <section className="customer-admin" aria-labelledby="customer-title">
     <div className="customer-admin__heading"><div><p className="eyebrow">GESTIÓN</p><h2 id="customer-title">Clientes</h2></div>{can('customers.create') && <Link className="button button--primary" to="/customers/new">Nuevo cliente</Link>}</div>
-    {can('customers.summary.view') && <div className="customer-summary-cards"><Summary label="Total de clientes" value={summary?.totalCustomers} /><Summary label="Masculino" value={summary?.maleCustomers} /><Summary label="Femenino" value={summary?.femaleCustomers} /><Summary label="Con préstamo activo" value={summary?.activeLoans ?? '—'} /></div>}
+    {can('customers.summary.view') && <div className="customer-summary-cards"><Summary label="Total de clientes" value={summary?.totalCustomers} /><Summary label="Masculino" value={summary?.maleCustomers} /><Summary label="Femenino" value={summary?.femaleCustomers} /><Summary label="Con préstamos activos" value={summary?.customersWithActiveLoans} /></div>}
      <div className="customer-toolbar"><label>Buscar<input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Identificación, nombre, teléfono o dirección" onKeyDown={(event) => { if (event.key === 'Enter') { setPage(1); void load(); } }} /></label><label>Estado<select value={status} onChange={(event) => { setStatus(event.target.value as Status); setPage(1); }}><option value="ACTIVE">Activos</option><option value="INACTIVE">Inactivos</option><option value="ALL">Todos</option></select></label><button className="button button--secondary" type="button" onClick={() => { setPage(1); void load(); }}>Buscar</button>{can('customers.export') && <button className="button button--secondary" type="button" disabled={loading || !total} onClick={() => void createCustomerReport({ search, status, sortBy, sortOrder })}>Exportar PDF</button>}</div>
     {error && <div className="catalog-message catalog-message--error" role="alert">{error}</div>}{loading && <div className="catalog-message">Cargando clientes…</div>}
      {!loading && !error && !items.length && <div className="catalog-message customer-admin__empty-state"><strong>No hay clientes registrados.</strong>{can('customers.create') && <Link className="button button--primary" to="/customers/new">Nuevo cliente</Link>}</div>}

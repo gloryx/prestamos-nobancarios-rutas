@@ -1,4 +1,4 @@
-import type { ActiveLoanListItem, CancelledLoansResult, LoanDetail, LoanManagementQuery, LoanManagementResult, LoanManagementSortDir, LoanOperationalDetail, LoanTransitionBody, LoanTransitionReply, OverdueLoan, OverdueLoanSort, UncollectibleLoan, UncollectibleLoanSort } from '../../domain/entities/loan';
+import type { ActiveLoanListItem, CancelledLoansResult, LoanDetail, LoanEditBody, LoanEditContext, LoanEditReceipt, LoanManagementQuery, LoanManagementResult, LoanManagementSortDir, LoanOperationalDetail, LoanTransitionBody, LoanTransitionReply, OverdueLoan, OverdueLoanSort, UncollectibleLoan, UncollectibleLoanSort } from '../../domain/entities/loan';
 import type { CancelledLoansQuery } from '../../application/use-cases/cancelled-loans';
 import { apiClient } from './api-client';
 export type LoanSortBy = 'number' | 'customer' | 'startDate' | 'principal' | 'interest' | 'total' | 'frequency' | 'pending' | 'condition';
@@ -16,5 +16,7 @@ export const loanApi = {
   markLoanUncollectible(id: string, body: LoanTransitionBody) { return apiClient.request<LoanTransitionReply<'UNCOLLECTIBLE'>>(`/loans/${encodeURIComponent(id)}/uncollectible`, { method: 'POST', body: JSON.stringify({ reason: body.reason, idempotencyKey: body.idempotencyKey }) }); },
   reactivateLoan(id: string, body: LoanTransitionBody) { return apiClient.request<LoanTransitionReply<'ACTIVE'>>(`/loans/${encodeURIComponent(id)}/reactivate`, { method: 'POST', body: JSON.stringify({ reason: body.reason, idempotencyKey: body.idempotencyKey }) }); },
   detail(id: string) { return apiClient.request<LoanOperationalDetail>(`/loans/${encodeURIComponent(id)}`); },
+  editContext(id: string) { return apiClient.request<LoanEditContext>(`/loans/${encodeURIComponent(id)}/edit-context`, { cache: 'no-store' }); },
+  edit(id: string, body: LoanEditBody) { return apiClient.request<LoanEditReceipt>(`/loans/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(body) }); },
   create(input: unknown, idempotencyKey: string) { return apiClient.request<LoanDetail>('/loans', { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey, 'Content-Type': 'application/json' }, body: JSON.stringify(input) }); },
 };

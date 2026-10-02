@@ -9,7 +9,7 @@ import { LoanEditOperationOrmEntity } from '../src/infrastructure/database/typeo
 import { CreateLoanEditOperations1761700000000 } from '../src/infrastructure/database/typeorm/migrations/1761700000000-create-loan-edit-operations';
 import { LoanEditIdempotencyConflictError, LoanEditIdempotencyInputError, LoanEditOperationsRepository } from '../src/infrastructure/database/typeorm/repositories/loan-edit-operations.repository';
 
-describe('unpublished ACTIVE loan edit input', () => {
+describe('ACTIVE loan edit input', () => {
   it('requires the full opening contract and positive-row snapshot for metadata and interest edits', () => {
     const baseline: LoanEditBaseline = {
       interestAmount: '20.00', paymentFrequencyId: 'frequency-before', preferredPaymentMethodId: 'method-before',
@@ -48,10 +48,10 @@ describe('unpublished ACTIVE loan edit input', () => {
      void missingBaseline; void flattened; void missingOriginalObservations; void immutable; void calculated; void immutableChange;
   });
 
-  it('does not register a partial PATCH method on the existing loans controller', () => {
+  it('registers only the completed loan edit PATCH method', () => {
     const handlers = Object.getOwnPropertyNames(LoanController.prototype)
       .filter((name) => name !== 'constructor').map((name) => LoanController.prototype[name as keyof LoanController]);
-    expect(handlers.filter((handler) => Reflect.getMetadata(METHOD_METADATA, handler) === RequestMethod.PATCH)).toEqual([]);
+    expect(handlers.filter((handler) => Reflect.getMetadata(METHOD_METADATA, handler) === RequestMethod.PATCH)).toEqual([LoanController.prototype.editLoan]);
   });
 });
 

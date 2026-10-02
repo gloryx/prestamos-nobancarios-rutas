@@ -12,6 +12,7 @@ export class LoanStatusHistoryOrmEntity implements LoanStatusHistory {
   @Column({ name: 'changed_at', type: 'timestamptz' }) changedAt!: Date;
   @Column({ name: 'changed_by_user_id', type: 'uuid', nullable: true }) changedByUserId!: string | null;
   @Column({ type: 'text', nullable: true }) reason!: string | null;
+  @Column({ name: 'disbursement_resolution', type: 'varchar', length: 32, nullable: true }) disbursementResolution!: LoanStatusHistory['disbursementResolution'];
   @Column({ name: 'payment_id', type: 'uuid', nullable: true }) paymentId!: string | null;
   @Column({ name: 'payment_annulment_id', type: 'uuid', nullable: true }) paymentAnnulmentId!: string | null;
   @Column({ name: 'idempotency_key', type: 'varchar', length: 128, nullable: true }) idempotencyKey!: string | null;

@@ -1,0 +1,21 @@
+.dialog.loan-edit { width: min(100%, 48rem); max-height: calc(100dvh - 2rem); overflow-y: auto; }
+.loan-edit__facts, .loan-edit__fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .7rem 1rem; }
+.loan-edit__facts { padding: .8rem; background: #f8fafd; border-radius: .35rem; }
+.loan-edit__facts div { min-width: 0; overflow-wrap: anywhere; }
+.loan-edit__facts dt { font-size: .8rem; color: var(--muted); }
+.loan-edit__facts dd { margin: .25rem 0 0; font-weight: 700; }
+.loan-edit__fields { margin: 1rem 0; }
+.loan-detail__actions { display: flex; flex-wrap: wrap; gap: .65rem; }
+.loan-detail__actions a.button { display: inline-flex; align-items: center; gap: .4rem; text-decoration: none; }
+.loan-edit__fields label { min-width: 0; }
+.loan-edit__fields textarea { width: 100%; min-height: 5rem; padding: .65rem; border: 1px solid var(--border); border-radius: .35rem; font: inherit; resize: vertical; }
+.loan-edit__fields :is(input, select, textarea):focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+@media (max-width: 640px) {
+  .loan-edit__facts, .loan-edit__fields { grid-template-columns: 1fr; }
+  .loan-edit__plan .payment-plan-editor__table { display: block; min-width: 0; }
+  .loan-edit__plan .payment-plan-editor__table thead { display: none; }
+  .loan-edit__plan .payment-plan-editor__table tbody { display: grid; gap: .75rem; }
+  .loan-edit__plan .payment-plan-editor__table tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; border: 1px solid var(--border); border-radius: .35rem; }
+  .loan-edit__plan .payment-plan-editor__table td { min-width: 0; }
+  .loan-edit__plan .payment-plan-editor__table td:nth-child(2), .loan-edit__plan .payment-plan-editor__table td:nth-child(3) { grid-column: 1 / -1; }
+}

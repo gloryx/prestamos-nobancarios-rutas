@@ -1,11 +1,13 @@
-import { useEffect, useState, type ReactElement } from 'react';
-import { useParams } from 'react-router-dom';
+import { useCallback, useEffect, useState, type ReactElement } from 'react';
+import { Link, useParams } from 'react-router-dom';
 import type { LoanOperationalDetail } from '../../domain/entities/loan';
 import { loanApi } from '../../infrastructure/api/loan.api';
 import { generateLoanPaymentPlanReport } from '../../infrastructure/reports/loan-payment-plan-report.service';
 import { formatDateOnlyForDisplay, formatDateTimeForDisplay } from '../../shared/utils/date';
 import { formatCRC } from '../../shared/utils/money';
 import { LoanPaymentPlanTable } from '../components/LoanPaymentPlanTable';
+import { LoanEditDialog } from '../components/LoanEditDialog';
+import { Icon } from '../components/layout/Icon';
 import { useAuth } from '../hooks/auth-context';
 import { formatLoanStatus } from '../helpers/loan';
 
@@ -14,10 +16,14 @@ export function LoanDetailPage(): ReactElement {
   const { can } = useAuth();
   const [loan, setLoan] = useState<LoanOperationalDetail>();
   const [exportError, setExportError] = useState('');
+  const [editing, setEditing] = useState(false);
+  const closeEdit = useCallback(() => setEditing(false), []);
 
   useEffect(() => {
     void loanApi.detail(id).then(setLoan);
   }, [id]);
+  const refreshDetail = useCallback(async () => { setLoan(await loanApi.detail(id)); setExportError(''); }, [id]);
+  const refreshUnavailable = useCallback(async () => { try { await refreshDetail(); } catch (cause) { setExportError(cause instanceof Error ? cause.message : 'No se pudo actualizar el préstamo.'); } }, [refreshDetail]);
 
   const download = async () => {
     setExportError('');
@@ -32,13 +38,17 @@ export function LoanDetailPage(): ReactElement {
       <header className="loan-detail__header">
         <div>
           <span className="eyebrow">PRÉSTAMO {loan.loanNumber}</span>
-          <h1>{loan.customerName}</h1>
+          <h1 tabIndex={-1}>{loan.customerName}</h1>
         </div>
+        <div className="loan-detail__actions">
+        {loan.status === 'ACTIVE' && can('loans.update') && <button className="button button--secondary" type="button" onClick={() => setEditing(true)}>Editar préstamo</button>}
+        {loan.status === 'ACTIVE' && can('payments.view') && can('payments.create') && <Link className="button button--secondary" to={`/payments/new?loanId=${encodeURIComponent(loan.id)}`}><Icon name="payment" />Registrar pago</Link>}
         {can('loans.export') && (
           <button className="button button--secondary" type="button" onClick={() => void download()}>
             Descargar plan de pago
           </button>
         )}
+        </div>
       </header>
       {exportError && <p role="alert">{exportError}</p>}
 
@@ -62,6 +72,7 @@ export function LoanDetailPage(): ReactElement {
       </section>
 
       <LoanPaymentPlanTable plan={loan.plan} total={loan.totalAmount} showCondition />
+      {editing && can('loans.update') && <LoanEditDialog loanId={id} api={loanApi} onSaved={refreshDetail} onUnavailable={refreshUnavailable} onClose={closeEdit} />}
     </section>
   );
 }

@@ -10,6 +10,7 @@ export type LoanStatusHistory = {
   changedAt: Date;
   changedByUserId: string | null;
   reason: string | null;
+  disbursementResolution: 'NOT_DELIVERED' | 'RETURNED_IN_FULL' | null;
   paymentId: string | null;
   paymentAnnulmentId: string | null;
   idempotencyKey: string | null;

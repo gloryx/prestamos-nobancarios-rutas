@@ -3,13 +3,15 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import type { PaymentContext, PaymentLoan } from '../../infrastructure/api/payment.api';
-import { PaymentAnnulDialog, PaymentCaptureDialog, PaymentDetails, PaymentLoanDialog, PaymentSelector, PaymentsPage, SelectedPaymentDetails, annulmentAttempt, annulmentTarget, defaultPaymentDate, paymentCaptureAttempt, paymentCapturePayload, runAnnulOnce, submitAnnulment } from './PaymentsPage';
+import { PaymentAnnulDialog, PaymentCaptureDialog, PaymentDetails, PaymentLoanDialog, PaymentSelector, PaymentsPage, SelectedPaymentDetails, annulmentAttempt, annulmentTarget, canDownloadPaymentPlan, defaultPaymentDate, downloadPaymentPlan, paymentCaptureAttempt, paymentCapturePayload, runAnnulOnce, submitAnnulment } from './PaymentsPage';
 import { loadPaymentLoanPage, refreshPaymentLoanPage, reusePendingLoanPage } from '../helpers/payment-loan-selector';
 import { MoneyInput } from '../components/MoneyInput';
 import { PaymentPlanEditorDialog } from '../components/PaymentPlanEditorDialog';
+import { PaymentPlanDraftFields } from '../components/PaymentPlanDraftFields';
 import { TableActions, type TableAction } from '../components/TableActions';
 import { localDateOnly, paymentTimeline, persistPlanAndRefresh, planBaselineFromContext, planDraftFromEntries, orderedPlanDraft, planSaveAttempt, PlanRefreshError, reviewPlanDraft, type PlanDraftEntry } from '../helpers/payment-plan';
 import { canAccess } from '../hooks/auth-permissions';
+import { loadActivePaymentContext, paymentLoanIdFromSearch } from '../helpers/payment-loan-link';
 import type { AuthIdentity } from '../../domain/entities/auth';
 
 vi.mock('../hooks/auth-context', () => ({ useAuth: () => ({ can: () => true }) }));
@@ -40,7 +42,7 @@ describe('payment selection presentation', () => {
   });
   const dialog = (options: Partial<Parameters<typeof PaymentLoanDialog>[0]> = {}) => renderToStaticMarkup(<PaymentLoanDialog {...dialogProps(options)} />);
   const selectedProps = (options: Partial<Parameters<typeof SelectedPaymentDetails>[0]> = {}): Parameters<typeof SelectedPaymentDetails>[0] => ({
-    context, canCreate: true, canCustomize: false, canAnnul: false, annulBusy: false, onPay: noop, onCustomize: noop, onAnnul: noop,
+    context, canCreate: true, canCustomize: false, canAnnul: false, canExport: false, annulBusy: false, downloadBusy: false, onPay: noop, onCustomize: noop, onAnnul: noop, onDownload: noop,
     onChangeLoan: noop, onCloseLoan: noop, triggerRef: createRef<HTMLButtonElement>(), paymentTriggerRef: createRef<HTMLButtonElement>(), planTriggerRef: createRef<HTMLButtonElement>(), annulTriggerRef: createRef<HTMLButtonElement>(), ...options,
   });
   const selected = (options: Partial<Parameters<typeof SelectedPaymentDetails>[0]> = {}) => renderToStaticMarkup(<SelectedPaymentDetails {...selectedProps(options)} />);
@@ -60,6 +62,7 @@ describe('payment selection presentation', () => {
     expect(initial).not.toContain('aria-label="Seleccionar préstamo"');
     expect(initial).not.toContain('role="dialog"');
     expect(initial).not.toContain('Refrescar préstamos');
+    expect(initial).not.toContain('Descargar plan de pago');
 
     const existingRoute = renderToStaticMarkup(<MemoryRouter initialEntries={['/payments']}><PaymentsPage /></MemoryRouter>);
     expect(existingRoute).toContain('aria-label="Seleccionar préstamo"');
@@ -77,6 +80,7 @@ describe('payment selection presentation', () => {
     expect(pending).not.toContain('payments-intro__card');
     expect(pending).not.toContain('role="dialog"');
     expect(pending).not.toContain('aria-label="Seleccionar préstamo"');
+    expect(pending).not.toContain('Descargar plan de pago');
     const uppercase = renderToStaticMarkup(<MemoryRouter initialEntries={[`/payments/new?loanId=${id.toUpperCase()}`]}><PaymentsPage /></MemoryRouter>);
     expect(uppercase).toContain('Cargando contexto de pago…');
     expect(uppercase).not.toContain('payments-intro__card');
@@ -85,7 +89,104 @@ describe('payment selection presentation', () => {
       expect(invalid).toContain('role="alert">El identificador del préstamo no es válido.');
       expect(invalid).toContain('>Seleccionar préstamo</button>');
       expect(invalid).not.toContain('Cargando contexto de pago…');
+      expect(invalid).not.toContain('Descargar plan de pago');
     }
+  });
+
+  it('requires both existing loan permissions and keeps superadmin authorization centralized', () => {
+    const user: AuthIdentity = { id: 'u', username: 'u', fullName: 'User', role: { id: 'r', code: 'STAFF', name: 'Staff', isSuperAdmin: false }, permissions: [] };
+    const allowed = (identity: AuthIdentity) => canDownloadPaymentPlan((permission) => canAccess(identity, permission));
+    for (const permissions of [[], ['loans.export'], ['loans.view']]) {
+      expect(allowed({ ...user, permissions })).toBe(false);
+      expect(selected({ canExport: allowed({ ...user, permissions }) })).not.toContain('Descargar plan de pago');
+    }
+    expect(allowed({ ...user, permissions: ['loans.export', 'loans.view'] })).toBe(true);
+    expect(allowed({ ...user, role: { ...user.role, isSuperAdmin: true } })).toBe(true);
+    expect(selected({ canExport: true })).toContain('aria-label="Descargar plan de pago"');
+  });
+
+  it('places the compact export beside plan customization without removing payment or annul actions', () => {
+    const onDownload = vi.fn(); const onCustomize = vi.fn();
+    const markup = selected({ canExport: true, canCustomize: true, canAnnul: true });
+    expect(markup).toMatch(/Personalizar plan.*title="Descargar plan de pago"/);
+    expect(markup).toContain('aria-label="Descargar plan de pago"');
+    expect(markup).toContain('Pagar cuota 1');
+    expect(markup).toContain('Anular pago del 02/01/2020');
+    expect(markup).toContain('Cambiar préstamo');
+    expect(markup).toContain('Cerrar préstamo');
+    const tree = elements(SelectedPaymentDetails(selectedProps({ canExport: true, canCustomize: true, onDownload, onCustomize })));
+    (tree.find((element) => element.type === 'button' && (element.props as { onClick?: () => void; title?: string }).title === 'Descargar plan de pago')!.props as { onClick: () => void }).onClick();
+    expect(onDownload).toHaveBeenCalledOnce();
+    expect(onCustomize).not.toHaveBeenCalled();
+    expect(selected({ canExport: true, downloadBusy: true })).toMatch(/aria-label="Descargar plan de pago"[^>]*aria-busy="true" disabled=""/);
+    expect(selected({ canExport: true, downloadBusy: true })).toContain('Descargando…');
+  });
+
+  it('downloads exactly once using the resolved deep-link loan ID and a fresh canonical detail', async () => {
+    const id = '14870d77-8723-49e5-96b8-e4313943d726';
+    const parsed = paymentLoanIdFromSearch(`loanId=${id.toUpperCase()}`);
+    const resolved = await loadActivePaymentContext(parsed.id!, () => true, {
+      context: vi.fn().mockResolvedValue({ ...context, summary: { ...context.summary, loanId: id, status: 'ACTIVE' } }),
+    });
+    expect(resolved?.summary.loanId).toBe(id);
+    let selectedId: string | null = resolved!.summary.loanId;
+    let finish!: (detail: { id: string }) => void;
+    const api = { detail: vi.fn().mockReturnValue(new Promise((resolve) => { finish = resolve; })) };
+    const report = vi.fn().mockResolvedValue(undefined);
+    const lock = { current: null as { selection: number } | null };
+    const first = downloadPaymentPlan(() => selectedId, 1, () => true, lock, api, report);
+    await downloadPaymentPlan(() => selectedId, 1, () => true, lock, api, report);
+    expect(api.detail).toHaveBeenCalledExactlyOnceWith(id);
+    expect(report).not.toHaveBeenCalled();
+    finish({ id }); await first;
+    expect(report).toHaveBeenCalledExactlyOnceWith({ id });
+    expect(lock.current).toBeNull();
+    selectedId = null;
+    await downloadPaymentPlan(() => selectedId, 2, () => true, lock, api, report);
+    expect(api.detail).toHaveBeenCalledTimes(1);
+  });
+
+  it('reads the latest selected ID, ignores stale results and errors, and allows the next loan while the first is pending', async () => {
+    let selectedId = 'loan-a'; let selection = 1;
+    let finishA!: (detail: { id: string }) => void;
+    const api = { detail: vi.fn().mockImplementation((id: string) => id === 'loan-a'
+      ? new Promise((resolve) => { finishA = resolve; }) : Promise.resolve({ id })) };
+    const report = vi.fn().mockResolvedValue(undefined);
+    const lock = { current: null as { selection: number } | null };
+    const start = () => {
+      const token = selection; const id = selectedId;
+      return downloadPaymentPlan(() => selectedId, token, () => token === selection && selectedId === id, lock, api, report);
+    };
+    const stale = start();
+    selectedId = 'loan-b'; selection = 2;
+    await start();
+    finishA({ id: 'loan-a' }); await stale;
+    expect(api.detail.mock.calls).toEqual([['loan-a'], ['loan-b']]);
+    expect(report).toHaveBeenCalledExactlyOnceWith({ id: 'loan-b' });
+    expect(lock.current).toBeNull();
+    const rejected = { detail: vi.fn().mockRejectedValue(new Error('Connection lost')) };
+    selectedId = 'loan-a'; selection = 3;
+    const old = downloadPaymentPlan(() => selectedId, selection, () => selectedId === 'loan-a', lock, rejected, report);
+    selectedId = 'loan-b';
+    await expect(old).resolves.toBeUndefined();
+    expect(report).toHaveBeenCalledTimes(1);
+  });
+
+  it('releases the lock on a current download error and preserves selected-loan payment actions for retry', async () => {
+    const api = { detail: vi.fn().mockRejectedValueOnce(new Error('Connection lost')).mockResolvedValue({ id: 'loan-1' }) };
+    const report = vi.fn().mockResolvedValue(undefined);
+    const lock = { current: null as { selection: number } | null };
+    const download = () => downloadPaymentPlan(() => context.summary.loanId, 1, () => true, lock, api, report);
+    await expect(download()).rejects.toThrow('Connection lost');
+    expect(lock.current).toBeNull();
+    const markup = selected({ canCreate: true, canCustomize: true, canAnnul: true, canExport: true });
+    expect(markup).toContain('Descargar plan de pago');
+    expect(markup).toContain('Pagar cuota 1');
+    expect(markup).toContain('Personalizar plan');
+    expect(markup).toContain('Anular pago');
+    await download();
+    expect(api.detail).toHaveBeenCalledTimes(2);
+    expect(report).toHaveBeenCalledExactlyOnceWith({ id: 'loan-1' });
   });
 
   it('renders an accessible modal with exactly six institutional columns and formatted loan details', () => {
@@ -692,17 +793,18 @@ describe('payment plan editor', () => {
   it('updates by local key, removes only the chosen row, and cannot submit invalid or busy plans', () => {
     const onChange = vi.fn(); const onAdd = vi.fn(); const onSave = vi.fn(); const onClose = vi.fn();
     const tree = elements(PaymentPlanEditorDialog(props({ onChange, onAdd, onSave, onClose })));
-    const dates = tree.filter((element) => element.type === 'input');
+    const fields = elements(PaymentPlanDraftFields(tree.find((element) => element.type === PaymentPlanDraftFields)!.props as Parameters<typeof PaymentPlanDraftFields>[0]));
+    const dates = fields.filter((element) => element.type === 'input');
     (dates[0].props as { onChange: (event: ChangeEvent<HTMLInputElement>) => void }).onChange({ target: { value: '2026-10-01' } } as ChangeEvent<HTMLInputElement>);
     expect(onChange).toHaveBeenCalledWith([draft[0], { ...draft[1], dueDate: '2026-10-01' }]);
-    const money = tree.find((element) => element.type === MoneyInput)!;
+    const money = fields.find((element) => element.type === MoneyInput)!;
     (money.props as { onChange: (value: string) => void }).onChange('59.99');
     expect(onChange).toHaveBeenCalledWith([draft[0], { ...draft[1], pendingAmount: '59.99' }]);
-    const remove = tree.find((element) => element.type === TableActions)!.props as { actions: TableAction[] };
+    const remove = fields.find((element) => element.type === TableActions)!.props as { actions: TableAction[] };
     remove.actions[0].onClick?.();
     expect(onChange).toHaveBeenCalledWith([draft[0]]);
     const button = (label: string) => tree.find((element) => element.type === 'button' && (element.props as { children?: ReactNode }).children === label)!;
-    (button('Agregar obligación').props as { onClick: () => void }).onClick();
+    (fields.find((element) => element.type === 'button' && (element.props as { children?: ReactNode }).children === 'Agregar obligación')!.props as { onClick: () => void }).onClick();
     (button('Cancelar').props as { onClick: () => void }).onClick();
     expect(onAdd).toHaveBeenCalledOnce(); expect(onClose).toHaveBeenCalledOnce();
     const submit = (component: ReturnType<typeof PaymentPlanEditorDialog>) =>

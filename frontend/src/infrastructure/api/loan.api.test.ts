@@ -98,3 +98,32 @@ describe('loan management transport', () => {
     finally { fetchMock.mockRestore(); }
   });
 });
+
+describe('loan edit transport', () => {
+  it('loads scoped options without catalog routes and sends only the contracted PATCH fields with the stored receipt', async () => {
+    const context = { loan: { id: 'a' }, baseline: { plan: [] }, paymentFrequencyOptions: [], preferredPaymentMethodOptions: [] };
+    const receipt = { operationId: 'op', loanId: 'a', createdAt: '2026-09-30T00:00:00Z' };
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => ({ ok: true, status: 200,
+      json: async () => String(url).endsWith('/edit-context') ? context : receipt }) as Response);
+    try {
+      expect(await loanApi.editContext('loan/id')).toBe(context);
+      const body = { idempotencyKey: 'key', baseline: { interestAmount: '0.00', paymentFrequencyId: 'f', preferredPaymentMethodId: 'm', observations: null, financialBalance: '10.00', plan: [] }, changes: { observations: 'Note' } };
+      expect(await loanApi.edit('loan/id', body)).toBe(receipt);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(new URL(String(fetchMock.mock.calls[0][0])).pathname).toBe('/loans/loan%2Fid/edit-context');
+      expect(fetchMock.mock.calls[0][1]).toMatchObject({ cache: 'no-store', credentials: 'include' });
+      expect(new URL(String(fetchMock.mock.calls[1][0])).pathname).toBe('/loans/loan%2Fid');
+      expect(fetchMock.mock.calls[1][1]).toMatchObject({ method: 'PATCH', credentials: 'include' });
+      expect(JSON.parse(String(fetchMock.mock.calls[1][1]?.body))).toEqual(body);
+    } finally { fetchMock.mockRestore(); }
+  });
+  it('preserves HTTP status and a safe backend message for 400, 404 and 409', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch');
+    try {
+      for (const status of [400, 404, 409]) {
+        fetchMock.mockResolvedValueOnce({ ok: false, status, json: async () => ({ message: 'Review the loan.' }) } as Response);
+        await expect(loanApi.editContext('a')).rejects.toMatchObject({ status, message: 'Review the loan.' });
+      }
+    } finally { fetchMock.mockRestore(); }
+  });
+});

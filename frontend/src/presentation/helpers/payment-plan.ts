@@ -34,7 +34,7 @@ export function orderedPlanDraft(draft: PlanDraftEntry[]): PlanDraftEntry[] {
   return [...draft].sort((a, b) => a.dueDate.localeCompare(b.dueDate) || a.key.localeCompare(b.key));
 }
 
-export function reviewPlanDraft(balance: string, draft: PlanDraftEntry[]) {
+export function reviewPlanDraft(balance: string, draft: PlanDraftEntry[], options: { allowEmpty?: boolean; minDate?: string } = {}) {
   const balanceCents = parseMoneyCents(balance);
   let distributedCents = 0n;
   const entries = orderedPlanDraft(draft).map(({ id, dueDate, pendingAmount }) => {
@@ -42,9 +42,9 @@ export function reviewPlanDraft(balance: string, draft: PlanDraftEntry[]) {
     if (cents !== null && cents > 0n) distributedCents += cents;
     return { id, dueDate, pendingAmount: cents === null ? '' : moneyFromCents(cents) };
   });
-  const valid = draft.length > 0 && balanceCents !== null && balanceCents > 0n && draft.every((entry) =>
+  const valid = (draft.length > 0 || (options.allowEmpty === true && balanceCents === 0n)) && balanceCents !== null && balanceCents >= 0n && draft.every((entry) =>
     /^\d{4}-\d{2}-\d{2}$/.test(entry.dueDate) && formatDateOnlyForDisplay(entry.dueDate) !== '—'
-    && (parseMoneyCents(entry.pendingAmount) ?? 0n) > 0n);
+    && (!options.minDate || entry.dueDate >= options.minDate) && (parseMoneyCents(entry.pendingAmount) ?? 0n) > 0n);
   const differenceCents = balanceCents === null ? null : balanceCents - distributedCents;
   return { distributedCents, differenceCents, entries, canSave: valid && differenceCents === 0n };
 }

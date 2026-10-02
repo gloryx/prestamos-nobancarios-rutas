@@ -10,8 +10,8 @@ import { TableActions, type TableAction } from '../components/TableActions';
 import { ActiveLoansTable, LoansPage } from './LoansPage';
 
 const loan: ActiveLoanListItem = { id: '14870d77-8723-49e5-96b8-e4313943d726', loanNumber: '42', startDate: '2026-01-01', principal: '100.00', interestAmount: '10.00', totalAmount: '110.00', customerName: 'Ana', identification: '101', frequencyName: 'Mensual', pendingTotal: '60.00', isOverdue: false };
-const onSort = vi.fn(), onView = vi.fn(), onDownload = vi.fn();
-const props: Parameters<typeof ActiveLoansTable>[0] = { items: [loan, { ...loan, id: 'loan-2', loanNumber: '43', isOverdue: true }], sortBy: 'number', sortOrder: 'desc', onSort, onView, onDownload, canExport: true, canRegisterPayment: false };
+const onSort = vi.fn(), onView = vi.fn(), onEdit = vi.fn(), onDownload = vi.fn();
+const props: Parameters<typeof ActiveLoansTable>[0] = { items: [loan, { ...loan, id: 'loan-2', loanNumber: '43', isOverdue: true }], sortBy: 'number', sortOrder: 'desc', onSort, onView, onEdit, onDownload, canEdit: false, canExport: true, canRegisterPayment: false };
 const markup = (override: Partial<typeof props> = {}) => renderToStaticMarkup(<MemoryRouter><ActiveLoansTable {...props} {...override} /></MemoryRouter>);
 const elements = (node: ReactNode): ReactElement[] => Array.isArray(node) ? node.flatMap(elements) : isValidElement(node) ? [node, ...elements((node.props as { children?: ReactNode }).children)] : [];
 const user: AuthIdentity = { id: 'user', username: 'u', fullName: 'User', role: { id: 'role', code: 'ROLE', name: 'Role', isSuperAdmin: false }, permissions: ['loans.view'] };
@@ -75,6 +75,22 @@ describe('active loan condition presentation', () => {
     expect(markup({ items: [loan], canRegisterPayment: canAccess(superadmin, 'payments.view') && canAccess(superadmin, 'payments.create') })).toContain('aria-label="Registrar pago"');
     expect(markup({ items: [{ ...loan, status: 'CANCELLED' } as ActiveLoanListItem], canRegisterPayment: true })).not.toContain('aria-label="Registrar pago"');
     expect(markup({ canRegisterPayment: true, canExport: false, items: [loan] })).toContain('aria-label="Registrar pago"');
+  });
+
+  it('keeps View, Payment and PDF in order and inserts Edit only for authorized active loans', () => {
+    const identity = { ...user, permissions: ['loans.update'] };
+    const allowed = canAccess(identity, 'loans.update');
+    const actions = elements(ActiveLoansTable({ ...props, items: [loan], canEdit: allowed, canRegisterPayment: true }))
+      .find((element) => element.type === TableActions)!.props as { actions: TableAction[] };
+    expect(actions.actions.map((action) => action.key)).toEqual(['view', 'edit', 'payment', 'download']);
+    expect(actions.actions[1]).toMatchObject({ icon: 'edit', title: 'Editar préstamo', ariaLabel: 'Editar préstamo 42' });
+    expect(actions.actions[1].to).toBeUndefined();
+    actions.actions[1].onClick?.(); expect(onEdit).toHaveBeenCalledWith(loan);
+    expect(markup({ items: [loan], canEdit: allowed })).toContain('aria-label="Editar préstamo 42"');
+    expect(markup({ items: [loan], canEdit: canAccess(user, 'loans.update') })).not.toContain('Editar préstamo 42');
+    expect(markup({ items: [loan], canEdit: canAccess({ ...user, role: { ...user.role, isSuperAdmin: true } }, 'loans.update') })).toContain('Editar préstamo 42');
+    expect(markup({ items: [{ ...loan, status: 'UNCOLLECTIBLE' } as ActiveLoanListItem], canEdit: true })).not.toContain('Editar préstamo 42');
+    expect(markup({ canEdit: true, canExport: false, items: [loan] })).toContain('Editar préstamo 42');
   });
 
   it('keeps the page filters and creation link behind centralized permissions, including superadmin', () => {

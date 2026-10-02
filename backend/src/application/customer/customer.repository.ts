@@ -6,13 +6,15 @@ export type CustomerAggregate = { customer: Customer; address: CustomerAddress; 
 export type CustomerListItem = { id: string; identification: string; fullName: string; primaryPhone: string; address: string; isActive: boolean };
 export type CustomerSortBy = 'identification' | 'name' | 'phone' | 'address' | 'status';
 export type CustomerListQuery = { search?: string; status: 'ACTIVE' | 'INACTIVE' | 'ALL'; sortBy?: CustomerSortBy; sortOrder?: 'asc' | 'desc'; page: number; pageSize: 10 | 20 | 50 };
+export type CustomerSummaryQuery = Pick<CustomerListQuery, 'search' | 'status'>;
+export type CustomerSummary = { totalCustomers: number; maleCustomers: number; femaleCustomers: number; customersWithActiveLoans: number };
 export type CustomerUpdate = Partial<Omit<Customer, 'id' | 'createdAt' | 'updatedAt' | 'identificationFrontFileKey' | 'isActive'>> & Partial<Pick<CustomerAddress, 'districtCode' | 'exactAddress' | 'latitude' | 'longitude'>> & { identificationFrontFileKey?: string | null; propertyPhotoFileKey?: string };
 
 export interface CustomerRepository {
   findByIdentification(identification: string): Promise<Customer | null>;
   createWithAddress(customer: CreateCustomerInput, address: CreateCustomerAddressInput): Promise<{ customer: Customer; address: CustomerAddress }>;
   list(query: CustomerListQuery): Promise<{ items: CustomerListItem[]; total: number }>;
-  summary(): Promise<{ totalCustomers: number; maleCustomers: number; femaleCustomers: number; activeLoans: null }>;
+  summary(query: CustomerSummaryQuery): Promise<CustomerSummary>;
   findAggregateById(id: string): Promise<CustomerAggregate | null>;
   updateWithAddress(id: string, customer: CustomerUpdate, address: Partial<CustomerAddress>): Promise<{ aggregate: CustomerAggregate; oldIdentificationKey?: string; oldPropertyKey?: string }>;
   updateStatus(id: string, isActive: boolean): Promise<Customer>;

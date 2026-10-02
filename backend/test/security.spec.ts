@@ -11,6 +11,7 @@ import { COLLECTION_MANAGER_DEFAULTS, COLLECTOR_DEFAULTS, PERMISSIONS } from '..
 import { SecurityUnauthorizedError } from '../src/application/security/security.errors';
 import { AuthController } from '../src/presentation/security/security.controller';
 import { PaymentController } from '../src/presentation/payment/payment.controller';
+import { LoanController } from '../src/presentation/loan/loan.controller';
 import { SecurityService } from '../src/application/security/security.service';
 import { SESSION_COOKIE } from '../src/shared/constants/security';
 
@@ -85,7 +86,7 @@ describe('security guards and permission metadata', () => {
        'customers.view', 'customers.create', 'customers.update', 'customers.status.change', 'customers.summary.view', 'customers.files.view', 'customers.export', 'customers.assigned.view', 'customers.site.view', 'customers.site.capture', 'customers.site.replace', 'customers.site.replace.authorize',
        'users.view', 'users.create', 'users.update', 'users.status.change', 'users.password.reset', 'users.role.assign', 'roles.view', 'roles.permissions.update',
        'collectors.view', 'collectors.create', 'collectors.update', 'collectors.status.change', 'collectors.user.assign', 'collectors.photo.view',
-          'financial-opening.view', 'financial-opening.perform', 'cash-movements.view', 'cash-movements.create', 'cash-movements.reverse', 'cash-movements.export', 'loans.view', 'loans.create', 'loans.update', 'loans.export', 'loans.status.uncollectible', 'loans.status.reactivate', 'payments.view', 'payments.create', 'payments.annul', 'payments.plan.customize',
+           'financial-opening.view', 'financial-opening.perform', 'cash-movements.view', 'cash-movements.create', 'cash-movements.reverse', 'cash-movements.export', 'loans.view', 'loans.create', 'loans.update', 'loans.export', 'loans.status.annul', 'loans.status.uncollectible', 'loans.status.reactivate', 'payments.view', 'payments.create', 'payments.annul', 'payments.plan.customize',
     ]));
     expect(Reflect.getMetadata(PERMISSIONS_KEY, CustomerController.prototype.list)).toEqual(['customers.view']);
     expect(Reflect.getMetadata(PERMISSIONS_KEY, CustomerController.prototype.summary)).toEqual(['customers.summary.view']);
@@ -98,16 +99,15 @@ describe('security guards and permission metadata', () => {
     expect(Reflect.getMetadata(PERMISSIONS_KEY, RouteController.prototype.createOne)).toEqual(['routes.create']);
   });
 
-  it('keeps loans.update in the dynamic catalog without granting a role access or exposing a PATCH route', () => {
+  it('protects the loan edit route with the existing dynamic loans.update permission', () => {
     expect(PERMISSIONS.filter(([code]) => code === 'loans.update')).toEqual([['loans.update', 'Editar préstamos', 'PRÉSTAMOS']]);
     expect(COLLECTION_MANAGER_DEFAULTS).not.toContain('loans.update');
     expect(COLLECTOR_DEFAULTS).not.toContain('loans.update');
     const guard = new PermissionGuard(new Reflector());
-    const futureHandler = () => undefined;
-    Reflect.defineMetadata(PERMISSIONS_KEY, ['loans.update'], futureHandler);
-    expect(() => guard.canActivate(context(futureHandler, { currentUser: identity(['loans.view']) }))).toThrow(ForbiddenException);
-    expect(guard.canActivate(context(futureHandler, { currentUser: identity(['loans.update']) }))).toBe(true);
-    expect(guard.canActivate(context(futureHandler, { currentUser: identity([], true) }))).toBe(true);
+    expect(Reflect.getMetadata(PERMISSIONS_KEY, LoanController.prototype.editLoan)).toEqual(['loans.update']);
+    expect(() => guard.canActivate(context(LoanController.prototype.editLoan, { currentUser: identity(['loans.view']) }))).toThrow(ForbiddenException);
+    expect(guard.canActivate(context(LoanController.prototype.editLoan, { currentUser: identity(['loans.update']) }))).toBe(true);
+    expect(guard.canActivate(context(LoanController.prototype.editLoan, { currentUser: identity([], true) }))).toBe(true);
   });
 });
 

@@ -4,7 +4,7 @@ import {
   filterNavigationEntries,
   getActiveGroupIds,
   navigationEntries,
-  toggleExpandedGroup,
+  toggleAccordionGroup,
   type NavigationEntry,
 } from '../../navigation/navigationConfig';
 import { Icon } from './Icon';
@@ -21,12 +21,11 @@ export function AppSidebar({ isOpen, onNavigate }: AppSidebarProps): ReactElemen
   const [openGroupIds, setOpenGroupIds] = useState<string[]>(activeGroupIds);
 
   useEffect(() => {
-    const activeIds = getActiveGroupIds(visibleEntries, location.pathname);
-    setOpenGroupIds((current) => Array.from(new Set([...current, ...activeIds])));
+    setOpenGroupIds(getActiveGroupIds(visibleEntries, location.pathname));
   }, [location.pathname, visibleEntries]);
 
-  const toggleGroup = (groupId: string) => {
-    setOpenGroupIds((current) => toggleExpandedGroup(current, groupId));
+  const toggleGroup = (groupId: string, depth: number) => {
+    setOpenGroupIds((current) => toggleAccordionGroup(current, groupId, depth, activeGroupIds));
   };
 
   return (
@@ -54,21 +53,21 @@ type NavigationRenderContext = {
   openGroupIds: string[];
   onNavigate: () => void;
   sidebarId: string;
-  toggleGroup: (groupId: string) => void;
+  toggleGroup: (groupId: string, depth: number) => void;
   depth: number;
 };
 
 function renderEntry(entry: NavigationEntry, context: NavigationRenderContext): ReactElement {
   if (entry.type === 'link') {
-    return <NavLink key={entry.id} to={entry.path} end={entry.path === '/dashboard' || entry.path === '/loans'} onClick={context.onNavigate} className={({ isActive }) => `nav-link${context.depth > 0 ? ' nav-link--child' : ''}${isActive ? ' nav-link--active' : ''}`}>
+    return <NavLink key={entry.id} to={entry.path} end={entry.path === '/dashboard' || entry.path === '/loans'} onClick={context.onNavigate} className={({ isActive }) => `nav-link${context.depth === 0 ? ' nav-link--root' : ' nav-link--child'} nav-link--depth-${context.depth}${isActive ? ' nav-link--active' : ''}`}>
       <Icon name={entry.icon} /><span>{entry.label}</span>
     </NavLink>;
   }
 
   const isOpen = context.openGroupIds.includes(entry.id);
   const groupId = `${context.sidebarId}-${entry.id.replace(/[^a-z0-9_-]+/gi, '-')}`;
-  return <div className={`nav-group${context.activeGroupIds.includes(entry.id) ? ' nav-group--active' : ''}`} key={entry.id}>
-    <button className="nav-group-button" type="button" aria-expanded={isOpen} aria-controls={groupId} onClick={() => context.toggleGroup(entry.id)}>
+  return <div className={`nav-group nav-group--depth-${context.depth}${context.depth > 0 ? ' nav-group--nested' : ''}${context.activeGroupIds.includes(entry.id) ? ' nav-group--active' : ''}`} key={entry.id}>
+    <button className="nav-group-button" type="button" aria-expanded={isOpen} aria-controls={groupId} onClick={() => context.toggleGroup(entry.id, context.depth)}>
       <span className="nav-group-label"><Icon name={entry.icon} /><span>{entry.label}</span></span><span className="nav-group-chevron" aria-hidden="true">⌄</span>
     </button>
     <div className={`nav-group-items${isOpen ? ' nav-group-items--open' : ''}`} id={groupId} hidden={!isOpen}>

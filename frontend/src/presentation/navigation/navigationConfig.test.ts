@@ -4,6 +4,7 @@ import {
   getActiveGroupIds,
   isNavigationEntryActive,
   navigationEntries,
+  toggleAccordionGroup,
   toggleExpandedGroup,
 } from './navigationConfig';
 
@@ -138,6 +139,30 @@ describe('sidebar navigation configuration', () => {
     expect(ids).toContain('customers');
     expect(ids).toContain('settings.territorial');
     expect(ids).toContain('loans.new');
+  });
+
+  it('keeps only one top-level group open at a time', () => {
+    expect(toggleAccordionGroup(['customers'], 'loans', 0)).toEqual(['loans']);
+    expect(toggleAccordionGroup(['settings', 'settings.territorial'], 'loans', 0)).toEqual(['loans']);
+  });
+
+  it('closes a top-level group together with its nested groups', () => {
+    expect(toggleAccordionGroup(['settings', 'settings.territorial'], 'settings', 0)).toEqual([]);
+  });
+
+  it('restores the active nested branch when reopening its top-level group', () => {
+    expect(toggleAccordionGroup([], 'settings', 0, ['settings', 'settings.territorial'])).toEqual([
+      'settings',
+      'settings.territorial',
+    ]);
+  });
+
+  it('keeps nested groups independently expandable inside the open top-level group', () => {
+    expect(toggleAccordionGroup(['settings'], 'settings.territorial', 1)).toEqual([
+      'settings',
+      'settings.territorial',
+    ]);
+    expect(toggleAccordionGroup(['settings', 'settings.territorial'], 'settings.territorial', 1)).toEqual(['settings']);
   });
 
 });

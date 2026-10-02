@@ -15,7 +15,7 @@ const handleError = (error: unknown): never => { if (error instanceof CustomerId
 @Controller('customers')
 export class CustomerController {
   constructor(private readonly register: RegisterCustomerUseCase, private readonly management: CustomerManagementUseCase) {}
-  @Get('summary') @RequirePermissions('customers.summary.view') async summary() { return this.management.summary(); }
+  @Get('summary') @RequirePermissions('customers.summary.view') async summary(@Query() query: CustomerListQueryDto) { return this.management.summary({ search: query.search, status: (query.status as 'ACTIVE' | 'INACTIVE' | 'ALL') ?? 'ALL' }); }
   @Get() @RequirePermissions('customers.view') async list(@Query() query: CustomerListQueryDto) { try { const pageSize = query.pageSize === 20 || query.pageSize === 50 ? query.pageSize : 10; return await this.management.list({ search: query.search, status: (query.status as 'ACTIVE' | 'INACTIVE' | 'ALL') ?? 'ACTIVE', sortBy: query.sortBy, sortOrder: query.sortOrder, page: query.page ?? 1, pageSize }); } catch (error) { return handleError(error); } }
   @Get(':id') @RequirePermissions('customers.view') async detail(@Param('id') id: string) { try { return await this.management.detail(id); } catch (error) { return handleError(error); } }
   @Get(':id/files/:kind') @RequirePermissions('customers.files.view') async file(@Param('id') id: string, @Param('kind') kind: string, @Res() response: Response) { try { if (kind !== 'identification' && kind !== 'property') throw new CustomerFileNotFoundError(); const file = await this.management.file(id, kind); return response.type(file.mimetype).send(file.buffer); } catch (error) { return handleError(error); } }

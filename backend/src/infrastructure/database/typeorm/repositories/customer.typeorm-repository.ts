@@ -1,7 +1,7 @@
 import { QueryFailedError, Repository } from 'typeorm';
 import { CustomerIdentificationAlreadyExistsError } from '../../../../domain/customer/customer.errors';
 import type { Customer, CustomerAddress } from '../../../../domain/customer/customer.types';
-import type { CreateCustomerAddressInput, CreateCustomerInput, CustomerRepository, CustomerAggregate, CustomerListQuery, CustomerUpdate } from '../../../../application/customer/customer.repository';
+import type { CreateCustomerAddressInput, CreateCustomerInput, CustomerRepository, CustomerAggregate, CustomerListQuery, CustomerSummary, CustomerSummaryQuery, CustomerUpdate } from '../../../../application/customer/customer.repository';
 import { CustomerAddressOrmEntity, CustomerOrmEntity } from '../entities';
 export const CUSTOMER_SORT_COLUMNS = { identification: 'LOWER(customer.identification)', name: `LOWER(CONCAT_WS(' ', customer.first_name, customer.middle_name, customer.first_last_name, customer.second_last_name))`, phone: 'customer.primary_phone', address: 'LOWER(address.exact_address)', status: 'customer.is_active' } as const;
 export const customerSortColumn = (sortBy: keyof typeof CUSTOMER_SORT_COLUMNS | undefined): string | undefined => sortBy ? CUSTOMER_SORT_COLUMNS[sortBy] : undefined;
@@ -14,23 +14,32 @@ export class CustomerTypeOrmRepository implements CustomerRepository {
   async createWithAddress(customer: CreateCustomerInput, address: CreateCustomerAddressInput): Promise<{ customer: Customer; address: CustomerAddress }> {
     try { return await this.customers.manager.transaction(async (manager) => { const saved = await manager.save(CustomerOrmEntity, manager.create(CustomerOrmEntity, { ...customer, isActive: customer.isActive ?? true })); const savedAddress = await manager.save(CustomerAddressOrmEntity, manager.create(CustomerAddressOrmEntity, { ...address, customerId: saved.id })); return { customer: this.mapCustomer(saved), address: this.mapAddress(savedAddress) }; }); } catch (error) { if (error instanceof QueryFailedError && (error as { driverError?: { code?: string } }).driverError?.code === '23505') throw new CustomerIdentificationAlreadyExistsError(); throw error; }
   }
-  async list(query: CustomerListQuery): Promise<{ items: { id: string; identification: string; fullName: string; primaryPhone: string; address: string; isActive: boolean }[]; total: number }> {
-    const qb = this.customers.createQueryBuilder('customer').leftJoin('customer.address', 'address').select(['customer.id AS id', 'customer.identification AS identification', `CONCAT_WS(' ', customer.first_name, customer.middle_name, customer.first_last_name, customer.second_last_name) AS "fullName"`, `customer.primary_phone AS "primaryPhone"`, 'address.exact_address AS address', `customer.is_active AS "isActive"`]);
+  private scopedQuery(query: CustomerSummaryQuery) {
+    const qb = this.customers.createQueryBuilder('customer').leftJoin('customer.address', 'address');
     if (query.status !== 'ALL') qb.andWhere('customer.is_active = :active', { active: query.status === 'ACTIVE' });
     if (query.search?.trim()) {
       const term = `%${query.search.trim().toLowerCase()}%`;
       qb.andWhere(`(LOWER(customer.identification) LIKE :term OR LOWER(customer.first_name) LIKE :term OR LOWER(customer.middle_name) LIKE :term OR LOWER(customer.first_last_name) LIKE :term OR LOWER(customer.second_last_name) LIKE :term OR LOWER(CONCAT_WS(' ', customer.first_name, customer.middle_name, customer.first_last_name, customer.second_last_name)) LIKE :term OR LOWER(customer.primary_phone) LIKE :term OR LOWER(customer.secondary_phone) LIKE :term OR LOWER(address.exact_address) LIKE :term OR LOWER(district.name) LIKE :term OR LOWER(canton.name) LIKE :term OR LOWER(province.name) LIKE :term)`, { term });
       qb.leftJoin('address.district', 'district').leftJoin('district.canton', 'canton').leftJoin('canton.province', 'province');
     }
+    return qb;
+  }
+  async list(query: CustomerListQuery): Promise<{ items: { id: string; identification: string; fullName: string; primaryPhone: string; address: string; isActive: boolean }[]; total: number }> {
+    const qb = this.scopedQuery(query).select(['customer.id AS id', 'customer.identification AS identification', `CONCAT_WS(' ', customer.first_name, customer.middle_name, customer.first_last_name, customer.second_last_name) AS "fullName"`, `customer.primary_phone AS "primaryPhone"`, 'address.exact_address AS address', `customer.is_active AS "isActive"`]);
     const sortColumn = customerSortColumn(query.sortBy);
     if (sortColumn) { const requestedOrder = query.sortOrder ?? 'asc'; const databaseOrder = requestedOrder === 'asc' ? 'ASC' : 'DESC'; qb.orderBy(sortColumn, query.sortBy === 'status' ? (databaseOrder === 'ASC' ? 'DESC' : 'ASC') : databaseOrder).addOrderBy('customer.id', 'ASC'); }
     else qb.orderBy('customer.created_at', 'DESC').addOrderBy('customer.id', 'DESC');
     const [rows, total] = await Promise.all([qb.skip((query.page - 1) * query.pageSize).take(query.pageSize).getRawMany(), qb.getCount()]);
     return { items: rows.map((row) => ({ id: row.id, identification: row.identification, fullName: row.fullName, primaryPhone: row.primaryPhone, address: row.address, isActive: row.isActive === true || row.isActive === 'true' })), total };
   }
-  async summary(): Promise<{ totalCustomers: number; maleCustomers: number; femaleCustomers: number; activeLoans: null }> {
-    const [total, male, female] = await Promise.all([this.customers.count(), this.customers.countBy({ gender: 'MALE' }), this.customers.countBy({ gender: 'FEMALE' })]);
-    return { totalCustomers: total, maleCustomers: male, femaleCustomers: female, activeLoans: null };
+  async summary(query: CustomerSummaryQuery = { status: 'ALL' }): Promise<CustomerSummary> {
+    const row = await this.scopedQuery(query).select([
+      'COUNT(DISTINCT customer.id) AS "totalCustomers"',
+      `COUNT(DISTINCT customer.id) FILTER (WHERE customer.gender = 'MALE') AS "maleCustomers"`,
+      `COUNT(DISTINCT customer.id) FILTER (WHERE customer.gender = 'FEMALE') AS "femaleCustomers"`,
+      `COUNT(DISTINCT customer.id) FILTER (WHERE EXISTS (SELECT 1 FROM loans loan WHERE loan.customer_id = customer.id AND loan.status = 'ACTIVE')) AS "customersWithActiveLoans"`,
+    ]).getRawOne<{ totalCustomers: string; maleCustomers: string; femaleCustomers: string; customersWithActiveLoans: string }>();
+    return { totalCustomers: Number(row?.totalCustomers ?? 0), maleCustomers: Number(row?.maleCustomers ?? 0), femaleCustomers: Number(row?.femaleCustomers ?? 0), customersWithActiveLoans: Number(row?.customersWithActiveLoans ?? 0) };
   }
   async findAggregateById(id: string): Promise<CustomerAggregate | null> {
     const row = await this.customers.createQueryBuilder('customer').leftJoinAndSelect('customer.address', 'address').leftJoinAndSelect('address.district', 'district').leftJoinAndSelect('district.canton', 'canton').leftJoinAndSelect('canton.province', 'province').where('customer.id = :id', { id }).getOne();

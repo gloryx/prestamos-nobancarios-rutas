@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Controller, Get, Param, Post, Body, Query, Headers, HttpCode, HttpStatus, InternalServerErrorException, NotFoundException, ParseUUIDPipe } from '@nestjs/common';
+import { BadRequestException, ConflictException, Controller, Get, Param, Patch, Post, Body, Query, Headers, HttpCode, HttpStatus, InternalServerErrorException, NotFoundException, Optional, ParseUUIDPipe } from '@nestjs/common';
 import { CurrentUser, RequirePermissions } from '../security/security.decorators';
 import type { CurrentIdentity } from '../../domain/security/security.types';
 import { CreateLoanUseCase, ListActiveLoanCustomersUseCase, ListLoansUseCase, LoanConflictError, LoanValidationError } from '../../application/loan/loan.use-case';
@@ -7,9 +7,16 @@ import { MarkUncollectibleConflictError, MarkUncollectibleNotFoundError, MarkUnc
 import { ReactivateLoanConflictError, ReactivateLoanNotFoundError, ReactivateLoanUseCase, ReactivateLoanValidationError } from '../../application/loan/reactivate-loan.use-case';
 import { ListOverdueLoansUseCase, OverdueLoansValidationError } from '../../application/loan/overdue-loans.use-case';
 import { ListUncollectibleLoansUseCase, UncollectibleLoansIntegrityError, UncollectibleLoansValidationError } from '../../application/loan/uncollectible-loans.use-case';
-import { CancelledLoansQueryDto, CreateLoanDto, LoanListQueryDto, MarkUncollectibleDto, OverdueLoansQueryDto, ReactivateLoanDto, UncollectibleLoansQueryDto } from './loan.dto';
+import { EditLoanUseCase, LoanEditConflictError, LoanEditNotFoundError, LoanEditValidationError } from '../../application/loan/edit-loan.use-case';
+import { GetLoanEditContextUseCase, LoanEditContextConflictError, LoanEditContextNotFoundError } from '../../application/loan/loan-edit-context.use-case';
+import { LoanEditInputError, normalizeLoanEditCommand } from '../../application/loan/loan-edit.command';
+import { LoanEditIdempotencyConflictError, LoanEditIdempotencyInputError } from '../../infrastructure/database/typeorm/repositories/loan-edit-operations.repository';
+import { AnnulLoanUseCase, AnnulLoanConflictError, AnnulLoanIntegrityError, AnnulLoanNotFoundError, AnnulLoanValidationError } from '../../application/loan/annul-loan.use-case';
+import { ListAnnulledLoansUseCase, AnnulledLoansIntegrityError, AnnulledLoansValidationError } from '../../application/loan/annulled-loans.use-case';
+import { PaymentConflictError, PaymentValidationError } from '../../application/payment/payment.errors';
+import { AnnulledLoansQueryDto, AnnulLoanDto, CancelledLoansQueryDto, CreateLoanDto, LoanEditDto, LoanListQueryDto, MarkUncollectibleDto, OverdueLoansQueryDto, ReactivateLoanDto, UncollectibleLoansQueryDto } from './loan.dto';
 @Controller('loans') export class LoanController {
-  constructor(private readonly create: CreateLoanUseCase, private readonly list: ListLoansUseCase, private readonly customers: ListActiveLoanCustomersUseCase, private readonly cancelled: ListCancelledLoansUseCase, private readonly markUncollectible: MarkUncollectibleUseCase, private readonly reactivateLoan: ReactivateLoanUseCase, private readonly overdue?: ListOverdueLoansUseCase, private readonly uncollectible?: ListUncollectibleLoansUseCase) {}
+  constructor(private readonly create: CreateLoanUseCase, private readonly list: ListLoansUseCase, private readonly customers: ListActiveLoanCustomersUseCase, private readonly cancelled: ListCancelledLoansUseCase, private readonly markUncollectible: MarkUncollectibleUseCase, private readonly reactivateLoan: ReactivateLoanUseCase, private readonly overdue?: ListOverdueLoansUseCase, private readonly uncollectible?: ListUncollectibleLoansUseCase, private readonly edit?: EditLoanUseCase, private readonly editContext?: GetLoanEditContextUseCase, @Optional() private readonly annulList?: ListAnnulledLoansUseCase, @Optional() private readonly annul?: AnnulLoanUseCase) {}
   @Get('customer-options') @RequirePermissions('loans.create') customerOptions(@Query() query: { page?: string; pageSize?: string; search?: string }) { return this.customers.execute({ page: Math.max(1, Number(query.page) || 1), pageSize: Math.min(20, Math.max(10, Number(query.pageSize) || 10)), search: query.search }); }
   @Get() @RequirePermissions('loans.view') listLoans(@Query() query: LoanListQueryDto) { return this.list.execute({ page: Math.max(1, Number(query.page) || 1), pageSize: Math.min(100, Math.max(20, Number(query.pageSize) || 20)), search: query.search, frequencyId: query.frequencyId, fromDate: query.fromDate, toDate: query.toDate, sortBy: query.sortBy, sortOrder: query.sortOrder }); }
   @Get('cancelled') @RequirePermissions('loans.view') async cancelledLoans(@Query() query: CancelledLoansQueryDto) {
@@ -31,6 +38,17 @@ import { CancelledLoansQueryDto, CreateLoanDto, LoanListQueryDto, MarkUncollecti
       throw error;
     }
   }
+  @Get('annullable') @RequirePermissions('loans.view') async annullableLoans(@Query() query: AnnulledLoansQueryDto) { return this.annulledLoans('annullable', query); }
+  @Get('annulled') @RequirePermissions('loans.view') async annulledLoansList(@Query() query: AnnulledLoansQueryDto) { return this.annulledLoans('annulled', query); }
+  private async annulledLoans(kind: 'annullable' | 'annulled', query: AnnulledLoansQueryDto) {
+    try { return await this.annulList!.execute(kind, { ...query, page: query.page ? Number(query.page) : 1,
+      pageSize: query.pageSize ? Number(query.pageSize) : 20 }); }
+    catch (error) {
+      if (error instanceof AnnulledLoansValidationError) throw new BadRequestException(error.message);
+      if (error instanceof AnnulledLoansIntegrityError) throw new InternalServerErrorException('No se pudo verificar la integridad de los préstamos.');
+      throw new InternalServerErrorException('No se pudo consultar los préstamos.');
+    }
+  }
   @Post() @HttpCode(HttpStatus.CREATED) @RequirePermissions('loans.create') async createLoan(@Body() body: CreateLoanDto, @Headers('idempotency-key') idempotencyKey: string | undefined, @CurrentUser() actor: CurrentIdentity) { try { return await this.create.execute({ ...body, idempotencyKey: idempotencyKey?.trim() || body.idempotencyKey }, actor.id); } catch (error) { if (error instanceof LoanConflictError) throw new ConflictException(error.message); if (error instanceof LoanValidationError) throw new BadRequestException(error.message); throw error; } }
   @Post(':id/uncollectible') @RequirePermissions('loans.status.uncollectible') async markAsUncollectible(@Param('id', new ParseUUIDPipe()) id: string, @Body() body: MarkUncollectibleDto, @CurrentUser() actor: CurrentIdentity) {
     try { return await this.markUncollectible.execute(id, body, actor.id); }
@@ -50,5 +68,32 @@ import { CancelledLoansQueryDto, CreateLoanDto, LoanListQueryDto, MarkUncollecti
       throw new InternalServerErrorException('No se pudo actualizar el estado del préstamo.');
     }
   }
+  @Post(':id/annul') @RequirePermissions('loans.status.annul') async annulLoan(@Param('id', new ParseUUIDPipe()) id: string, @Body() body: AnnulLoanDto, @CurrentUser() actor: CurrentIdentity) {
+    try { return await this.annul!.execute(id, body, actor.id); }
+    catch (error) {
+      if (error instanceof AnnulLoanValidationError) throw new BadRequestException(error.message);
+      if (error instanceof AnnulLoanNotFoundError) throw new NotFoundException(error.message);
+      if (error instanceof AnnulLoanConflictError) throw new ConflictException(error.message);
+      if (error instanceof AnnulLoanIntegrityError) throw new InternalServerErrorException(error.message);
+      throw new InternalServerErrorException('No se pudo anular el préstamo.');
+    }
+  }
   @Get(':id') @RequirePermissions('loans.view') async detail(@Param('id') id: string) { try { return await this.create.get(id); } catch (error) { if (error instanceof LoanValidationError) throw new BadRequestException(error.message); throw error; } }
+  @Patch(':id') @HttpCode(HttpStatus.OK) @RequirePermissions('loans.update') async editLoan(@Param('id', new ParseUUIDPipe()) id: string, @Body() body: LoanEditDto, @CurrentUser() actor: CurrentIdentity) {
+    try { return await this.edit!.execute(normalizeLoanEditCommand(body, id, actor.id)); }
+    catch (error) {
+      if (error instanceof LoanEditInputError || error instanceof LoanEditValidationError || error instanceof LoanEditIdempotencyInputError || error instanceof PaymentValidationError) throw new BadRequestException(error.message);
+      if (error instanceof LoanEditNotFoundError) throw new NotFoundException(error.message);
+      if (error instanceof LoanEditConflictError || error instanceof LoanEditIdempotencyConflictError || error instanceof PaymentConflictError) throw new ConflictException(error.message);
+      throw new InternalServerErrorException('Unable to edit the loan.');
+    }
+  }
+  @Get(':id/edit-context') @RequirePermissions('loans.update') async getEditContext(@Param('id', new ParseUUIDPipe()) id: string) {
+    try { return await this.editContext!.execute(id); }
+    catch (error) {
+      if (error instanceof LoanEditContextNotFoundError) throw new NotFoundException(error.message);
+      if (error instanceof LoanEditContextConflictError) throw new ConflictException(error.message);
+      throw new InternalServerErrorException('Unable to load the loan edit context.');
+    }
+  }
 }

@@ -2,12 +2,33 @@ import { Type } from 'class-transformer';
 import { ArrayUnique, IsArray, IsDefined, IsIn, IsInt, IsISO8601, IsObject, IsOptional, IsString, IsUUID, Matches, MaxLength, Min, Validate, ValidateIf, ValidateNested, ValidatorConstraint, type ValidatorConstraintInterface } from 'class-validator';
 import type { OverdueLoanSort } from '../../application/loan/overdue-loans.use-case';
 import type { UncollectibleLoanSort } from '../../application/loan/uncollectible-loans.use-case';
+import type { AnnulledLoanQuery } from '../../application/loan/annulled-loans.use-case';
 
 export class MarkUncollectibleDto {
   @IsString() @Matches(/\S/) reason!: string;
   @IsString() @Matches(/\S/) @MaxLength(128) idempotencyKey!: string;
 }
 export class ReactivateLoanDto extends MarkUncollectibleDto {}
+
+@ValidatorConstraint()
+class ValidAnnulmentReason implements ValidatorConstraintInterface {
+  validate(value: unknown): boolean { return typeof value === 'string' && value.trim().length >= 1 && value.trim().length <= 500; }
+}
+export class AnnulLoanDto {
+  @IsString() @Validate(ValidAnnulmentReason) reason!: string;
+  @IsIn(['NOT_DELIVERED', 'RETURNED_IN_FULL']) disbursementResolution!: 'NOT_DELIVERED' | 'RETURNED_IN_FULL';
+  @Matches(/^[\x21-\x7e]{1,128}$/) idempotencyKey!: string;
+}
+
+export class AnnulledLoansQueryDto {
+  @IsOptional() @IsString() search?: string;
+  @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}$/) startDate?: string;
+  @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}$/) endDate?: string;
+  @IsOptional() @Matches(/^[1-9]\d*$/) page?: string;
+  @IsOptional() @IsIn(['10', '20', '50']) pageSize?: string;
+  @IsOptional() @IsIn(['loanNumber', 'customer', 'startDate', 'annulledDate', 'principal', 'interest', 'contractualTotal']) sortBy?: AnnulledLoanQuery['sortBy'];
+  @IsOptional() @IsIn(['asc', 'desc']) sortDir?: 'asc' | 'desc';
+}
 
 export class PaymentPlanEntryDto { @IsInt() @Min(1) sequence!: number; @Matches(/^\d{4}-\d{2}-\d{2}$/) dueDate!: string; @Matches(/^(?:0|[1-9]\d{0,15})(?:\.\d{1,2})?$/) pendingAmount!: string; }
 export class CreateLoanDto {
@@ -62,7 +83,6 @@ class HasLoanEditChange implements ValidatorConstraintInterface {
   }
 }
 
-// Unpublished body contract; no PATCH route is registered by this DTO.
 export class LoanEditDto {
   @Matches(/^[\x21-\x7e]{1,128}$/) idempotencyKey!: string;
   @IsDefined() @IsObject() @ValidateNested() @Type(() => LoanEditBaselineDto) baseline!: LoanEditBaselineDto;

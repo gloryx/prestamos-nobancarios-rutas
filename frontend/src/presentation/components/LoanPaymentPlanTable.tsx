@@ -12,6 +12,8 @@ type LoanPaymentPlanTableProps = {
   onChange?: (plan: LoanPlanEntry[]) => void;
   onAddRow?: () => void;
   showCondition?: boolean;
+  numberLabel?: string;
+  amountLabel?: string;
 };
 
 export function LoanPaymentPlanTable({
@@ -21,6 +23,8 @@ export function LoanPaymentPlanTable({
   onChange,
   onAddRow,
   showCondition = false,
+  numberLabel,
+  amountLabel,
 }: LoanPaymentPlanTableProps): ReactElement {
   const distributed = plan.reduce(
     (sum, entry) => sum + (parseMoneyCents(entry.pendingAmount) ?? 0n),
@@ -50,9 +54,9 @@ export function LoanPaymentPlanTable({
         <table className="loan-confirmation__table">
           <thead>
             <tr>
-              <th>{showCondition ? "Cuota" : "N.º"}</th>
+              <th>{numberLabel ?? (showCondition ? "Cuota" : "N.º")}</th>
               <th>{showCondition ? "Vencimiento" : "Fecha"}</th>
-              <th>{showCondition ? "Pendiente" : "Cuota"}</th>
+              <th>{amountLabel ?? (showCondition ? "Pendiente" : "Cuota")}</th>
               {showCondition && <th>Condición</th>}
               {editable && <th>Acciones</th>}
             </tr>

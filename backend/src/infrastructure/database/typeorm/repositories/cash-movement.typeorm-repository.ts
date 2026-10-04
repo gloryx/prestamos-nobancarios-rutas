@@ -21,7 +21,7 @@ export class CashMovementTypeOrmRepository implements CashMovementRepository {
     const paymentIds = new Set<string>();
     for (const row of rows) {
       const source = sourceFor(row);
-      if (source?.concept === 'LOAN_DISBURSEMENT' && source.loanDisbursementId) disbursementIds.add(source.loanDisbursementId);
+      if ((source?.concept === 'LOAN_DISBURSEMENT' || source?.concept === 'REFINANCING_NEW_MONEY_DISBURSEMENT') && source.loanDisbursementId) disbursementIds.add(source.loanDisbursementId);
       if (source?.concept === 'CUSTOMER_PAYMENT' && source.paymentId) paymentIds.add(source.paymentId);
     }
     const disbursements = new Map<string, string>();
@@ -36,10 +36,10 @@ export class CashMovementTypeOrmRepository implements CashMovementRepository {
     }
     return { items: rows.map((row) => {
       const source = sourceFor(row);
-      const loanNumber = source?.concept === 'LOAN_DISBURSEMENT' ? disbursements.get(source.loanDisbursementId ?? '')
+      const loanNumber = source?.concept === 'LOAN_DISBURSEMENT' || source?.concept === 'REFINANCING_NEW_MONEY_DISBURSEMENT' ? disbursements.get(source.loanDisbursementId ?? '')
         : source?.concept === 'CUSTOMER_PAYMENT' ? payments.get(source.paymentId ?? '') : undefined;
       return { ...map(row), loanNumber: loanNumber ?? null,
-        reversedConcept: row.concept === 'REVERSAL' && (source?.concept === 'LOAN_DISBURSEMENT' || source?.concept === 'CUSTOMER_PAYMENT') ? source.concept as CashMovement['concept'] : null };
+        reversedConcept: row.concept === 'REVERSAL' && (source?.concept === 'LOAN_DISBURSEMENT' || source?.concept === 'REFINANCING_NEW_MONEY_DISBURSEMENT' || source?.concept === 'CUSTOMER_PAYMENT') ? source.concept as CashMovement['concept'] : null };
     }), total };
   }
   async summary(filters: Pick<CashMovementFilters, 'fromDate' | 'toDate' | 'direction' | 'concept' | 'paymentMethodId' | 'search'>): Promise<PeriodSummary> { const q = this.query(filters); const raw = await q.select("CAST(COALESCE(SUM(CASE WHEN m.direction = 'INFLOW' THEN m.amount ELSE 0 END), 0) AS numeric(18,2))::text", 'inflows').addSelect("CAST(COALESCE(SUM(CASE WHEN m.direction = 'OUTFLOW' THEN m.amount ELSE 0 END), 0) AS numeric(18,2))::text", 'outflows').addSelect("CAST(COALESCE(SUM(CASE WHEN m.direction = 'INFLOW' THEN m.amount ELSE -m.amount END), 0) AS numeric(18,2))::text", 'net').getRawOne<{ inflows: string; outflows: string; net: string }>(); const aggregate = { inflows: raw?.inflows ?? '0.00', outflows: raw?.outflows ?? '0.00', net: raw?.net ?? '0.00' }; const opening = await this.dataSource.getRepository(FinancialOpeningOrmEntity).findOne({ where: { singletonKey: 'DEFAULT' } }); if (!opening) return { ...aggregate, currentAvailable: null, openingDate: null }; const rawCurrent = await this.dataSource.getRepository(CashMovementOrmEntity).createQueryBuilder('m').select("(CAST(:initial AS numeric) + COALESCE(SUM(CASE WHEN m.direction = 'INFLOW' THEN m.amount ELSE -m.amount END), 0))::text", 'value').setParameter('initial', opening.initialAvailableAmount).getRawOne<{ value: string }>(); return { ...aggregate, currentAvailable: rawCurrent?.value ?? opening.initialAvailableAmount, openingDate: opening.openingDate }; }

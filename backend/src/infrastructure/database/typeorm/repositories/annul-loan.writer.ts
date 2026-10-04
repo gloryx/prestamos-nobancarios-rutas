@@ -15,6 +15,11 @@ export class AnnulLoanTypeormWriter implements AnnulLoanWriter {
       lockLoan: async (id) => (await manager.query('SELECT id, status FROM loans WHERE id = $1 FOR UPDATE', [id]))[0],
       findByKey: async (key) => (await manager.query(`SELECT ${eventColumns} FROM loan_status_history WHERE idempotency_key = $1`, [key]))[0] as AnnulmentEvent | undefined,
       latestEvent: async (id) => (await manager.query(`SELECT ${eventColumns} FROM loan_status_history WHERE loan_id = $1 ORDER BY event_sequence DESC LIMIT 1`, [id]))[0] as AnnulmentEvent | undefined,
+      isRefinancingSuccessor: async (id) => {
+        const present: unknown = (await manager.query('SELECT EXISTS (SELECT 1 FROM loan_refinancings WHERE new_loan_id = $1) AS present', [id]))[0]?.present;
+        if (typeof present !== 'boolean') throw new Error('Refinancing relationship is unavailable.');
+        return present;
+      },
       hasValidPayment: async (id) => {
         const result = (await manager.query("SELECT EXISTS (SELECT 1 FROM payments WHERE loan_id = $1 AND status = 'VALID') AS present", [id]))[0]?.present;
         if (typeof result !== 'boolean') throw new Error('Valid payment guard is unavailable.');

@@ -1,11 +1,14 @@
-import { BadRequestException, ConflictException, Controller, ForbiddenException, Get, NotFoundException, Param, Patch, Post, Query, Res, UploadedFiles, UseInterceptors, Body } from '@nestjs/common';
+import { BadRequestException, ConflictException, Controller, ForbiddenException, Get, NotFoundException, Optional, Param, ParseUUIDPipe, Patch, Post, Query, Res, UploadedFiles, UseInterceptors, Body } from '@nestjs/common';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import type { Response } from 'express';
 import { CustomerFileNotFoundError, CustomerIdentificationAlreadyExistsError, CustomerNotFoundError, CustomerValidationError, DistrictNotFoundError } from '../../domain/customer/customer.errors';
 import { CustomerManagementUseCase, RegisterCustomerUseCase } from '../../application/customer/customer.use-case';
+import { CustomerFinancialAnalysisUseCase } from '../../application/customer/customer-financial-analysis.use-case';
+import { CustomerStatisticsUseCase } from '../../application/customer/customer-statistics.use-case';
 import type { UploadFile } from '../../application/customer/file-storage';
-import { CreateCustomerDto, CustomerListQueryDto, CustomerStatusDto, UpdateCustomerDto } from './customer.dto';
+import { CreateCustomerDto, CustomerFinancialAnalysisQueryDto, CustomerListQueryDto, CustomerStatisticsQueryDto, CustomerStatusDto, UpdateCustomerDto } from './customer.dto';
+import { customerFinancialAnalysisResponse } from './customer-financial-analysis.response';
 import type { CurrentIdentity } from '../../domain/security/security.types';
 import { CurrentUser, RequirePermissions } from '../security/security.decorators';
 type MultipartFiles = { identificationFront?: Express.Multer.File[]; propertyPhoto?: Express.Multer.File[] };
@@ -14,9 +17,13 @@ const scoped = (actor: CurrentIdentity): boolean => !actor.role.isSuperAdmin && 
 const handleError = (error: unknown): never => { if (error instanceof CustomerIdentificationAlreadyExistsError) throw new ConflictException(error.message); if (error instanceof CustomerNotFoundError || error instanceof CustomerFileNotFoundError) throw new NotFoundException(error.message); if (error instanceof CustomerValidationError || error instanceof DistrictNotFoundError) throw new BadRequestException(error.message); throw error; };
 @Controller('customers')
 export class CustomerController {
-  constructor(private readonly register: RegisterCustomerUseCase, private readonly management: CustomerManagementUseCase) {}
+  constructor(private readonly register: RegisterCustomerUseCase, private readonly management: CustomerManagementUseCase,
+    @Optional() private readonly financialAnalysis?: CustomerFinancialAnalysisUseCase,
+    @Optional() private readonly statistics?: CustomerStatisticsUseCase) {}
   @Get('summary') @RequirePermissions('customers.summary.view') async summary(@Query() query: CustomerListQueryDto) { return this.management.summary({ search: query.search, status: (query.status as 'ACTIVE' | 'INACTIVE' | 'ALL') ?? 'ALL' }); }
+  @Get('statistics') @RequirePermissions('customers.summary.view') async getStatistics(@Query() query: CustomerStatisticsQueryDto) { try { return await this.statistics!.execute(query.year); } catch (error) { return handleError(error); } }
   @Get() @RequirePermissions('customers.view') async list(@Query() query: CustomerListQueryDto) { try { const pageSize = query.pageSize === 20 || query.pageSize === 50 ? query.pageSize : 10; return await this.management.list({ search: query.search, status: (query.status as 'ACTIVE' | 'INACTIVE' | 'ALL') ?? 'ACTIVE', sortBy: query.sortBy, sortOrder: query.sortOrder, page: query.page ?? 1, pageSize }); } catch (error) { return handleError(error); } }
+  @Get(':customerId/financial-analysis') @RequirePermissions('customers.analysis.view') async getFinancialAnalysis(@Param('customerId', new ParseUUIDPipe()) customerId: string, @Query() query: CustomerFinancialAnalysisQueryDto) { try { return customerFinancialAnalysisResponse(await this.financialAnalysis!.execute(customerId, query.asOf)); } catch (error) { return handleError(error); } }
   @Get(':id') @RequirePermissions('customers.view') async detail(@Param('id') id: string) { try { return await this.management.detail(id); } catch (error) { return handleError(error); } }
   @Get(':id/files/:kind') @RequirePermissions('customers.files.view') async file(@Param('id') id: string, @Param('kind') kind: string, @Res() response: Response) { try { if (kind !== 'identification' && kind !== 'property') throw new CustomerFileNotFoundError(); const file = await this.management.file(id, kind); return response.type(file.mimetype).send(file.buffer); } catch (error) { return handleError(error); } }
   @Post() @RequirePermissions('customers.create') @UseInterceptors(FileFieldsInterceptor([{ name: 'identificationFront', maxCount: 1 }, { name: 'propertyPhoto', maxCount: 1 }], { limits: { fileSize: 5 * 1024 * 1024 }, storage: memoryStorage() })) async create(@Body() body: CreateCustomerDto, @UploadedFiles() files: MultipartFiles) { try { const districtCode = number(body.districtCode, 'El distrito'); if (districtCode === undefined) throw new CustomerValidationError('El distrito es requerido.'); return await this.register.execute({ ...body, identificationType: body.identificationType as 'NATIONAL' | 'FOREIGN', gender: body.gender as 'MALE' | 'FEMALE', nationality: body.nationality as 'COSTA_RICAN' | 'NICARAGUAN' | 'PANAMANIAN' | 'HONDURAN' | 'OTHER', districtCode, latitude: number(body.latitude, 'La latitud'), longitude: number(body.longitude, 'La longitud'), identificationFront: files.identificationFront?.[0] as UploadFile, propertyPhoto: files.propertyPhoto?.[0] as UploadFile }); } catch (error) { return handleError(error); } }

@@ -5,20 +5,21 @@ import { PaymentController } from '../src/presentation/payment/payment.controlle
 import { LoanFinancialTotalsTypeormReader } from '../src/infrastructure/database/typeorm/repositories/loan-financial-totals.reader';
 
 const totalsReader = new LoanFinancialTotalsTypeormReader();
+const collectorId = '77777777-7777-4777-8777-777777777777';
 
 type Plan = { id: string; loanId: string; dueDate: string; sequence: number; pendingAmount: string };
-type Fact = { id: string; loanId: string; amount: string; principal: string; interest: string; methodId: string; status: 'VALID' | 'ANNULLED'; paymentDate: string; createdAt: string; key?: string; fingerprint?: string };
+type Fact = { id: string; loanId: string; amount: string; principal: string; interest: string; methodId: string; collectorId?: string | null; status: 'VALID' | 'ANNULLED'; paymentDate: string; createdAt: string; key?: string; fingerprint?: string };
 type Application = { entryId: string; amountApplied: string; pendingBefore: string; pendingAfter: string; carriedForwardAmount: string; carriedToEntryId: string | null; paymentId?: string };
 type Annulment = { paymentId: string; reason: string; key: string; fingerprint: string; id?: string };
 type Cash = { id: string; paymentId?: string; reversedId?: string; direction: string; concept: string; amount: string; methodId: string; key?: string; fingerprint?: string; movementDate?: string; reason?: string; actorId?: string };
-type State = { status: 'ACTIVE' | 'CANCELLED'; plan: Plan[]; payments: Fact[]; applications: Application[]; annulments: Annulment[]; cash: Cash[]; history: Array<{ sql: string; params: unknown[] }> };
+type State = { status: 'ACTIVE' | 'CANCELLED' | 'REFINANCED'; plan: Plan[]; payments: Fact[]; applications: Application[]; annulments: Annulment[]; cash: Cash[]; history: Array<{ sql: string; params: unknown[] }> };
 const cents = (amount: string) => BigInt(amount.replace('.', ''));
 const money = (value: bigint) => `${value / 100n}.${(value % 100n).toString().padStart(2, '0')}`;
 const app = (entryId: string, amountApplied: string, pendingBefore: string, pendingAfter: string): Application => ({ entryId, amountApplied, pendingBefore, pendingAfter, carriedForwardAmount: '0.00', carriedToEntryId: null });
 const entry = (id: string, dueDate: string, pendingAmount: string, sequence = 1): Plan => ({ id, loanId: 'loan', dueDate, sequence, pendingAmount });
 const initial = (): State => ({
   status: 'ACTIVE', plan: [entry('first', '2026-02-01', '950.00')],
-  payments: [{ id: 'p', loanId: 'loan', amount: '50.00', principal: '50.00', interest: '0.00', methodId: 'method', status: 'VALID', paymentDate: '2026-01-02', createdAt: '2026-01-02T10:00:00Z' }],
+  payments: [{ id: 'p', loanId: 'loan', amount: '50.00', principal: '50.00', interest: '0.00', methodId: 'method', collectorId, status: 'VALID', paymentDate: '2026-01-02', createdAt: '2026-01-02T10:00:00Z' }],
   applications: [app('first', '50.00', '1000.00', '950.00')], annulments: [],
   cash: [{ id: 'cash-p', paymentId: 'p', direction: 'INFLOW', concept: 'CUSTOMER_PAYMENT', amount: '50.00', methodId: 'method' }],
   history: [{ sql: 'CREATED', params: ['loan', 1] }],
@@ -82,6 +83,7 @@ function store(start: State, options: { postPending?: string; postInvalidCount?:
       }
       if (sql.includes('FROM financial_openings')) return [{ openingDate: '2026-01-01' }];
       if (sql.includes('FROM payment_methods')) return [{ id: 'method' }];
+      if (sql.includes('FROM collectors')) return [{ id: collectorId }];
       if (sql.includes('FROM payment_plan_entries') && sql.includes('FOR UPDATE')) return draft.plan.filter((row) => row.loanId === params[0] && (!sql.includes('pending_amount > 0') || cents(row.pendingAmount) > 0n)).sort((a, b) => a.dueDate.localeCompare(b.dueDate) || a.sequence - b.sequence || a.id.localeCompare(b.id)).map((row) => ({ ...row }));
       if (sql.includes('SUM(principal_applied)')) {
         const facts = draft.payments.filter((fact) => fact.status === 'VALID' && fact.loanId === params[0]);
@@ -91,7 +93,7 @@ function store(start: State, options: { postPending?: string; postInvalidCount?:
       if (sql.includes('FROM payment_applications WHERE payment_id = $1 FOR UPDATE')) return draft.applications.filter((item) => (item.paymentId ?? 'p') === params[0]).map((item) => ({ ...item }));
       if (sql.startsWith('INSERT INTO payments')) {
         const id = `payment-${draft.payments.length + 1}`;
-        draft.payments.push({ id, loanId: params[0] as string, amount: params[1] as string, principal: params[2] as string, interest: params[3] as string, paymentDate: params[4] as string, methodId: params[5] as string, status: 'VALID', createdAt: '2026-09-28T11:22:33Z', key: params[8] as string, fingerprint: params[9] as string });
+        draft.payments.push({ id, loanId: params[0] as string, amount: params[1] as string, principal: params[2] as string, interest: params[3] as string, paymentDate: params[4] as string, methodId: params[5] as string, collectorId: params[6] as string, status: 'VALID', createdAt: '2026-09-28T11:22:33Z', key: params[8] as string, fingerprint: params[9] as string });
         return [{ id, createdAt: new Date('2026-09-28T11:22:33Z'), createdByUserId: params[7] }];
       }
       if (sql.startsWith('INSERT INTO payment_applications')) {
@@ -163,9 +165,18 @@ describe('last valid Payment annulment against the current plan', () => {
   beforeEach(() => { jest.useFakeTimers(); jest.setSystemTime(new Date('2026-09-28T12:00:00Z')); });
   afterEach(() => jest.useRealTimers());
 
+  it('refuses an isolated historical payment annulment on a REFINANCED origin without writing', async () => {
+    const state = initial(); state.status = 'REFINANCED';
+    const testStore = store(state);
+    await expect(annul(testStore)).rejects.toBeInstanceOf(PaymentConflictError);
+    expect(testStore.state()).toEqual(state);
+    expect(writes(testStore)).toEqual([]);
+  });
+
   it('locks Loan before Payment and plan, checks the latest VALID row and restores one exact application', async () => {
     const testStore = store(initial());
     await expect(annul(testStore)).resolves.toMatchObject({ status: 'ANNULLED', amount: '50.00' });
+    expect(testStore.state().payments[0].collectorId).toBe(collectorId);
     const q = testStore.queries;
     const position = (fragment: string) => q.findIndex((sql) => sql.includes(fragment));
     expect(position('SELECT loan_id AS "loanId"')).toBeLessThan(position('FROM loans WHERE id = $1 FOR UPDATE'));
@@ -418,7 +429,7 @@ describe('last valid Payment annulment against the current plan', () => {
     expect(writes(testStore)).toHaveLength(count);
     expect(testStore.state().history).toHaveLength(3);
     expect(testStore.queries.filter((sql) => sql.startsWith('SELECT MAX(event_sequence)'))).toHaveLength(1);
-    await new RegisterPaymentUseCase(testStore.source, totalsReader).execute({ loanId: 'loan', amount: '1000.00', methodId: 'method', paymentDate: '2026-09-28', idempotencyKey: 'second-key' }, 'second-actor');
+    await new RegisterPaymentUseCase(testStore.source, totalsReader).execute({ loanId: 'loan', amount: '1000.00', methodId: 'method', collectorId, paymentDate: '2026-09-28', idempotencyKey: 'second-key' }, 'second-actor');
     expect(testStore.state()).toMatchObject({ status: 'CANCELLED', plan: [{ pendingAmount: '0.00' }] });
     expect(testStore.state().history.map(({ sql }) => sql.includes('CREATED') ? 'CREATED' : sql.includes("'CANCELLED','ACTIVE'") ? 'ACTIVE' : 'CANCELLED')).toEqual(['CREATED', 'CANCELLED', 'ACTIVE', 'CANCELLED']);
     expect(testStore.state().history[3].params).toEqual(['loan', new Date('2026-09-28T11:22:33Z'), 'second-actor', 'payment-2', 4]);
@@ -428,7 +439,7 @@ describe('last valid Payment annulment against the current plan', () => {
     expect(testStore.state().annulments).toHaveLength(1);
     expect(testStore.state().cash).toHaveLength(3);
     const snapshot = structuredClone(testStore.state()); const written = writes(testStore).length;
-    await new RegisterPaymentUseCase(testStore.source, totalsReader).execute({ loanId: 'loan', amount: '1000.00', methodId: 'method', paymentDate: '2026-09-28', idempotencyKey: 'second-key' }, 'second-actor');
+    await new RegisterPaymentUseCase(testStore.source, totalsReader).execute({ loanId: 'loan', amount: '1000.00', methodId: 'method', collectorId, paymentDate: '2026-09-28', idempotencyKey: 'second-key' }, 'second-actor');
     expect(writes(testStore)).toHaveLength(written);
     expect(testStore.state()).toEqual(snapshot);
   });
@@ -437,10 +448,10 @@ describe('last valid Payment annulment against the current plan', () => {
     const testStore = store(closed());
     await annul(testStore);
     const register = new RegisterPaymentUseCase(testStore.source, totalsReader);
-    await register.execute({ loanId: 'loan', amount: '200.00', methodId: 'method', paymentDate: '2026-09-28', idempotencyKey: 'partial-key' }, 'partial-actor');
+    await register.execute({ loanId: 'loan', amount: '200.00', methodId: 'method', collectorId, paymentDate: '2026-09-28', idempotencyKey: 'partial-key' }, 'partial-actor');
     expect(testStore.state()).toMatchObject({ status: 'ACTIVE', plan: [{ pendingAmount: '800.00' }] });
     expect(testStore.state().history).toHaveLength(3);
-    await register.execute({ loanId: 'loan', amount: '800.00', methodId: 'method', paymentDate: '2026-09-28', idempotencyKey: 'final-key' }, 'final-actor');
+    await register.execute({ loanId: 'loan', amount: '800.00', methodId: 'method', collectorId, paymentDate: '2026-09-28', idempotencyKey: 'final-key' }, 'final-actor');
     expect(testStore.state()).toMatchObject({ status: 'CANCELLED', plan: [{ pendingAmount: '0.00' }] });
     expect(testStore.state().history).toHaveLength(4);
     expect(testStore.state().history[3].params).toEqual(['loan', new Date('2026-09-28T11:22:33Z'), 'final-actor', 'payment-3', 4]);

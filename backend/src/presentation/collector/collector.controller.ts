@@ -4,16 +4,18 @@ import { memoryStorage } from 'multer';
 import type { Response } from 'express';
 import { CollectorIdentificationAlreadyExistsError, CollectorNotFoundError, CollectorPhotoNotFoundError, CollectorUnauthorizedAssociationError, CollectorUserAlreadyLinkedError, CollectorUserNotEligibleError, CollectorValidationError } from '../../domain/collector/collector.errors';
 import { CollectorUseCases } from '../../application/collector/collector.use-cases';
+import { CollectorStatisticsUseCase } from '../../application/collector/collector-statistics.use-case';
 import type { UploadFile } from '../../application/customer/file-storage';
 import type { CurrentIdentity } from '../../domain/security/security.types';
 import { CurrentUser, RequirePermissions } from '../security/security.decorators';
-import { CollectorListQueryDto, CollectorStatusDto, CollectorUserDto, CreateCollectorDto, UpdateCollectorDto } from './collector.dto';
+import { CollectorListQueryDto, CollectorStatisticsQueryDto, CollectorStatusDto, CollectorUserDto, CreateCollectorDto, UpdateCollectorDto } from './collector.dto';
 
 const mapError = (error: unknown): never => { if (error instanceof CollectorNotFoundError || error instanceof CollectorPhotoNotFoundError) throw new NotFoundException(error.message); if (error instanceof CollectorIdentificationAlreadyExistsError || error instanceof CollectorUserAlreadyLinkedError) throw new ConflictException(error.message); if (error instanceof CollectorUnauthorizedAssociationError) throw new ForbiddenException(error.message); if (error instanceof CollectorUserNotEligibleError || error instanceof CollectorValidationError) throw new BadRequestException(error.message); throw error; };
 @Controller('collectors')
 export class CollectorController {
-  constructor(private readonly useCases: CollectorUseCases) {}
+  constructor(private readonly useCases: CollectorUseCases, private readonly statistics: CollectorStatisticsUseCase) {}
   @Get('eligible-users') @RequirePermissions('collectors.user.assign') eligibleUsers() { return this.useCases.eligibleUsers(); }
+  @Get('statistics') @RequirePermissions('payments.view') async getStatistics(@Query() query: CollectorStatisticsQueryDto) { try { return await this.statistics.execute(query.year, query.month); } catch (error) { return mapError(error); } }
   @Get() @RequirePermissions('collectors.view') list(@Query() query: CollectorListQueryDto) { return this.useCases.list({ search: query.search, status: query.status ?? 'ACTIVE', page: query.page ?? 1, pageSize: query.pageSize ?? 10 }); }
   @Get(':id/photo') @RequirePermissions('collectors.photo.view') async photo(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string, @Res() response: Response) { try { const file = await this.useCases.photo(id); return response.type(file.mimetype).send(file.buffer); } catch (error) { return mapError(error); } }
   @Get(':id') @RequirePermissions('collectors.view') async detail(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string) { try { return await this.useCases.detail(id); } catch (error) { return mapError(error); } }

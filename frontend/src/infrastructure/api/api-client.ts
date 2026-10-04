@@ -1,7 +1,7 @@
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, '') ?? 'http://localhost:3000';
 
 export class UnauthorizedApiError extends Error { constructor() { super('Sesión no válida.'); this.name = 'UnauthorizedApiError'; } }
-export class HttpApiError extends Error { constructor(readonly status: number, message: string) { super(message); this.name = 'HttpApiError'; } }
+export class HttpApiError extends Error { constructor(readonly status: number, message: string, readonly reasonCode?: string) { super(message); this.name = 'HttpApiError'; } }
 let unauthorizedHandler: (() => void) | undefined;
 export const apiClient = {
   onUnauthorized(handler: () => void): () => void { unauthorizedHandler = handler; return () => { if (unauthorizedHandler === handler) unauthorizedHandler = undefined; }; },
@@ -11,9 +11,10 @@ export const apiClient = {
     const response = await fetch(`${API_BASE_URL}${path}`, { ...options, headers, credentials: 'include' });
     if (response.status === 401) { unauthorizedHandler?.(); throw new UnauthorizedApiError(); }
     if (!response.ok) {
-      const payload = await response.json().catch(() => undefined) as { message?: string | string[] } | undefined;
+      const payload = await response.json().catch(() => undefined) as { message?: string | string[]; reasonCode?: unknown } | undefined;
       const message = Array.isArray(payload?.message) ? payload.message.join(' ') : payload?.message;
-      throw new HttpApiError(response.status, message ?? 'No fue posible completar la solicitud.');
+      throw new HttpApiError(response.status, message ?? 'No fue posible completar la solicitud.',
+        typeof payload?.reasonCode === 'string' ? payload.reasonCode : undefined);
     }
     if (response.status === 204) return undefined as T;
     return response.json() as Promise<T>;

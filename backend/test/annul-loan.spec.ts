@@ -11,7 +11,7 @@ const LOAN = id(1); const ACTOR = id(2); const ORIGINAL = id(3); const DISBURSEM
 const at = '2026-09-30T06:00:00.000001Z';
 const body = (resolution: 'NOT_DELIVERED' | 'RETURNED_IN_FULL' = 'NOT_DELIVERED') =>
   ({ reason: '  Not delivered as agreed  ', disbursementResolution: resolution, idempotencyKey: 'annul-key' });
-const initial = () => ({ status: 'ACTIVE', plan: ['70.00', '50.00'], payments: [] as Array<{ status: string; amount: string }>,
+const initial = () => ({ status: 'ACTIVE', successor: false, plan: ['70.00', '50.00'], payments: [] as Array<{ status: string; amount: string }>,
   applications: [{ id: id(9), amount: '10.00' }], opening: '500.00', disbursement: { id: DISBURSEMENT, amount: '100.00', date: '2026-09-01', method: METHOD },
   original: { id: ORIGINAL, amount: '100.00', date: '2026-09-01', method: METHOD, direction: 'OUTFLOW', concept: 'LOAN_DISBURSEMENT' },
   reversal: null as null | { id: string; amount: string; date: string; method: string; actor: string; original: string; direction: string; concept: string; key: string; fingerprint: string },
@@ -36,6 +36,7 @@ function harness(failure?: 'update' | 'count' | 'event' | 'cash' | 'raced-cash' 
         return params[0] === LOAN ? [{ id: LOAN, status: draft.status }] : [];
       }
       if (sql.startsWith('SELECT EXISTS')) {
+        if (sql.includes('FROM loan_refinancings')) return [{ present: draft.successor }];
         expect(sql).toContain("status = 'VALID'");
         return [{ present: draft.payments.some((p) => p.status === 'VALID') }];
       }
@@ -92,6 +93,13 @@ function harness(failure?: 'update' | 'count' | 'event' | 'cash' | 'raced-cash' 
 }
 
 describe('terminal Loan annulment transaction', () => {
+  it('blocks ordinary annulment of an ACTIVE refinancing successor before touching its ledger', async () => {
+    const h = harness(); h.change((s) => { s.successor = true; });
+    await expect(h.controller.annulLoan(LOAN, body(), { id: ACTOR } as never)).rejects.toMatchObject({ status: 409 });
+    expect(h.state().status).toBe('ACTIVE');
+    expect(h.calls.some(({ sql }) => sql.includes('FROM loans l LEFT JOIN loan_disbursements d'))).toBe(false);
+  });
+
   it.each(['NOT_DELIVERED', 'RETURNED_IN_FULL'] as const)('reverses exact principal once for %s and keeps all historical facts', async (resolution) => {
     const h = harness(); h.change((s) => { s.payments.push({ status: 'ANNULLED', amount: '5.00' }, { status: 'ANNULLED', amount: '7.00' }); });
     const before = structuredClone(h.state()); const result = await h.controller.annulLoan(LOAN, body(resolution), { id: ACTOR } as never);

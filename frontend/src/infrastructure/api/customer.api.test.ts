@@ -54,3 +54,18 @@ describe('CustomerApi list sorting', () => {
     fetchMock.mockRestore();
   });
 });
+
+describe('CustomerApi financial analysis', () => {
+  it('requests the customer-scoped endpoint with the explicit cutoff and no cache', async () => {
+    const response = { ok: true, status: 200, json: async () => ({ cliente: { id: 'customer/1' } }) } as Response;
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(response);
+
+    await new CustomerApi().financialAnalysis('customer/1', '2026-09-30');
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:3000/customers/customer%2F1/financial-analysis?asOf=2026-09-30',
+      expect.objectContaining({ credentials: 'include', cache: 'no-store' }),
+    );
+    fetchMock.mockRestore();
+  });
+});

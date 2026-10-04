@@ -18,6 +18,7 @@ export * from './collector.orm-entity';
 export * from './financial-opening.orm-entity';
 export * from './cash-movement.orm-entity';
 export * from './loan.orm-entities';
+export * from './loan-refinancing.orm-entity';
 export * from './loan-edit-operation.orm-entity';
 export * from './loan-status-history.orm-entity';
 export * from './payment.orm-entities';

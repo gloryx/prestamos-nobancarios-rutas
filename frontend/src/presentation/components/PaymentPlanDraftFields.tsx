@@ -2,6 +2,7 @@ import type { RefObject } from 'react';
 import { formatDateOnlyForDisplay } from '../../shared/utils/date';
 import { formatCRC, moneyFromCents, parseMoneyCents } from '../../shared/utils/money';
 import { orderedPlanDraft, reviewPlanDraft, type PlanDraftEntry } from '../helpers/payment-plan';
+import { paymentPlanDateIssueMessage } from '../../application/use-cases/loan-schedule';
 import { MoneyInput } from './MoneyInput';
 import { TableActions } from './TableActions';
 
@@ -29,6 +30,8 @@ export function PaymentPlanDraftFields({ draft, balance, busy, onChange, onAdd, 
       <div><span>Total distribuido</span><strong>{formatCRC(moneyFromCents(review.distributedCents))}</strong></div>
       <div><span>Diferencia</span><strong>{difference === null ? '—' : `${difference < 0n ? '-' : ''}${formatCRC(moneyFromCents(difference < 0n ? -difference : difference))}`}</strong></div>
     </div>
-    {!review.canSave && <p className="payment-plan-editor__hint">{allowEmpty && balance === '0.00' ? 'Para un saldo de cero, elimina todas las obligaciones.' : 'Incluye al menos una obligación con fecha válida y monto mayor que cero. El total debe coincidir con el saldo pendiente.'}</p>}
+    {!review.canSave && <p className="payment-plan-editor__hint">{paymentPlanDateIssueMessage(review.dateIssue) ??
+      (allowEmpty && balance === '0.00' ? 'Para un saldo de cero, elimina todas las obligaciones.' :
+        'Incluye al menos una obligación con fecha válida y monto mayor que cero. El total debe coincidir con el saldo pendiente.')}</p>}
   </>;
 }

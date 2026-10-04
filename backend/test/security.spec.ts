@@ -83,13 +83,15 @@ describe('security guards and permission metadata', () => {
       'territorial.view', 'payment-methods.view', 'payment-methods.create', 'payment-methods.update', 'payment-methods.status.change', 'payment-methods.export',
       'payment-frequencies.view', 'payment-frequencies.create', 'payment-frequencies.update', 'payment-frequencies.status.change', 'payment-frequencies.export',
        'routes.view', 'routes.create', 'routes.update', 'routes.status.change', 'routes.export', 'routes.assign.collectors', 'routes.assign.customers',
-       'customers.view', 'customers.create', 'customers.update', 'customers.status.change', 'customers.summary.view', 'customers.files.view', 'customers.export', 'customers.assigned.view', 'customers.site.view', 'customers.site.capture', 'customers.site.replace', 'customers.site.replace.authorize',
+       'customers.view', 'customers.create', 'customers.update', 'customers.status.change', 'customers.summary.view', 'customers.analysis.view', 'customers.files.view', 'customers.export', 'customers.assigned.view', 'customers.site.view', 'customers.site.capture', 'customers.site.replace', 'customers.site.replace.authorize',
        'users.view', 'users.create', 'users.update', 'users.status.change', 'users.password.reset', 'users.role.assign', 'roles.view', 'roles.permissions.update',
        'collectors.view', 'collectors.create', 'collectors.update', 'collectors.status.change', 'collectors.user.assign', 'collectors.photo.view',
-           'financial-opening.view', 'financial-opening.perform', 'cash-movements.view', 'cash-movements.create', 'cash-movements.reverse', 'cash-movements.export', 'loans.view', 'loans.create', 'loans.update', 'loans.export', 'loans.status.annul', 'loans.status.uncollectible', 'loans.status.reactivate', 'payments.view', 'payments.create', 'payments.annul', 'payments.plan.customize',
+            'financial-opening.view', 'financial-opening.perform', 'cash-movements.view', 'cash-movements.create', 'cash-movements.reverse', 'cash-movements.export', 'loans.view', 'loans.create', 'loans.update', 'loans.export', 'loans.status.annul', 'loans.status.uncollectible', 'loans.status.reactivate', 'loans.refinance.view', 'loans.refinance.create', 'payments.view', 'payments.create', 'payments.annul', 'payments.plan.customize',
     ]));
     expect(Reflect.getMetadata(PERMISSIONS_KEY, CustomerController.prototype.list)).toEqual(['customers.view']);
     expect(Reflect.getMetadata(PERMISSIONS_KEY, CustomerController.prototype.summary)).toEqual(['customers.summary.view']);
+    expect(Reflect.getMetadata(PERMISSIONS_KEY, CustomerController.prototype.getStatistics)).toEqual(['customers.summary.view']);
+    expect(Reflect.getMetadata(PERMISSIONS_KEY, CustomerController.prototype.getFinancialAnalysis)).toEqual(['customers.analysis.view']);
     expect(Reflect.getMetadata(PERMISSIONS_KEY, CustomerController.prototype.file)).toEqual(['customers.files.view']);
     expect(Reflect.getMetadata(PERMISSIONS_KEY, CustomerController.prototype.create)).toEqual(['customers.create']);
     expect(Reflect.getMetadata(PERMISSIONS_KEY, CustomerController.prototype.update)).toEqual(['customers.update']);
@@ -97,6 +99,8 @@ describe('security guards and permission metadata', () => {
     expect(Reflect.getMetadata(PERMISSIONS_KEY, PaymentMethodController.prototype.updateOne)).toEqual(['payment-methods.update']);
     expect(Reflect.getMetadata(PERMISSIONS_KEY, PaymentFrequencyController.prototype.changeStatus)).toEqual(['payment-frequencies.status.change']);
     expect(Reflect.getMetadata(PERMISSIONS_KEY, RouteController.prototype.createOne)).toEqual(['routes.create']);
+    expect(COLLECTION_MANAGER_DEFAULTS).not.toContain('customers.analysis.view');
+    expect(COLLECTOR_DEFAULTS).not.toContain('customers.analysis.view');
   });
 
   it('protects the loan edit route with the existing dynamic loans.update permission', () => {

@@ -5,12 +5,13 @@ import { PaymentController } from '../src/presentation/payment/payment.controlle
 import { LoanFinancialTotalsTypeormReader } from '../src/infrastructure/database/typeorm/repositories/loan-financial-totals.reader';
 
 const totalsReader = new LoanFinancialTotalsTypeormReader();
+const collectorId = '77777777-7777-4777-8777-777777777777';
 
 type Fact = { id: string; amount: string; principal: string; interest: string; status: 'VALID' | 'ANNULLED'; paymentDate?: string | Date; createdAt?: string };
 type State = { status: 'ACTIVE' | 'CANCELLED'; pending: string; payments: Fact[]; cash: string[]; history: Array<{ sql: string; params: unknown[] }> };
 const cents = (value: string) => BigInt(value.replace('.', ''));
 const money = (value: bigint) => `${value / 100n}.${(value % 100n).toString().padStart(2, '0')}`;
-const input = (amount: string) => ({ loanId: 'loan-1', amount, paymentDate: '2026-01-02', methodId: 'method-1', idempotencyKey: `key-${amount}` });
+const input = (amount: string) => ({ loanId: 'loan-1', amount, paymentDate: '2026-01-02', methodId: 'method-1', collectorId, idempotencyKey: `key-${amount}` });
 
 function paymentStore(initial: State, options: { postPending?: string; postTotals?: Partial<{ paidAmount: string; paidPrincipal: string; paidInterest: string; invalidCount: number }>; loanStartDate?: string; openingDate?: string } = {}) {
   let state = structuredClone(initial);
@@ -30,6 +31,7 @@ function paymentStore(initial: State, options: { postPending?: string; postTotal
         return latest ? [{ paymentDate: latest.paymentDate ?? '2026-01-02' }] : [];
       }
       if (sql.includes('FROM payment_methods')) return [{ id: 'method-1' }];
+      if (sql.includes('FROM collectors')) return [{ id: collectorId }];
       if (sql.includes('FROM payment_plan_entries') && sql.includes('FOR UPDATE')) return cents(draft.pending) > 0n ? [{ id: 'entry-1', dueDate: '2026-02-01', sequence: 1, pendingAmount: draft.pending }] : [];
       if (sql.includes('SUM(principal_applied)')) {
         const valid = draft.payments.filter((payment) => payment.status === 'VALID');

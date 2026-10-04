@@ -72,9 +72,9 @@ export function paymentCapturePayload(context: PaymentContext, values: { amount:
   if (!context.firstOperationalRow || cents === null || cents <= 0n || balance === null || cents > balance
     || !/^\d{4}-\d{2}-\d{2}$/.test(values.paymentDate) || formatDateOnlyForDisplay(values.paymentDate) === '—' || values.paymentDate > today
     || !context.preferredMethod.activeMethods.some((method) => method.id === values.methodId)
-    || (values.collectorId && !context.preferredMethod.collectors.some((collector) => collector.id === values.collectorId))) return null;
+    || !values.collectorId || !context.preferredMethod.collectors.some((collector) => collector.id === values.collectorId)) return null;
   return { loanId: context.summary.loanId, paymentDate: values.paymentDate, amount: moneyFromCents(cents), methodId: values.methodId,
-    ...(values.collectorId ? { collectorId: values.collectorId } : {}) };
+    collectorId: values.collectorId };
 }
 
 export function paymentCaptureAttempt(previous: CaptureAttempt | null, body: CaptureBody, generateKey = () => crypto.randomUUID()): CaptureAttempt {
@@ -122,9 +122,9 @@ export function PaymentLoanDialog({ loans, total, page, loading, refreshing, ret
   </div></div>;
 }
 
-export function PaymentDetails({ context, canCreate, amount, methodId, busy, onAmount, onMethod, onSubmit }: {
-  context: PaymentContext; canCreate: boolean; amount: string; methodId: string; busy: boolean;
-  onAmount: (value: string) => void; onMethod: (value: string) => void; onSubmit: () => void;
+export function PaymentDetails({ context, canCreate, amount, methodId, collectorId, busy, onAmount, onMethod, onCollector, onSubmit }: {
+  context: PaymentContext; canCreate: boolean; amount: string; methodId: string; collectorId: string; busy: boolean;
+  onAmount: (value: string) => void; onMethod: (value: string) => void; onCollector: (value: string) => void; onSubmit: () => void;
 }) {
   const today = new Date().toISOString().slice(0, 10);
   const rows = [
@@ -142,7 +142,9 @@ export function PaymentDetails({ context, canCreate, amount, methodId, busy, onA
     {canCreate && <form onSubmit={(event) => { event.preventDefault(); onSubmit(); }}>
       <label>Monto<input inputMode="decimal" value={amount} onChange={(event) => onAmount(event.target.value)} required /></label>
       <label>Método de pago<select value={methodId} onChange={(event) => onMethod(event.target.value)} required><option value="">Seleccionar método</option>{context.preferredMethod.activeMethods.map((method) => <option key={method.id} value={method.id}>{method.name}</option>)}</select></label>
-      <button type="submit" disabled={busy || !methodId}>{busy ? 'Registrando…' : 'Registrar pago'}</button>
+      <label>Cobrador *<select value={collectorId} onChange={(event) => onCollector(event.target.value)} required><option value="">Seleccionar cobrador</option>{context.preferredMethod.collectors.map((collector) => <option key={collector.id} value={collector.id}>{collector.name}</option>)}</select></label>
+      {!collectorId && <p className="form-error">Seleccione un cobrador.</p>}
+      <button type="submit" disabled={busy || !methodId || !collectorId}>{busy ? 'Registrando…' : 'Registrar pago'}</button>
     </form>}
     <h3>Plan vigente y pagos válidos</h3>
     {rows.length ? <ul>{rows.map((row) => <li key={`${row.kind}:${row.id}`}>{formatDateOnlyForDisplay(row.date)} · {row.kind}: {row.amount}</li>)}</ul> : <p>No hay pagos válidos ni cuotas pendientes.</p>}
@@ -162,10 +164,11 @@ export function PaymentCaptureDialog({ context, entry, visibleNumber, amount, pa
         <label>Fecha del pago<input ref={dateRef} type="date" value={paymentDate} max={today} onChange={(event) => onDate(event.target.value)} required /></label>
         <label>Monto recibido<MoneyInput value={amount} onChange={onAmount} required /></label>
         <label>Forma de pago<select value={methodId} onChange={(event) => onMethod(event.target.value)} required><option value="">Seleccionar método</option>{context.preferredMethod.activeMethods.map((method) => <option key={method.id} value={method.id}>{method.name}</option>)}</select></label>
-        <label>Cobrador (opcional)<select value={collectorId} onChange={(event) => onCollector(event.target.value)}><option value="">Sin cobrador</option>{context.preferredMethod.collectors.map((collector) => <option key={collector.id} value={collector.id}>{collector.name}</option>)}</select></label>
+        <label>Cobrador *<select value={collectorId} onChange={(event) => onCollector(event.target.value)} required><option value="">Seleccionar cobrador</option>{context.preferredMethod.collectors.map((collector) => <option key={collector.id} value={collector.id}>{collector.name}</option>)}</select></label>
       </div>
+      {!collectorId && <p className="form-error">Seleccione un cobrador.</p>}
       {error && <p className="form-error" role="alert">{error}</p>}
-      <footer className="payment-capture-dialog__footer"><button className="button button--secondary" type="button" disabled={busy} onClick={onClose}>Cancelar</button><button className="button button--primary" type="submit" disabled={busy || !methodId}>{busy ? 'Registrando…' : 'Registrar pago'}</button></footer>
+      <footer className="payment-capture-dialog__footer"><button className="button button--secondary" type="button" disabled={busy} onClick={onClose}>Cancelar</button><button className="button button--primary" type="submit" disabled={busy || !methodId || !collectorId}>{busy ? 'Registrando…' : 'Registrar pago'}</button></footer>
     </form>
   </div></div>;
 }
@@ -453,7 +456,7 @@ export function PaymentsPage() {
     ++annulOpenToken.current; setShowAnnul(false); setAnnulTarget(null); setAnnulError(''); annulAttempt.current = null;
     ++planOpenToken.current; setShowPlan(false); setPlanBase(null); setPlanDraft([]); planAttempt.current = null;
     setShowPayment(false); captureAttempt.current = null;
-    setSelected(null); setSelecting(true); setError(''); setSelectionError(null); setMethodId(''); setPlanSuccess('');
+    setSelected(null); setSelecting(true); setError(''); setSelectionError(null); setMethodId(''); setCollectorId(''); setPlanSuccess('');
     try {
       const context = await loadActivePaymentContext(loanId, () => token === selectionToken.current);
       if (!context) return;
@@ -487,9 +490,12 @@ export function PaymentsPage() {
   };
   const register = async () => {
     if (!selected || !amount || !methodId) return;
+    if (!collectorId) { setError('Seleccione un cobrador.'); return; }
+    const payload = paymentCapturePayload(selected, { amount, paymentDate: localDateOnly(), methodId, collectorId }, localDateOnly());
+    if (!payload) { setError('Revisa la fecha, el monto, la forma de pago y el cobrador. El monto debe ser mayor que cero y no superar el saldo pendiente.'); return; }
     setBusy(true); setError('');
     try {
-      await paymentApi.create({ loanId: selected.summary.loanId, amount, paymentDate: new Date().toISOString().slice(0, 10), methodId, idempotencyKey: crypto.randomUUID() });
+      await paymentApi.create({ ...payload, idempotencyKey: crypto.randomUUID() });
       setSelected(await paymentApi.context(selected.summary.loanId)); setAmount('');
     } catch (cause) { setError(errorMessage(cause)); }
     finally { setBusy(false); }
@@ -504,6 +510,7 @@ export function PaymentsPage() {
   };
   const registerSelectedPayment = async () => {
     if (captureLocked.current || !showPayment || !selected || !can('payments.create')) return;
+    if (!collectorId) { setError('Seleccione un cobrador.'); return; }
     const payload = paymentCapturePayload(selected, { amount, paymentDate, methodId, collectorId });
     if (!payload) { setError('Revisa la fecha, el monto, la forma de pago y el cobrador. El monto debe ser mayor que cero y no superar el saldo pendiente.'); return; }
     const selection = selectionToken.current;
@@ -605,7 +612,7 @@ export function PaymentsPage() {
     {(selectionPending || (!isNewPayment && selecting)) && <p role="status">Cargando contexto de pago…</p>}
     {selected && <div ref={detailsRef} tabIndex={-1}>{isNewPayment
       ? <SelectedPaymentDetails context={selected} canCreate={can('payments.create')} canCustomize={can('payments.plan.customize')} canAnnul={can('payments.annul')} canExport={canDownloadPaymentPlan(can)} annulBusy={annulSaving} downloadBusy={downloadingSelection === selectionToken.current} onPay={openPayment} onCustomize={() => { void openPlan(); }} onAnnul={openAnnul} onDownload={() => { void download(); }} onChangeLoan={() => { if (annulLocked.current) return; clearLoan(); setShowSelector(true); }} onCloseLoan={() => { if (annulLocked.current) return; if (showAnnul) closeAnnul(); clearLoan(); setShowSelector(false); }} triggerRef={triggerRef} paymentTriggerRef={paymentTriggerRef} planTriggerRef={planTriggerRef} annulTriggerRef={annulTriggerRef} />
-      : <><button type="button" onClick={() => { selectionToken.current += 1; setSelected(null); setError(''); }}>Cerrar préstamo</button><PaymentDetails context={selected} canCreate={can('payments.create')} amount={amount} methodId={methodId} busy={busy} onAmount={setAmount} onMethod={setMethodId} onSubmit={() => { void register(); }} /></>}
+      : <><button type="button" onClick={() => { selectionToken.current += 1; setSelected(null); setError(''); }}>Cerrar préstamo</button><PaymentDetails context={selected} canCreate={can('payments.create')} amount={amount} methodId={methodId} collectorId={collectorId} busy={busy} onAmount={setAmount} onMethod={setMethodId} onCollector={setCollectorId} onSubmit={() => { void register(); }} /></>}
     </div>}
     {isNewPayment && showPayment && selected?.firstOperationalRow && can('payments.create') && <PaymentCaptureDialog
       context={selected} entry={selected.firstOperationalRow} visibleNumber={paymentTimeline(selected).findIndex((row) => row.kind === 'PLAN_ENTRY' && row.id === selected.firstOperationalRow?.id) + 1} amount={amount} paymentDate={paymentDate} methodId={methodId} collectorId={collectorId} busy={busy} error={error}

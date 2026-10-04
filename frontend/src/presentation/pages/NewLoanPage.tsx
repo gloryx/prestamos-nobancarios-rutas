@@ -6,9 +6,9 @@ import type { LoanPlanEntry } from "../../domain/entities/loan";
 import { PaymentFrequencyApi } from "../../infrastructure/api/payment-frequency.api";
 import { PaymentMethodApi } from "../../infrastructure/api/payment-method.api";
 import { loanApi } from "../../infrastructure/api/loan.api";
-import { automaticPlan, calculateInformationalRate30Days } from "../../application/use-cases/loan-schedule";
+import { automaticPlan, calculateInformationalRate30Days, paymentPlanDateIssue, paymentPlanDateIssueMessage } from "../../application/use-cases/loan-schedule";
 import { formatCRC, moneyFromCents, normalizeMoney, parseMoneyCents } from "../../shared/utils/money";
-import { formatDateOnlyForDisplay } from "../../shared/utils/date";
+import { costaRicaDateOnly, formatDateOnlyForDisplay } from "../../shared/utils/date";
 import { MoneyInput } from "../components/MoneyInput";
 import { LoanPaymentPlanTable } from "../components/LoanPaymentPlanTable";
 import { useToast } from "../components/ToastContext";
@@ -169,7 +169,7 @@ export function NewLoanPage(): ReactElement {
   const [disbursementPaymentMethodId, setDisbursementPaymentMethodId] =
     useState("");
   const [startDate, setStartDate] = useState(
-    new Date().toISOString().slice(0, 10),
+    costaRicaDateOnly(),
   );
   const [principal, setPrincipal] = useState("");
   const [interestAmount, setInterestAmount] = useState("");
@@ -215,16 +215,16 @@ export function NewLoanPage(): ReactElement {
     0n,
   );
   const difference = cents(total) - distributed;
+  const planDateIssue = paymentPlanDateIssue(startDate, plan);
   const hasInvalidPlanRows =
     plan.length === 0 ||
     plan.some(
       (entry) =>
         !Number.isInteger(entry.sequence) ||
         entry.sequence < 1 ||
-        !entry.dueDate ||
         parseMoneyCents(entry.pendingAmount) === null ||
         cents(entry.pendingAmount) <= 0n,
-    );
+    ) || planDateIssue !== null;
   const continueStepOne = () => {
     if (
       !customer ||
@@ -255,7 +255,7 @@ export function NewLoanPage(): ReactElement {
     if (!plan.length) setPlan(generated.map((entry) => ({ ...entry })));
   };
   const submit = async () => {
-    if (difference !== 0n || submitting || !customer || !frequency) return;
+    if (difference !== 0n || hasInvalidPlanRows || submitting || !customer || !frequency) return;
     setSubmitting(true);
     setError("");
     try {
@@ -427,7 +427,7 @@ export function NewLoanPage(): ReactElement {
              <div><span>Total</span><strong>{formatCRC(total)}</strong></div>
              <div><span>Tasa informativa a 30 días</span><strong>{informationalRate ?? "—"}</strong></div>
            </div>
-           <LoanPaymentPlanTable
+            <LoanPaymentPlanTable
              plan={plan}
              total={total}
              editable={mode === "personalized"}
@@ -438,7 +438,10 @@ export function NewLoanPage(): ReactElement {
                  { sequence: plan.length + 1, dueDate: "", pendingAmount: "0.00" },
                ])
              }
-           />
+            />
+           {mode === "personalized" && planDateIssue && <p className="form-error" role="alert">
+             {paymentPlanDateIssueMessage(planDateIssue)}
+           </p>}
           <div className="dialog-actions loan-wizard__footer">
             <button
               className="button button--secondary"
@@ -452,9 +455,7 @@ export function NewLoanPage(): ReactElement {
               type="button"
               disabled={
                 difference !== 0n ||
-                plan.some(
-                  (entry) => !entry.dueDate || cents(entry.pendingAmount) <= 0n,
-                )
+                 hasInvalidPlanRows
               }
               onClick={() => setStep(3)}
             >

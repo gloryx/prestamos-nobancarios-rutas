@@ -6,7 +6,7 @@ export const editContext: LoanEditContext = {
     paymentFrequencyId: 'frequency-old', paymentFrequencyName: 'Antigua', preferredPaymentMethodId: 'method-old',
     preferredPaymentMethodName: 'Anterior', observations: 'ORIGINAL' },
   baseline: { interestAmount: '20.00', paymentFrequencyId: 'frequency-old', preferredPaymentMethodId: 'method-old', observations: 'ORIGINAL', financialBalance: '60.00',
-    plan: [{ id: 'plan-a', dueDate: '2026-02-01', pendingAmount: '60.00' }] },
+    plan: [{ id: 'plan-a', dueDate: '2026-02-02', pendingAmount: '60.00' }] },
   paymentFrequencyOptions: [{ id: 'frequency-old', name: 'Antigua', active: false }, { id: 'frequency-new', name: 'Nueva', active: true }, { id: 'frequency-off', name: 'Otra', active: false }],
   preferredPaymentMethodOptions: [{ id: 'method-old', name: 'Anterior', active: false }, { id: 'method-new', name: 'Actual', active: true }, { id: 'method-off', name: 'Otra', active: false }],
 };

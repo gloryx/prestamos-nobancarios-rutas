@@ -34,6 +34,9 @@ export async function applyPaymentPlanDraft(
   try { if (targetPendingAmount > 0n) validatePlanCustomization(entries, loanStartDate, money(targetPendingAmount)); }
   catch (error) {
     if (error instanceof Error && error.message === 'plan-total-mismatch') throw new PaymentConflictError('The payment plan does not reconcile with the current balance.');
+    if (error instanceof Error && error.message === 'plan-date-sunday') throw new PaymentValidationError('Los domingos no son días de cobro.');
+    if (error instanceof Error && error.message === 'plan-date-duplicate') throw new PaymentValidationError('Ya existe una cuota programada para esta fecha.');
+    if (error instanceof Error && error.message === 'plan-date-order') throw new PaymentValidationError('La fecha debe ser posterior a la cuota anterior.');
     throw new PaymentValidationError('The payment plan has an invalid date or amount.');
   }
   let nextSequence = current.reduce((max, row) => Math.max(max, row.sequence), 0);

@@ -248,7 +248,7 @@ describe('ACTIVE to UNCOLLECTIBLE transactional writer', () => {
   it('does not reopen payment registration or plan customization after marking uncollectible', async () => {
     const fake = store(); await fake.useCase.execute(LOAN, request(), ACTOR); const before = structuredClone(fake.state());
     const register = new RegisterPaymentUseCase(fake.source as never, fake.totals);
-    await expect(register.execute({ loanId: LOAN, amount: '10.00', paymentDate: '2026-02-01', methodId: ROW, idempotencyKey: 'payment-key' }, ACTOR))
+    await expect(register.execute({ loanId: LOAN, amount: '10.00', paymentDate: '2026-02-01', methodId: ROW, collectorId: OTHER, idempotencyKey: 'payment-key' }, ACTOR))
       .rejects.toBeInstanceOf(PaymentValidationError);
     const plan = new CustomizePaymentPlanUseCase(fake.source as never, fake.totals);
     const entries = before.plans.map(({ id, dueDate, pendingAmount }) => ({ id, dueDate, pendingAmount }));

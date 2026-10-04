@@ -5,6 +5,11 @@ export type ActionSetPermission = (codes: string[]) => boolean;
 
 type Definition = TableAction & { permission?: string; allPermissions?: string[] };
 
+export const customerFinancialAnalysisPath = (customerId: string, asOf?: string): string => {
+  const path = `/customers/${encodeURIComponent(customerId)}/financial-analysis`;
+  return asOf ? `${path}?${new URLSearchParams({ asOf })}` : path;
+};
+
 export function visibleTableActions(definitions: Definition[], can: ActionPermission, canAll: ActionSetPermission = (codes) => codes.every(can)): TableAction[] {
   return definitions.filter((definition) => (!definition.permission || can(definition.permission)) && (!definition.allPermissions || canAll(definition.allPermissions))).map((definition) => {
     const action = { ...definition };
@@ -18,6 +23,7 @@ export function customerActionDefinitions(isActive: boolean): Definition[] {
   return [
     { key: 'view', icon: 'view', label: 'Ver información', title: 'Ver información', ariaLabel: 'Ver información', permission: 'customers.view' },
     { key: 'edit', icon: 'edit', label: 'Editar cliente', title: 'Editar cliente', ariaLabel: 'Editar cliente', permission: 'customers.update' },
+    { key: 'analysis', icon: 'dashboard', label: 'Análisis financiero', title: 'Análisis financiero', ariaLabel: 'Consultar análisis financiero', permission: 'customers.analysis.view' },
     { key: 'payment', icon: 'payment', label: 'Disponible próximamente', title: 'Disponible próximamente', ariaLabel: 'Disponible próximamente', disabled: true },
     { key: 'download', icon: 'download', label: 'Descargar expediente', title: 'Descargar expediente', ariaLabel: 'Descargar expediente', allPermissions: ['customers.export', 'customers.files.view'] },
     { key: 'status', icon: isActive ? 'lock' : 'unlock', label: isActive ? 'Inactivar cliente' : 'Activar cliente', title: isActive ? 'Inactivar cliente' : 'Activar cliente', ariaLabel: isActive ? 'Inactivar cliente' : 'Activar cliente', permission: 'customers.status.change' },

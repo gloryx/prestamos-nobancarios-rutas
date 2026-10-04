@@ -1,5 +1,6 @@
 import type { CustomerCreated, CustomerDetail, CustomerForm, CustomerListItem, CustomerSummary } from '../../domain/entities/customer';
 import type { AssignedCollector, AssignedCustomer, CustomerSite, SiteAuthorization, SiteUpdateScope } from '../../domain/entities/customer-site';
+import type { CustomerFinancialAnalysis } from '../../domain/entities/customer-financial-analysis';
 import type { CustomerRepository, CustomerStatusFilter, CustomerListSort, CustomerSummaryQuery } from '../../application/ports/customer.repository';
 import { normalizeCustomerForm } from '../../application/use-cases/customer-normalization';
 import { apiClient } from './api-client';
@@ -42,6 +43,10 @@ export class CustomerApi implements CustomerRepository {
   async assigned(): Promise<AssignedCustomer[]> { return this.request('/customers/assigned'); }
   async summary(query: CustomerSummaryQuery): Promise<CustomerSummary> { return this.request(`/customers/summary?${new URLSearchParams(query)}`); }
   async detail(id: string): Promise<CustomerDetail> { return this.request(`/customers/${encodeURIComponent(id)}`); }
+  async financialAnalysis(id: string, asOf: string): Promise<CustomerFinancialAnalysis> {
+    const query = new URLSearchParams({ asOf });
+    return this.request(`/customers/${encodeURIComponent(id)}/financial-analysis?${query}`, { cache: 'no-store' });
+  }
   async update(id: string, input: Partial<CustomerForm>): Promise<CustomerDetail> { return this.request(`/customers/${encodeURIComponent(id)}`, { method: 'PATCH', body: buildCustomerFormData(input) }); }
   async site(id: string): Promise<CustomerSite> { return this.request(`/customers/${encodeURIComponent(id)}/site`); }
   async assignedCollectors(id: string): Promise<AssignedCollector[]> { return this.request(`/customers/${encodeURIComponent(id)}/site-assigned-collectors`); }

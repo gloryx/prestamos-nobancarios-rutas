@@ -40,9 +40,10 @@ export class SimplifyDtaTerritorialKeys1760100000000 implements MigrationInterfa
           OR EXISTS (SELECT 1 FROM "districts" d WHERE NOT EXISTS (SELECT 1 FROM "cantons" c WHERE c."code" = d."canton_code"))
           OR EXISTS (SELECT 1 FROM "cantons" WHERE left("code"::text, 1) <> "province_code"::text)
           OR EXISTS (SELECT 1 FROM "districts" WHERE left("code"::text, 3) <> "canton_code"::text)
-          OR (SELECT COUNT(*) FROM "provinces") <> 7
-          OR (SELECT COUNT(*) FROM "cantons") <> 84
-          OR (SELECT COUNT(*) FROM "districts") <> 494
+          OR NOT (
+            ((SELECT COUNT(*) FROM "provinces") = 0 AND (SELECT COUNT(*) FROM "cantons") = 0 AND (SELECT COUNT(*) FROM "districts") = 0)
+            OR ((SELECT COUNT(*) FROM "provinces") = 7 AND (SELECT COUNT(*) FROM "cantons") = 84 AND (SELECT COUNT(*) FROM "districts") = 494)
+          )
         THEN RAISE EXCEPTION 'DTA code mapping validation failed';
         END IF;
       END $$`);

@@ -13,6 +13,15 @@ const movement = (id: string, concept: string, links: Record<string, string | nu
 });
 
 describe('CashMovementTypeOrmRepository', () => {
+  it('resolves the new loan number for a refinancing new-money outflow', async () => {
+    const query = jest.fn().mockResolvedValueOnce([{ id: 'dis-new', loanNumber: '150' }]);
+    const repo = new CashMovementTypeOrmRepository({ createQueryBuilder: () => queryBuilder(undefined,
+      [movement('new-money', 'REFINANCING_NEW_MONEY_DISBURSEMENT', { loanDisbursementId: 'dis-new' })], 1) } as never,
+    { query } as never);
+    const result = await repo.list({ page: 1, pageSize: 20 });
+    expect(result.items[0].loanNumber).toBe('150');
+    expect(query).toHaveBeenCalledTimes(1);
+  });
   it('uses entity property paths for ordering while retaining physical SQL filters', async () => {
     const builder = queryBuilder(undefined);
     const repository = new CashMovementTypeOrmRepository({ createQueryBuilder: () => builder } as never, {} as never);

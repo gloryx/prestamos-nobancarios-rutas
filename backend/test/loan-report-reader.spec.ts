@@ -46,6 +46,7 @@ describe('loan detail operational read contract', () => {
     expect(query.mock.calls.every(([sql]) => !/\b(INSERT|UPDATE|DELETE)\b/.test(sql))).toBe(true);
     expect(query.mock.calls[0][0]).toContain('pf.id AS "paymentFrequencyId", pf.name AS "frequencyName"');
     expect(query.mock.calls[0][0]).toContain('pm.id AS "preferredPaymentMethodId", pm.name AS "preferredPaymentMethod"');
+    expect(query.mock.calls[0][0]).toContain('LEFT JOIN loan_disbursements d ON d.loan_id=l.id');
   });
 
   it('keeps the creation/replay detail shape and avoids operational payment reads', async () => {

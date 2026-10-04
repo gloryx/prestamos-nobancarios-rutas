@@ -36,3 +36,18 @@ export function formatDateTimeForDisplay(value: string): string {
     hour12: true,
   }).format(date);
 }
+
+export function costaRicaDateOnly(now = new Date()): string {
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Costa_Rica', year: 'numeric', month: '2-digit', day: '2-digit' })
+    .formatToParts(now);
+  const value = (type: string) => parts.find((part) => part.type === type)!.value;
+  return `${value('year')}-${value('month')}-${value('day')}`;
+}
+
+export function shiftDateOnly(value: string, days: number): string {
+  if (formatDateOnlyForDisplay(value) === '—') throw new Error('La fecha no es válida.');
+  const [year, month, day] = value.split('-').map(Number);
+  const date = new Date(0);
+  date.setUTCFullYear(year, month - 1, day + days);
+  return `${date.getUTCFullYear().toString().padStart(4, '0')}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
+}

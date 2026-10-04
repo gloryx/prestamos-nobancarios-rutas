@@ -18,7 +18,7 @@ describe('payment loan selector API', () => {
 });
 
 describe('payment capture transport', () => {
-  it('POSTs only the current payment contract with an edited canonical amount and optional collector', async () => {
+  it('POSTs only the current payment contract with an edited canonical amount and required collector', async () => {
     const context = {
       summary: { loanId: 'loan-1' }, balances: { financialBalance: '100.00' },
       firstOperationalRow: { id: 'row-1', sequence: 1, dueDate: '2020-01-01', pendingAmount: '50.00' },
@@ -35,9 +35,8 @@ describe('payment capture transport', () => {
       expect(options).toMatchObject({ method: 'POST', credentials: 'include' });
       expect(JSON.parse(options!.body as string)).toEqual({ loanId: 'loan-1', paymentDate: '2026-09-28', amount: '75.50', methodId: 'card', collectorId: 'collector-1', idempotencyKey: 'capture-key' });
 
-      const withoutCollector = paymentCapturePayload(context, { amount: '₡12,5', paymentDate: '2020-01-01', methodId: 'cash', collectorId: '' }, '2026-09-28');
-      await paymentApi.create({ ...withoutCollector!, idempotencyKey: 'another-key' });
-      expect(JSON.parse(fetchMock.mock.calls[1][1]!.body as string)).toEqual({ loanId: 'loan-1', paymentDate: '2020-01-01', amount: '12.50', methodId: 'cash', idempotencyKey: 'another-key' });
+      expect(paymentCapturePayload(context, { amount: '₡12,5', paymentDate: '2020-01-01', methodId: 'cash', collectorId: '' }, '2026-09-28')).toBeNull();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
     } finally { fetchMock.mockRestore(); }
   });
 });

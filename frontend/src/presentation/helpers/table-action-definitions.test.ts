@@ -1,15 +1,19 @@
 import { describe, expect, it } from 'vitest';
-import { collectorActionDefinitions, customerActionDefinitions, userActionDefinitions, visibleTableActions } from './table-action-definitions';
+import { collectorActionDefinitions, customerActionDefinitions, customerFinancialAnalysisPath, userActionDefinitions, visibleTableActions } from './table-action-definitions';
 
 const allowAll = () => true;
 
 describe('table action definitions', () => {
   it('preserves the Customer order, disabled future payment, and status convention', () => {
     const active = visibleTableActions(customerActionDefinitions(true), allowAll);
-    expect(active.map((action) => action.key)).toEqual(['view', 'edit', 'payment', 'download', 'status']);
-    expect(active[2]).toMatchObject({ icon: 'payment', label: 'Disponible próximamente', disabled: true, title: 'Disponible próximamente', ariaLabel: 'Disponible próximamente' });
-    expect(active[4]).toMatchObject({ icon: 'lock', label: 'Inactivar cliente', title: 'Inactivar cliente', ariaLabel: 'Inactivar cliente' });
-    expect(visibleTableActions(customerActionDefinitions(false), allowAll)[4]).toMatchObject({ icon: 'unlock', label: 'Activar cliente' });
+    expect(active.map((action) => action.key)).toEqual(['view', 'edit', 'analysis', 'payment', 'download', 'status']);
+    expect(active[2]).toMatchObject({ icon: 'dashboard', label: 'Análisis financiero', ariaLabel: 'Consultar análisis financiero' });
+    expect(active[3]).toMatchObject({ icon: 'payment', label: 'Disponible próximamente', disabled: true, title: 'Disponible próximamente', ariaLabel: 'Disponible próximamente' });
+    expect(active[5]).toMatchObject({ icon: 'lock', label: 'Inactivar cliente', title: 'Inactivar cliente', ariaLabel: 'Inactivar cliente' });
+    expect(visibleTableActions(customerActionDefinitions(false), allowAll)[5]).toMatchObject({ icon: 'unlock', label: 'Activar cliente' });
+    expect(customerFinancialAnalysisPath('customer/id')).toBe('/customers/customer%2Fid/financial-analysis');
+    expect(customerFinancialAnalysisPath('customer/id', '2026-10-03'))
+      .toBe('/customers/customer%2Fid/financial-analysis?asOf=2026-10-03');
   });
 
   it('defines authorized Users actions in the requested order with accessible labels', () => {
@@ -49,5 +53,10 @@ describe('table action definitions', () => {
     const can = () => false;
     const canAll = (permissions: string[]) => permissions.includes('customers.export') && permissions.includes('customers.files.view');
     expect(visibleTableActions(customerActionDefinitions(true), can, canAll).map((action) => action.key)).toEqual(['payment', 'download']);
+  });
+
+  it('publishes customer analysis only with its dedicated permission', () => {
+    const onlyAnalysis = (permission: string) => permission === 'customers.analysis.view';
+    expect(visibleTableActions(customerActionDefinitions(true), onlyAnalysis).map((action) => action.key)).toEqual(['analysis', 'payment']);
   });
 });

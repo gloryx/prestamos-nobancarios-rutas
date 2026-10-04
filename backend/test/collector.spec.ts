@@ -86,5 +86,5 @@ describe('collector module', () => {
     expect(inactive).toMatchObject({ total: 1, items: [{ id: '2' }] });
     expect(builders.every((builder) => builder.getManyAndCountCalls === 1)).toBe(true);
   });
-  it('has no delete endpoint and exposes all required controller routes', () => { const names = Object.getOwnPropertyNames(CollectorController.prototype); expect(names).not.toContain('delete'); expect(names).toEqual(expect.arrayContaining(['eligibleUsers', 'list', 'detail', 'create', 'update', 'status', 'user', 'photo'])); });
+  it('has no delete endpoint and exposes all required controller routes', () => { const names = Object.getOwnPropertyNames(CollectorController.prototype); expect(names).not.toContain('delete'); expect(names).toEqual(expect.arrayContaining(['eligibleUsers', 'getStatistics', 'list', 'detail', 'create', 'update', 'status', 'user', 'photo'])); });
 });

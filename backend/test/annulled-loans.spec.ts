@@ -21,7 +21,7 @@ const fact = (n: number, status = 'ACTIVE') => ({ loanId: id(n), loanNumber: Str
   disbursementId: id(200 + n), disbursementAmount: '100.00', disbursementDate: '2026-09-01', disbursementMethodId: id(300),
   cashId: id(400 + n), cashAmount: '100.00', cashDate: '2026-09-01', cashMethodId: id(300), cashConcept: 'LOAN_DISBURSEMENT', cashDirection: 'OUTFLOW',
   reversalId: id(500 + n), reversalAmount: '100.00', reversalDate: '2026-09-29', reversalMethodId: id(300),
-  reversalConcept: 'REVERSAL', reversalDirection: 'INFLOW', payments: [] as string[],
+   reversalConcept: 'REVERSAL', reversalDirection: 'INFLOW', successor: false, payments: [] as string[],
   events: [event(1, null, 'ACTIVE', '2026-09-01T09:00:00.000000Z'), event(2)] });
 type Fact = ReturnType<typeof fact>;
 
@@ -35,16 +35,17 @@ function harness(facts: Fact[]) {
       !sql.includes("event.changed_at AT TIME ZONE 'America/Costa_Rica'") ||
       sql.includes("h.event_kind = 'TRANSITION'")) throw new Error('Reader did not select the causal latest event and linked cash.');
     const annulled = sql.includes("l.status = 'ANNULLED'");
-    if (!annulled && !sql.includes("NOT EXISTS (SELECT 1 FROM payments p WHERE p.loan_id = l.id AND p.status = 'VALID')"))
+    if (!annulled && (!sql.includes("NOT EXISTS (SELECT 1 FROM payments p WHERE p.loan_id = l.id AND p.status = 'VALID')") ||
+      !sql.includes('NOT EXISTS (SELECT 1 FROM loan_refinancings r WHERE r.new_loan_id = l.id)')))
       throw new Error('Candidate filter must exclude only VALID payments.');
     const search = sql.includes('ILIKE') ? String(params[0]).slice(1, -1).toLowerCase() : undefined;
     if (search && !['loan_number::text', 'c.identification', 'c.first_name', 'c.primary_phone', 'c.secondary_phone']
       .every((field) => sql.includes(field))) throw new Error('Reader omitted a search field.');
     return facts.filter((row) => row.status === (annulled ? 'ANNULLED' : 'ACTIVE') &&
-      (annulled || !row.payments.includes('VALID')) &&
+      (annulled || !row.payments.includes('VALID') && !row.successor) &&
       (!search || [row.loanNumber, row.identification, row.fullName, row.primaryPhone, row.secondaryPhone]
         .some((field) => field.toLowerCase().includes(search)))).map(({ payments: _payments, events, status: _status,
-      primaryPhone: _primary, secondaryPhone: _secondary, ...row }) => {
+      primaryPhone: _primary, secondaryPhone: _secondary, successor: _successor, ...row }) => {
       const last = events.slice().sort((a, b) => b.sequence - a.sequence)[0];
       const fingerprint = last && last.reason && last.actor && last.resolution ? paymentFingerprint({ operation: 'ANNUL_LOAN',
         loanId: row.loanId, actorId: last.actor, reason: last.reason, disbursementResolution: last.resolution }) : null;
@@ -76,6 +77,12 @@ describe('Loan annulment read models', () => {
     expect(result.summary).toEqual({ total: 3, capital: '300.00', interest: '60.00', contractualTotal: '360.00' });
     rows[1].payments.push('VALID'); expect((await read('annullable')).total).toBe(2);
     expect(manager.query).toHaveBeenCalledTimes(2);
+  });
+
+  it('omits ACTIVE refinancing successors from ordinary loan annulment candidates', async () => {
+    const origin = fact(1); const successor = fact(2); successor.successor = true;
+    const { read } = harness([origin, successor]);
+    expect((await read('annullable')).items.map((row) => row.loanId)).toEqual([origin.loanId]);
   });
 
   it('uses the latest event sequence, Costa Rica date under another TZ, and includes structured resolution', async () => {

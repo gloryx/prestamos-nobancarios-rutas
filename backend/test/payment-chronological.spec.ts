@@ -2,8 +2,11 @@ import type { DataSource } from 'typeorm';
 import { PaymentConflictError, PaymentValidationError, RegisterPaymentUseCase } from '../src/application/payment/payment.use-case';
 import { PaymentController } from '../src/presentation/payment/payment.controller';
 import { LoanFinancialTotalsTypeormReader } from '../src/infrastructure/database/typeorm/repositories/loan-financial-totals.reader';
+import { CreatePaymentDto } from '../src/presentation/payment/payment.dto';
+import { validate } from 'class-validator';
 
 const totalsReader = new LoanFinancialTotalsTypeormReader();
+const collectorId = '77777777-7777-4777-8777-777777777777';
 
 type Row = { id: string; dueDate: string; sequence: number; pendingAmount: string };
 type Fact = { id: string; amount: string; principal: string; interest: string; status: 'VALID' | 'ANNULLED'; key: string; fingerprint: string };
@@ -13,9 +16,9 @@ type State = { status: 'ACTIVE' | 'CANCELLED'; rows: Row[]; payments: Fact[]; ap
 const cents = (value: string) => BigInt(value.replace('.', ''));
 const money = (value: bigint) => `${value / 100n}.${(value % 100n).toString().padStart(2, '0')}`;
 const initial = (count: number, loanId = 'loan'): State => ({ status: 'ACTIVE', rows: Array.from({ length: count }, (_, index) => ({ id: `entry-${index + 1}`, dueDate: `2026-0${index + 2}-01`, sequence: index + 1, pendingAmount: '60000.00' })).reverse(), payments: [], applications: [], cash: [], history: [{ sql: 'CREATED', params: [loanId, 1] }] });
-const input = (amount: string) => ({ loanId: 'loan', amount, methodId: 'method', paymentDate: '2026-01-10', idempotencyKey: 'key' });
+const input = (amount: string) => ({ loanId: 'loan', amount, methodId: 'method', collectorId, paymentDate: '2026-01-10', idempotencyKey: 'key' });
 
-function store(count: number, options: { staleFirstKeyRead?: boolean; postPending?: string; failCash?: boolean; failReceiver?: boolean; principal?: string; firstOverdue?: boolean; cancelResult?: 'zero' | 'ambiguous' | 'wrong-id' | 'flat' | 'no-id' | 'duplicate'; failHistory?: boolean; persistedActor?: string; loanId?: string } = {}) {
+function store(count: number, options: { staleFirstKeyRead?: boolean; postPending?: string; failCash?: boolean; failReceiver?: boolean; principal?: string; firstOverdue?: boolean; cancelResult?: 'zero' | 'ambiguous' | 'wrong-id' | 'flat' | 'no-id' | 'duplicate'; failHistory?: boolean; persistedActor?: string; loanId?: string; validCollector?: boolean } = {}) {
   const loanId = options.loanId ?? 'loan';
   let state = initial(count, loanId);
   if (options.firstOverdue) state.rows.find((row) => row.id === 'entry-1')!.dueDate = '2026-01-05';
@@ -33,7 +36,8 @@ function store(count: number, options: { staleFirstKeyRead?: boolean; postPendin
       if (sql.includes('FROM loans WHERE id = $1 FOR UPDATE')) return String(params[0]).toLowerCase() === loanId ? [{ id: loanId, status: draft.status, startDate: '2026-01-01', principal: options.principal ?? money(BigInt(count) * 5000000n), interestAmount: money(BigInt(count) * 6000000n - (options.principal ? cents(options.principal) : BigInt(count) * 5000000n)), totalAmount: money(BigInt(count) * 6000000n) }] : [];
       if (sql.includes('FROM financial_openings')) return [{ openingDate: '2026-01-01' }];
       if (sql.includes('ORDER BY payment_date DESC, created_at DESC, id DESC LIMIT 1')) return draft.payments.length ? [{ paymentDate: '2026-01-10' }] : [];
-      if (sql.includes('FROM payment_methods')) return [{ id: 'method' }];
+       if (sql.includes('FROM payment_methods')) return [{ id: 'method' }];
+       if (sql.includes('FROM collectors')) return options.validCollector === false ? [] : [{ id: collectorId }];
       if (sql.includes('FROM payment_plan_entries') && sql.includes('FOR UPDATE')) return draft.rows.filter((row) => cents(row.pendingAmount) > 0n).sort((a, b) => a.dueDate.localeCompare(b.dueDate) || a.sequence - b.sequence || a.id.localeCompare(b.id)).map((row) => ({ ...row }));
       if (sql.includes('SUM(principal_applied)')) {
         const valid = draft.payments.filter((fact) => fact.status === 'VALID');
@@ -96,6 +100,30 @@ const register = (testStore: ReturnType<typeof store>, amount: string) => new Re
 describe('chronological multi-obligation payment registration', () => {
   beforeEach(() => { jest.useFakeTimers(); jest.setSystemTime(new Date('2026-09-28T12:00:00Z')); });
   afterEach(() => jest.useRealTimers());
+
+  it('requires a valid collector UUID at both DTO and application boundaries without starting a transaction', async () => {
+    const base = input('100.00');
+    const missing = Object.assign(new CreatePaymentDto(), { ...base, collectorId: undefined });
+    const malformed = Object.assign(new CreatePaymentDto(), { ...base, collectorId: 'not-a-uuid' });
+    expect(await validate(missing)).toEqual(expect.arrayContaining([expect.objectContaining({ property: 'collectorId' })]));
+    expect(await validate(malformed)).toEqual(expect.arrayContaining([expect.objectContaining({ property: 'collectorId' })]));
+    const testStore = store(1);
+    await expect(new RegisterPaymentUseCase(testStore.source, totalsReader).execute({ ...base, collectorId: '' }, 'actor')).rejects.toThrow('Seleccione un cobrador.');
+    await expect(new RegisterPaymentUseCase(testStore.source, totalsReader).execute({ ...base, collectorId: 'not-a-uuid' }, 'actor')).rejects.toThrow('Seleccione un cobrador.');
+    expect(testStore.transaction).not.toHaveBeenCalled();
+  });
+
+  it('rejects a missing or inactive collector inside the transaction before persisting', async () => {
+    const testStore = store(1, { validCollector: false });
+    await expect(register(testStore, '100.00')).rejects.toThrow('El cobrador seleccionado no es válido.');
+    expect(writes(testStore)).toEqual([]);
+  });
+
+  it('persists the selected collector in the existing nullable historical column', async () => {
+    const testStore = store(1);
+    await register(testStore, '100.00');
+    expect(testStore.calls.find(({ sql }) => sql.startsWith('INSERT INTO payments'))?.params[6]).toBe(collectorId);
+  });
 
   it.each([
     [2, '60000.00', ['0.00', '60000.00'], ['60000.00'], 'ACTIVE'],

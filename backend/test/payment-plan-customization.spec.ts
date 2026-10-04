@@ -18,8 +18,8 @@ type Row = { id: string; loanId: string; dueDate: string; sequence: number; pend
 type State = { rows: Row[]; key: string | null; fingerprint: string | null };
 type Proposal = { id: string | null; dueDate: string; pendingAmount: string };
 const row = (id: string, sequence: number, dueDate: string, pendingAmount: string, loanId = 'loan'): Row => ({ id, loanId, sequence, dueDate, pendingAmount, createdAt: '2026-01-01' });
-const initial = (): State => ({ rows: [row(A, 3, '2026-02-01', '400.00'), row(B, 7, '2026-03-01', '500.00'), row(HISTORY, 9, '2026-01-15', '0.00'), row(FOREIGN, 12, '2026-02-01', '1.00', 'other')], key: null, fingerprint: null });
-const proposal = (): Proposal[] => [{ id: A, dueDate: '2026-04-01', pendingAmount: '400.00' }, { id: B, dueDate: '2026-03-01', pendingAmount: '500.00' }];
+const initial = (): State => ({ rows: [row(A, 3, '2026-04-01', '400.00'), row(B, 7, '2026-03-02', '500.00'), row(HISTORY, 9, '2026-01-15', '0.00'), row(FOREIGN, 12, '2026-02-02', '1.00', 'other')], key: null, fingerprint: null });
+const proposal = (): Proposal[] => [{ id: A, dueDate: '2026-03-02', pendingAmount: '400.00' }, { id: B, dueDate: '2026-04-01', pendingAmount: '500.00' }];
 const cents = (amount: string) => BigInt(amount.replace('.', ''));
 const money = (value: bigint) => `${value / 100n}.${(value % 100n).toString().padStart(2, '0')}`;
 const writes = (calls: Array<{ sql: string }>) => calls.filter(({ sql }) => /^(INSERT|UPDATE|DELETE)\b/.test(sql));
@@ -75,7 +75,7 @@ describe('payment plan customization by stable obligation identity', () => {
   it('updates explicitly referenced rows when dates are reordered without renumbering technical sequences', async () => {
     const testStore = store();
     const result = await customize(testStore, proposal());
-    expect(result.map((item: Row) => [item.id, item.sequence, item.dueDate])).toEqual([[B, 7, '2026-03-01'], [A, 3, '2026-04-01']]);
+    expect(result.map((item: Row) => [item.id, item.sequence, item.dueDate])).toEqual([[A, 3, '2026-03-02'], [B, 7, '2026-04-01']]);
     expect(testStore.state().rows.find((item) => item.id === HISTORY)).toEqual(initial().rows[2]);
     expect(testStore.calls.findIndex(({ sql }) => sql.includes('FROM loans WHERE'))).toBeLessThan(testStore.calls.findIndex(({ sql }) => sql.includes('FOR UPDATE') && sql.includes('FROM payment_plan_entries')));
     expect(testStore.calls.find(({ sql }) => sql.includes('FROM loans WHERE id = $1 FOR UPDATE'))?.sql).toContain('start_date::text AS "startDate"');
@@ -83,7 +83,7 @@ describe('payment plan customization by stable obligation identity', () => {
     expect(writes(testStore.calls).every(({ sql }) => !sql.startsWith('DELETE') && !sql.includes('sequence ='))).toBe(true);
     expect(writes(testStore.calls).some(({ sql }) => sql.startsWith('INSERT INTO loan_status_history'))).toBe(false);
     const context = buildPaymentContext({ summary: {}, balances: {}, combinedPlan: result, validPayments: [], lastValidPayment: null, refinanceEligibility: false, preferredMethod: null });
-    expect(context.firstOperationalRow?.id).toBe(B);
+    expect(context.firstOperationalRow?.id).toBe(A);
   });
 
   it('maps legacy missing IDs to the exact HTTP 400 response without starting any write', async () => {
@@ -127,11 +127,11 @@ describe('payment plan customization by stable obligation identity', () => {
   it('allocates consecutive MAX(all loan rows)+1 sequences for new IDs and closes omitted positive rows without deleting history', async () => {
     const testStore = store();
     const result = await customize(testStore, [
-      { id: A, dueDate: '2026-06-01', pendingAmount: '400.00' },
-      { id: null, dueDate: '2026-05-01', pendingAmount: '250.00' },
       { id: null, dueDate: '2026-04-01', pendingAmount: '250.00' },
+      { id: null, dueDate: '2026-05-01', pendingAmount: '250.00' },
+      { id: A, dueDate: '2026-06-01', pendingAmount: '400.00' },
     ]);
-    expect(result.map((item: Row) => [item.id, item.sequence, item.pendingAmount])).toEqual([[UNKNOWN, 11, '250.00'], [NEW, 10, '250.00'], [A, 3, '400.00']]);
+    expect(result.map((item: Row) => [item.id, item.sequence, item.pendingAmount])).toEqual([[NEW, 10, '250.00'], [UNKNOWN, 11, '250.00'], [A, 3, '400.00']]);
     expect(testStore.state().rows.find((item) => item.id === B)).toEqual({ ...initial().rows[1], pendingAmount: '0.00' });
     expect(testStore.state().rows.find((item) => item.id === HISTORY)).toEqual(initial().rows[2]);
     expect(testStore.calls.find(({ sql }) => sql.includes('FOR UPDATE') && sql.includes('FROM payment_plan_entries'))?.sql).not.toContain('pending_amount > 0');
@@ -185,19 +185,19 @@ describe('payment plan customization by stable obligation identity', () => {
   });
 
   it('customizes the positive receiver after a carried payment without reviving its closed source', async () => {
-    const testStore = store({ openingRows: [row(A, 1, '2026-02-01', '0.00'), row(B, 2, '2026-03-01', '100000.00'), row(HISTORY, 3, '2026-04-01', '60000.00')], totalAmount: '180000.00', paidAmount: '20000.00' });
-    const result = await customize(testStore, [{ id: B, dueDate: '2026-11-30', pendingAmount: '90000.00' }, { id: HISTORY, dueDate: '2027-01-31', pendingAmount: '70000.00' }]);
+    const testStore = store({ openingRows: [row(A, 1, '2026-02-02', '0.00'), row(B, 2, '2026-03-02', '100000.00'), row(HISTORY, 3, '2026-04-01', '60000.00')], totalAmount: '180000.00', paidAmount: '20000.00' });
+    const result = await customize(testStore, [{ id: B, dueDate: '2026-11-30', pendingAmount: '90000.00' }, { id: HISTORY, dueDate: '2027-02-01', pendingAmount: '70000.00' }]);
     expect(result.map((item: Row) => [item.id, item.sequence, item.pendingAmount])).toEqual([[B, 2, '90000.00'], [HISTORY, 3, '70000.00']]);
-    expect(testStore.state().rows.find((item) => item.id === A)).toEqual(row(A, 1, '2026-02-01', '0.00'));
+    expect(testStore.state().rows.find((item) => item.id === A)).toEqual(row(A, 1, '2026-02-02', '0.00'));
     expect(writes(testStore.calls).every(({ sql }) => !sql.startsWith('INSERT') && !sql.startsWith('DELETE'))).toBe(true);
   });
 
   it.each([
     ['missing', undefined], ['null', null], ['empty', {}], ['numeric balance', { financialBalance: 900, entries: [] }], ['null row', { financialBalance: '900.00', entries: [null] }],
-    ['invalid ID', { financialBalance: '900.00', entries: [{ id: 'bad', dueDate: '2026-02-01', pendingAmount: '900.00' }] }],
+    ['invalid ID', { financialBalance: '900.00', entries: [{ id: 'bad', dueDate: '2026-02-02', pendingAmount: '900.00' }] }],
     ['invalid date', { financialBalance: '900.00', entries: [{ id: A, dueDate: '2026-02-30', pendingAmount: '900.00' }] }],
-    ['invalid amount', { financialBalance: '900.00', entries: [{ id: A, dueDate: '2026-02-01', pendingAmount: '0.00' }] }],
-    ['wrong sum', { financialBalance: '1000.00', entries: [{ id: A, dueDate: '2026-02-01', pendingAmount: '900.00' }] }],
+    ['invalid amount', { financialBalance: '900.00', entries: [{ id: A, dueDate: '2026-02-02', pendingAmount: '0.00' }] }],
+    ['wrong sum', { financialBalance: '1000.00', entries: [{ id: A, dueDate: '2026-02-02', pendingAmount: '900.00' }] }],
   ])('maps %s baseline to HTTP 400 without a transaction', async (_, base) => {
     const testStore = store();
     const controller = new PaymentController({} as never, {} as never, new CustomizePaymentPlanUseCase(testStore.source, totalsReader));
@@ -217,7 +217,7 @@ describe('payment plan customization by stable obligation identity', () => {
     const testStore = store(); const base = baseline(testStore.state());
     const controller = new PaymentController({} as never, {} as never, new CustomizePaymentPlanUseCase(testStore.source, totalsReader));
     await expect(controller.plan('loan', { base, entries: [{ ...proposal()[0], dueDate: '2025-12-31' }, proposal()[1]], idempotencyKey: 'key' })).rejects.toMatchObject({ status: 400 });
-    testStore.mutate((state) => { state.rows[0].dueDate = '2026-04-01'; });
+    testStore.mutate((state) => { state.rows[0].dueDate = '2026-04-02'; });
     await expect(controller.plan('loan', { base, entries: proposal(), idempotencyKey: 'key' })).rejects.toMatchObject({ status: 409 });
     expect(writes(testStore.calls)).toEqual([]);
   });
@@ -235,7 +235,7 @@ describe('payment plan customization by stable obligation identity', () => {
   });
 
   it.each([
-    ['date changed', (state: State) => { state.rows[0].dueDate = '2026-04-01'; }],
+    ['date changed', (state: State) => { state.rows[0].dueDate = '2026-04-02'; }],
     ['amount redistributed', (state: State) => { state.rows[0].pendingAmount = '300.00'; state.rows[1].pendingAmount = '600.00'; }],
     ['obligation added', (state: State) => { state.rows[1].pendingAmount = '400.00'; state.rows.push(row(NEW, 10, '2026-05-01', '100.00')); }],
     ['obligation removed', (state: State) => { state.rows[0].pendingAmount = '900.00'; state.rows[1].pendingAmount = '0.00'; }],

@@ -57,7 +57,8 @@ export class RegisterPaymentUseCase {
   }
 
   async execute(input: PaymentInput, actorId: string) {
-    if (!input?.loanId || !input.methodId || !input.idempotencyKey || !MONEY.test(input.amount) || cents(input.amount) <= 0n || !DATE.test(input.paymentDate) || input.paymentDate > today()) throw new PaymentValidationError('Payment data is invalid.');
+    if (!input?.collectorId || !UUID.test(input.collectorId)) throw new PaymentValidationError('Seleccione un cobrador.');
+    if (!input.loanId || !input.methodId || !input.idempotencyKey || !MONEY.test(input.amount) || cents(input.amount) <= 0n || !DATE.test(input.paymentDate) || input.paymentDate > today()) throw new PaymentValidationError('Payment data is invalid.');
     const fp = paymentFingerprint({ loanId: input.loanId, amount: input.amount, paymentDate: input.paymentDate, methodId: input.methodId, collectorId: input.collectorId });
     return this.dataSource.transaction(async (manager) => {
       const existing = await manager.query('SELECT id, idempotency_fingerprint AS "fingerprint" FROM payments WHERE idempotency_key = $1 FOR SHARE', [input.idempotencyKey]);
@@ -74,7 +75,8 @@ export class RegisterPaymentUseCase {
       if (latestValid && input.paymentDate < paymentDateOnlyKey(latestValid.paymentDate)) throw new PaymentValidationError('La fecha del pago no puede ser anterior al último pago válido registrado.');
       const method = await manager.query('SELECT id FROM payment_methods WHERE id = $1 AND is_active = true', [input.methodId]);
       if (!method[0]) throw new PaymentValidationError('The payment method is inactive or does not exist.');
-      if (input.collectorId) { const collector = await manager.query('SELECT id FROM collectors WHERE id = $1 AND is_active = true', [input.collectorId]); if (!collector[0] || input.collectorId === actorId) throw new PaymentValidationError('The collector is invalid.'); }
+       const collector = await manager.query('SELECT id FROM collectors WHERE id = $1 AND is_active = true FOR SHARE', [input.collectorId]);
+       if (!collector[0] || input.collectorId === actorId) throw new PaymentValidationError('El cobrador seleccionado no es válido.');
        const entries = await manager.query(`SELECT id, due_date::text AS "dueDate", sequence, pending_amount AS "pendingAmount" FROM payment_plan_entries WHERE loan_id = $1 AND pending_amount > 0 ORDER BY due_date, sequence, id FOR UPDATE`, [input.loanId]);
         const balance = entries.reduce((sum: bigint, entry: { pendingAmount: string }) => sum + cents(entry.pendingAmount), 0n);
          const before = assertFinancialIntegrity(loan[0], await readPaymentTotals(this.totalsReader, manager, input.loanId), balance);
@@ -94,7 +96,7 @@ export class RegisterPaymentUseCase {
           || allocation.applications.reduce((sum, application) => sum + cents(application.amountApplied), 0n) !== cents(input.amount)) {
           throw new PaymentConflictError('The payment allocation exceeds the outstanding loan components.');
         }
-      const payment = await manager.query(`INSERT INTO payments (loan_id, amount, principal_applied, interest_applied, payment_date, method_id, collector_id, created_by_user_id, status, idempotency_key, idempotency_fingerprint) VALUES ($1,$2::numeric(18,2),$3::numeric(18,2),$4::numeric(18,2),$5,$6,$7,$8,'VALID',$9,$10) RETURNING id, created_at AS "createdAt", created_by_user_id AS "createdByUserId"`, [input.loanId, input.amount, allocation.principalApplied, allocation.interestApplied, input.paymentDate, input.methodId, input.collectorId ?? null, actorId, input.idempotencyKey, fp]);
+      const payment = await manager.query(`INSERT INTO payments (loan_id, amount, principal_applied, interest_applied, payment_date, method_id, collector_id, created_by_user_id, status, idempotency_key, idempotency_fingerprint) VALUES ($1,$2::numeric(18,2),$3::numeric(18,2),$4::numeric(18,2),$5,$6,$7,$8,'VALID',$9,$10) RETURNING id, created_at AS "createdAt", created_by_user_id AS "createdByUserId"`, [input.loanId, input.amount, allocation.principalApplied, allocation.interestApplied, input.paymentDate, input.methodId, input.collectorId, actorId, input.idempotencyKey, fp]);
        for (const application of allocation.applications.filter((item) => item.amountApplied !== '0.00' || item.pendingAfter !== item.pendingBefore)) {
         await manager.query(`UPDATE payment_plan_entries SET pending_amount = $1::numeric(18,2), updated_at = now() WHERE id = $2`, [application.pendingAfter, application.planEntryId]);
          await manager.query(`INSERT INTO payment_applications (payment_id, payment_plan_entry_id, amount_applied, pending_before, pending_after, carried_forward_amount, carried_to_plan_entry_id, created_at) VALUES ($1,$2,$3::numeric(18,2),$4::numeric(18,2),$5::numeric(18,2),$6::numeric(18,2),$7,GREATEST(clock_timestamp(), COALESCE((SELECT MAX(created_at) + interval '1 microsecond' FROM payment_applications WHERE payment_id = $1), clock_timestamp())))`, [payment[0].id, application.planEntryId, application.amountApplied, application.pendingBefore, application.pendingAfter, application.carriedForwardAmount, application.carriedToPlanEntryId]);
@@ -146,6 +148,7 @@ export class RegisterPaymentUseCase {
           || !MONEY.test(reversal.amount) || cents(reversal.amount) !== cents(payment.amount)) throw new PaymentConflictError('The annulment cash reversal does not reconcile.');
         return this.detail(manager, paymentId);
       }
+      if (loan.status === 'REFINANCED') throw new PaymentConflictError('Payments on a refinanced loan cannot be annulled independently.');
       if (payment.status !== 'VALID' || reversal) throw new PaymentConflictError('Only a valid payment without a prior reversal can be annulled.');
       if (latestValid?.id !== paymentId) throw new PaymentConflictError('Solo se puede anular el último pago válido.');
       const [opening] = await manager.query(`SELECT opening_date::text AS "openingDate" FROM financial_openings WHERE singleton_key = 'DEFAULT' FOR SHARE`);

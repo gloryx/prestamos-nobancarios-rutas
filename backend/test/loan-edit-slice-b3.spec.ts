@@ -35,7 +35,7 @@ function initial(): State {
     paymentFrequencyId: FREQUENCY, preferredPaymentMethodId: METHOD, observations: 'ORIGINAL', updatedAt: 1 };
   return { loans: { [LOAN]: loan, [OTHER]: { ...loan, id: OTHER } }, plan: [
     { id: FIRST, dueDate: '2026-10-01', pendingAmount: '60.00', sequence: 2 },
-    { id: SECOND, dueDate: '2026-11-01', pendingAmount: '34.50', sequence: 3 },
+    { id: SECOND, dueDate: '2026-11-02', pendingAmount: '34.50', sequence: 3 },
     { id: ZERO, dueDate: '2026-09-01', pendingAmount: '0.00', sequence: 1 },
   ], payments: [{ status: 'VALID', amount: '25.50', principal: '20.00', interest: '5.50' },
     { status: 'ANNULLED', amount: '8.00', principal: '8.00', interest: '0.00' }],
@@ -45,7 +45,7 @@ function input(changes: LoanEditInput['changes'] = { observations: ' revised ' }
   return { idempotencyKey: 'edit-key', baseline: { interestAmount: '20.00', paymentFrequencyId: FREQUENCY,
     preferredPaymentMethodId: METHOD, observations: 'ORIGINAL', financialBalance: '94.50', plan: [
       { id: FIRST, dueDate: '2026-10-01', pendingAmount: '60.00' },
-      { id: SECOND, dueDate: '2026-11-01', pendingAmount: '34.50' },
+      { id: SECOND, dueDate: '2026-11-02', pendingAmount: '34.50' },
     ] }, changes };
 }
 
@@ -304,7 +304,7 @@ const financial = (interestAmount: string, plan: LoanEditInput['plan'], changes:
   ({ ...input(), changes: { interestAmount, ...changes }, plan });
 const increase = () => financial('30.00', [
   { id: FIRST, dueDate: '2026-10-01', pendingAmount: '60.00' },
-  { id: SECOND, dueDate: '2026-11-01', pendingAmount: '44.50' },
+  { id: SECOND, dueDate: '2026-11-02', pendingAmount: '44.50' },
 ]);
 
 describe('B4 internal interest and plan edit (real B1 helper, staged manager)', () => {
@@ -328,7 +328,7 @@ describe('B4 internal interest and plan edit (real B1 helper, staged manager)', 
   it('permits a legal interest decrease down to VALID interest applied and preserves the status', async () => {
     const fake = setup(); await fake.execute(financial('5.50', [
       { id: FIRST, dueDate: '2026-10-01', pendingAmount: '60.00' },
-      { id: SECOND, dueDate: '2026-11-01', pendingAmount: '20.00' },
+      { id: SECOND, dueDate: '2026-11-02', pendingAmount: '20.00' },
     ]));
     expect(fake.state().loans[LOAN]).toMatchObject({ status: 'ACTIVE', interestAmount: '5.50', totalAmount: '105.50' });
     expect(fake.state().plan[1].pendingAmount).toBe('20.00');

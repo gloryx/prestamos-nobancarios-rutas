@@ -26,6 +26,7 @@ export interface AnnulLoanTransaction {
   findByKey(key: string): Promise<AnnulmentEvent | undefined>;
   latestEvent(id: string): Promise<AnnulmentEvent | undefined>;
   hasValidPayment(id: string): Promise<boolean>;
+  isRefinancingSuccessor(id: string): Promise<boolean>;
   readLedger(id: string): Promise<AnnulmentLedger | undefined>;
   updateActiveLoan(id: string): Promise<boolean>;
   insertEvent(id: string, sequence: number, actor: string, reason: string, resolution: DisbursementResolution,
@@ -88,6 +89,7 @@ export class AnnulLoanUseCase {
         return receipt(existing);
       }
       if (loan.status !== 'ACTIVE') throw new AnnulLoanConflictError('Solo se puede anular un préstamo activo.');
+      if (await tx.isRefinancingSuccessor(loan.id)) throw new AnnulLoanConflictError('Un préstamo sucesor de refinanciamiento no puede anularse de forma aislada.');
       if (await tx.hasValidPayment(loan.id)) throw new AnnulLoanConflictError('El préstamo tiene pagos válidos.');
       const ledger = await tx.readLedger(loan.id);
       assertLedger(ledger);

@@ -1,12 +1,38 @@
-import { BadRequestException, ConflictException, Controller, Get, NotFoundException, Param, Post, Put, Body, Query, HttpCode, HttpStatus } from '@nestjs/common';
+import { BadRequestException, ConflictException, Controller, Get, NotFoundException, Optional, Param, Post, Put, Body, Query, HttpCode, HttpStatus } from '@nestjs/common';
 import { CurrentUser, RequirePermissions } from '../security/security.decorators';
 import type { CurrentIdentity } from '../../domain/security/security.types';
 import { CustomizePaymentPlanUseCase, PaymentConflictError, PaymentContextUseCase, PaymentNotFoundError, PaymentValidationError, RegisterPaymentUseCase } from '../../application/payment/payment.use-case';
-import { AnnulPaymentDto, CreatePaymentDto, CustomizePaymentPlanDto } from './payment.dto';
+import { DailyCollectionsUseCase, DailyCollectionsValidationError } from '../../application/payment/daily-collections.use-case';
+import { PaymentHistoryUseCase, PaymentHistoryValidationError } from '../../application/payment/payment-history.use-case';
+import { AnnulPaymentDto, CreatePaymentDto, CustomizePaymentPlanDto, DailyCollectionDateDto, DailyCollectionsQueryDto, PaymentHistoryQueryDto } from './payment.dto';
 
 @Controller('payments')
 export class PaymentController {
-  constructor(private readonly register: RegisterPaymentUseCase, private readonly context: PaymentContextUseCase, private readonly customize: CustomizePaymentPlanUseCase) {}
+  constructor(private readonly register: RegisterPaymentUseCase, private readonly context: PaymentContextUseCase,
+    private readonly customize: CustomizePaymentPlanUseCase, @Optional() private readonly daily?: DailyCollectionsUseCase,
+    @Optional() private readonly history?: PaymentHistoryUseCase) {}
+  @Get('history') @RequirePermissions('payments.view') async paymentHistory(@Query() query: PaymentHistoryQueryDto) {
+    try { return await this.history!.list({ ...query, page: query.page === undefined ? undefined : Number(query.page),
+      pageSize: query.pageSize === undefined ? undefined : Number(query.pageSize) }); }
+    catch (error) { if (error instanceof PaymentHistoryValidationError) throw new BadRequestException(error.message); throw error; }
+  }
+  @Get('history/options') @RequirePermissions('payments.view') historyOptions() { return this.history!.options(); }
+  @Get('daily-collections/summary') @RequirePermissions('payments.view') async dailySummary(@Query() query: DailyCollectionDateDto) {
+    try { return await this.daily!.summary(query.date); }
+    catch (error) { return this.mapDaily(error); }
+  }
+  @Get('daily-collections/due') @RequirePermissions('payments.view') async dailyDue(@Query() query: DailyCollectionsQueryDto) {
+    try { return await this.daily!.due(this.dailyFilters(query)); }
+    catch (error) { return this.mapDaily(error); }
+  }
+  @Get('daily-collections/received') @RequirePermissions('payments.view') async dailyReceived(@Query() query: DailyCollectionsQueryDto) {
+    try { return await this.daily!.received(this.dailyFilters(query)); }
+    catch (error) { return this.mapDaily(error); }
+  }
+  private dailyFilters(query: DailyCollectionsQueryDto) { return { ...query,
+    page: query.page === undefined ? undefined : Number(query.page),
+    pageSize: query.pageSize === undefined ? undefined : Number(query.pageSize) }; }
+  private mapDaily(error: unknown): never { if (error instanceof DailyCollectionsValidationError) throw new BadRequestException(error.message); throw error; }
   @Get('loans') @RequirePermissions('payments.view') loans(@Query() query: { search?: string; page?: string; pageSize?: string }) {
     const page = Number(query.page ?? 1); const pageSize = Number(query.pageSize ?? 20);
     return this.context.listLoans({ search: query.search, page: Number.isSafeInteger(page) && page > 0 ? page : 1, pageSize: Number.isSafeInteger(pageSize) && pageSize > 0 ? Math.min(100, pageSize) : 20 }).catch((error) => this.map(error));

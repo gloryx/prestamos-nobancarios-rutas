@@ -3,6 +3,7 @@ import type { DataSource, EntityManager } from 'typeorm';
 import type { TransactionalCashMovementRecorder } from '../cash-movement/cash-movement.use-cases';
 import type { ActiveLoanListQuery, CreateLoanInput, LoanSortBy } from '../../domain/loan/loan.types';
 import { ACTIVE_LOAN_OVERDUE_SQL } from './active-loan-condition.sql';
+import { paymentPlanDateIssue } from '../../domain/payment/payment-plan-dates';
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const MONEY = /^(?:0|[1-9]\d{0,15})(?:\.\d{1,2})?$/;
@@ -32,7 +33,9 @@ export function normalizeLoanInput(input: CreateLoanInput): CreateLoanInput {
 }
 export function calculateLoanTotal(principal: string, interestAmount: string): string { return moneyFromCents(cents(money(principal)) + cents(money(interestAmount))); }
 export function loanPlanMatchesTotal(input: CreateLoanInput): boolean { return input.plan.reduce((sum, entry) => sum + cents(entry.pendingAmount), 0n) === cents(input.principal) + cents(input.interestAmount); }
-export function loanPlanDatesAreValid(input: CreateLoanInput): boolean { return dateOk(input.startDate) && input.plan.every((entry, index) => dateOk(entry.dueDate) && entry.dueDate > input.startDate && (index === 0 || entry.dueDate > input.plan[index - 1].dueDate)); }
+export function loanPlanDatesAreValid(input: CreateLoanInput): boolean {
+  return paymentPlanDateIssue(input.startDate, input.plan.map((entry) => entry.dueDate)) === null;
+}
 function fingerprint(input: CreateLoanInput): string { const request = { ...input }; delete request.idempotencyKey; return createHash('sha256').update(JSON.stringify(request)).digest('hex'); }
 
 export class CreateLoanUseCase {
@@ -42,7 +45,11 @@ export class CreateLoanUseCase {
     if (!raw || !raw.customerId || !raw.paymentFrequencyId || !raw.preferredPaymentMethodId || !raw.disbursementPaymentMethodId || !raw.startDate || !MONEY.test(raw.principal) || !MONEY.test(raw.interestAmount)) throw new LoanValidationError('Los datos del préstamo no son válidos.');
     const input = normalizeLoanInput(raw);
     if (!dateOk(input.startDate) || input.startDate > today() || cents(input.principal) <= 0n || cents(input.interestAmount) < 0n) throw new LoanValidationError('La fecha o los importes del préstamo no son válidos.');
-    if (!Array.isArray(input.plan) || input.plan.length < 1 || !loanPlanDatesAreValid(input) || input.plan.some((entry) => !MONEY.test(entry.pendingAmount) || cents(entry.pendingAmount) <= 0n)) throw new LoanValidationError('El plan de pago no es válido.');
+    if (!Array.isArray(input.plan) || input.plan.length < 1 || input.plan.some((entry) => !MONEY.test(entry.pendingAmount) || cents(entry.pendingAmount) <= 0n)) throw new LoanValidationError('El plan de pago no es válido.');
+    const planDateIssue = paymentPlanDateIssue(input.startDate, input.plan.map((entry) => entry.dueDate));
+    if (planDateIssue === 'sunday') throw new LoanValidationError('Los domingos no son días de cobro.');
+    if (planDateIssue === 'duplicate') throw new LoanValidationError('Ya existe una cuota programada para esta fecha.');
+    if (planDateIssue !== null) throw new LoanValidationError('Las fechas del plan deben ser válidas, posteriores al inicio y estar en orden.');
     if (!loanPlanMatchesTotal(input)) throw new LoanValidationError('El plan de pago debe reconciliar exactamente con el total del préstamo.');
     const fp = fingerprint(input);
     return this.dataSource.transaction(async (manager) => {
@@ -85,7 +92,7 @@ export class CreateLoanUseCase {
   }
 
   async detail(manager: Pick<EntityManager, 'query'>, id: string, includeOperational = false) {
-     const rows = await manager.query(`SELECT l.id, l.loan_number AS "loanNumber", l.status, l.start_date AS "startDate", l.principal, l.interest_amount AS "interestAmount", l.total_amount AS "totalAmount", l.observations, l.updated_at AS "updatedAt", c.id AS "customerId", concat_ws(' ',c.first_name,c.middle_name,c.first_last_name,c.second_last_name) AS "customerName", c.identification, pf.id AS "paymentFrequencyId", pf.name AS "frequencyName", pf.interval_unit AS "intervalUnit", pf.interval_value AS "intervalValue", u.full_name AS "createdByName", pm.id AS "preferredPaymentMethodId", pm.name AS "preferredPaymentMethod", dm.name AS "disbursementPaymentMethod", COALESCE((SELECT SUM(pe.pending_amount) FROM payment_plan_entries pe WHERE pe.loan_id=l.id AND pe.pending_amount > 0),0)::numeric(18,2)::text AS "pendingTotal" FROM loans l JOIN customers c ON c.id=l.customer_id JOIN payment_frequencies pf ON pf.id=l.payment_frequency_id JOIN payment_methods pm ON pm.id=l.preferred_payment_method_id JOIN loan_disbursements d ON d.loan_id=l.id JOIN payment_methods dm ON dm.id=d.payment_method_id JOIN users u ON u.id=l.created_by_user_id WHERE l.id=$1`, [id]);
+     const rows = await manager.query(`SELECT l.id, l.loan_number AS "loanNumber", l.status, l.start_date AS "startDate", l.principal, l.interest_amount AS "interestAmount", l.total_amount AS "totalAmount", l.observations, l.updated_at AS "updatedAt", c.id AS "customerId", concat_ws(' ',c.first_name,c.middle_name,c.first_last_name,c.second_last_name) AS "customerName", c.identification, pf.id AS "paymentFrequencyId", pf.name AS "frequencyName", pf.interval_unit AS "intervalUnit", pf.interval_value AS "intervalValue", u.full_name AS "createdByName", pm.id AS "preferredPaymentMethodId", pm.name AS "preferredPaymentMethod", dm.name AS "disbursementPaymentMethod", COALESCE((SELECT SUM(pe.pending_amount) FROM payment_plan_entries pe WHERE pe.loan_id=l.id AND pe.pending_amount > 0),0)::numeric(18,2)::text AS "pendingTotal" FROM loans l JOIN customers c ON c.id=l.customer_id JOIN payment_frequencies pf ON pf.id=l.payment_frequency_id JOIN payment_methods pm ON pm.id=l.preferred_payment_method_id LEFT JOIN loan_disbursements d ON d.loan_id=l.id LEFT JOIN payment_methods dm ON dm.id=d.payment_method_id JOIN users u ON u.id=l.created_by_user_id WHERE l.id=$1`, [id]);
     if (!rows[0]) throw new LoanValidationError('El préstamo no existe.');
     const plan = await manager.query(includeOperational
       ? 'SELECT id, sequence, due_date::text AS "dueDate", pending_amount AS "pendingAmount" FROM payment_plan_entries WHERE loan_id=$1 ORDER BY sequence'

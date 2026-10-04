@@ -2,6 +2,7 @@ import type { LoanPlanEntry } from '../../domain/entities/loan';
 import { parseMoneyCents } from '../../shared/utils/money';
 
 export type ScheduleIntervalUnit = 'DAY' | 'WEEK' | 'DAY/15' | 'MONTH';
+export type PaymentPlanDateIssue = 'invalid' | 'before-anchor' | 'sunday' | 'duplicate' | 'order';
 
 function toCents(value: string): bigint {
   const normalized = value.trim();
@@ -34,6 +35,69 @@ function dateOnlyDayNumber(parts: DateParts): number {
   date.setUTCHours(0, 0, 0, 0);
   date.setUTCFullYear(parts.year, parts.month - 1, parts.day);
   return Math.trunc(date.getTime() / 86_400_000);
+}
+
+function formatDateOnly(parts: DateParts): string {
+  return `${parts.year.toString().padStart(4, '0')}-${parts.month.toString().padStart(2, '0')}-${parts.day.toString().padStart(2, '0')}`;
+}
+
+function nextDateOnly(value: string): string {
+  const parts = parseDateOnly(value);
+  if (!parts) throw new Error('Invalid date-only value.');
+  const date = new Date(0);
+  date.setUTCHours(0, 0, 0, 0);
+  date.setUTCFullYear(parts.year, parts.month - 1, parts.day + 1);
+  return formatDateOnly({ year: date.getUTCFullYear(), month: date.getUTCMonth() + 1, day: date.getUTCDate() });
+}
+
+function isSunday(value: string): boolean {
+  const parts = parseDateOnly(value);
+  if (!parts) return false;
+  const date = new Date(0);
+  date.setUTCHours(0, 0, 0, 0);
+  date.setUTCFullYear(parts.year, parts.month - 1, parts.day);
+  return date.getUTCDay() === 0;
+}
+
+export function normalizeAutomaticPaymentDates(theoreticalDates: string[]): string[] {
+  const normalized: string[] = [];
+  for (const theoreticalDate of theoreticalDates) {
+    if (!parseDateOnly(theoreticalDate)) throw new Error('Invalid theoretical payment date.');
+    let candidate = theoreticalDate;
+    if (isSunday(candidate)) candidate = nextDateOnly(candidate);
+    const previous = normalized.at(-1);
+    while (previous !== undefined && candidate <= previous) {
+      candidate = nextDateOnly(candidate);
+      if (isSunday(candidate)) candidate = nextDateOnly(candidate);
+    }
+    normalized.push(candidate);
+  }
+  return normalized;
+}
+
+export function paymentPlanDateIssue(anchorDate: string, plan: Pick<LoanPlanEntry, 'dueDate'>[], allowAnchor = false): PaymentPlanDateIssue | null {
+  if (!parseDateOnly(anchorDate)) return 'invalid';
+  const occupied = new Set<string>();
+  let previous: string | null = null;
+  for (const entry of plan) {
+    if (!entry || typeof entry.dueDate !== 'string' || !parseDateOnly(entry.dueDate)) return 'invalid';
+    if (allowAnchor ? entry.dueDate < anchorDate : entry.dueDate <= anchorDate) return 'before-anchor';
+    if (isSunday(entry.dueDate)) return 'sunday';
+    if (occupied.has(entry.dueDate)) return 'duplicate';
+    if (previous !== null && entry.dueDate <= previous) return 'order';
+    occupied.add(entry.dueDate);
+    previous = entry.dueDate;
+  }
+  return null;
+}
+
+export function paymentPlanDateIssueMessage(issue: PaymentPlanDateIssue | null): string | null {
+  if (issue === 'sunday') return 'Los domingos no son días de cobro.';
+  if (issue === 'duplicate') return 'Ya existe una cuota programada para esta fecha.';
+  if (issue === 'order') return 'La fecha debe ser posterior a la cuota anterior.';
+  if (issue === 'before-anchor') return 'La fecha debe ser posterior a la fecha inicial del plan.';
+  if (issue === 'invalid') return 'La fecha programada no es válida.';
+  return null;
 }
 
 function formatRate(numerator: bigint, denominator: bigint): string {
@@ -79,8 +143,11 @@ export function addInterval(start: string, unit: ScheduleIntervalUnit, value: nu
 }
 
 export function automaticPlan(start: string, unit: ScheduleIntervalUnit, intervalValue: number, count: number, total: string): LoanPlanEntry[] {
-  if (!Number.isInteger(count) || count < 1 || !Number.isInteger(intervalValue) || intervalValue < 1) return [];
+  if (!parseDateOnly(start) || !Number.isInteger(count) || count < 1 || !Number.isInteger(intervalValue) || intervalValue < 1) return [];
   const totalCents = toCents(total);
   const base = totalCents / BigInt(count);
-  return Array.from({ length: count }, (_, index) => ({ sequence: index + 1, dueDate: addInterval(start, unit, intervalValue * (index + 1)), pendingAmount: fromCents(index === count - 1 ? totalCents - base * BigInt(count - 1) : base) }));
+  const theoreticalDates = Array.from({ length: count }, (_, index) => addInterval(start, unit, intervalValue * (index + 1)));
+  const dueDates = normalizeAutomaticPaymentDates(theoreticalDates);
+  return dueDates.map((dueDate, index) => ({ sequence: index + 1, dueDate,
+    pendingAmount: fromCents(index === count - 1 ? totalCents - base * BigInt(count - 1) : base) }));
 }

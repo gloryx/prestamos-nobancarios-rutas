@@ -1,6 +1,7 @@
 import type { paymentApi, PaymentContext, PendingPaymentEntry, PlanBaseline } from '../../infrastructure/api/payment.api';
 import { formatDateOnlyForDisplay } from '../../shared/utils/date';
 import { moneyFromCents, parseMoneyCents } from '../../shared/utils/money';
+import { paymentPlanDateIssue } from '../../application/use-cases/loan-schedule';
 
 export type PaymentTimelineRow =
   | { kind: 'PAYMENT'; id: string; date: string; amount: string }
@@ -42,11 +43,13 @@ export function reviewPlanDraft(balance: string, draft: PlanDraftEntry[], option
     if (cents !== null && cents > 0n) distributedCents += cents;
     return { id, dueDate, pendingAmount: cents === null ? '' : moneyFromCents(cents) };
   });
-  const valid = (draft.length > 0 || (options.allowEmpty === true && balanceCents === 0n)) && balanceCents !== null && balanceCents >= 0n && draft.every((entry) =>
+  const dateIssue = draft.length && options.minDate ? paymentPlanDateIssue(options.minDate, draft, true) :
+    draft.length ? paymentPlanDateIssue('0001-01-01', draft, true) : null;
+  const valid = (draft.length > 0 || (options.allowEmpty === true && balanceCents === 0n)) && balanceCents !== null && balanceCents >= 0n && dateIssue === null && draft.every((entry) =>
     /^\d{4}-\d{2}-\d{2}$/.test(entry.dueDate) && formatDateOnlyForDisplay(entry.dueDate) !== '—'
     && (!options.minDate || entry.dueDate >= options.minDate) && (parseMoneyCents(entry.pendingAmount) ?? 0n) > 0n);
   const differenceCents = balanceCents === null ? null : balanceCents - distributedCents;
-  return { distributedCents, differenceCents, entries, canSave: valid && differenceCents === 0n };
+  return { distributedCents, differenceCents, entries, dateIssue, canSave: valid && differenceCents === 0n };
 }
 
 export function planSaveAttempt(previous: { fingerprint: string; key: string } | null, loanId: string, base: PlanBaseline, entries: ReturnType<typeof reviewPlanDraft>['entries'], generateKey = () => crypto.randomUUID()) {

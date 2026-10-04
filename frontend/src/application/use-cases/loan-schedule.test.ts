@@ -1,9 +1,25 @@
 import { describe, expect, it } from 'vitest';
-import { addInterval, automaticPlan, calculateInformationalRate30Days } from './loan-schedule';
+import { addInterval, automaticPlan, calculateInformationalRate30Days, normalizeAutomaticPaymentDates, paymentPlanDateIssue } from './loan-schedule';
 describe('loan schedule', () => {
   it('preserves the monthly anchor at month end', () => expect(addInterval('2026-01-31', 'MONTH', 1)).toBe('2026-02-28'));
   it('adds weekly intervals in seven-day increments', () => expect(addInterval('2026-01-01', 'WEEK', 2)).toBe('2026-01-15'));
-  it('puts the exact cents remainder in the last entry without Number arithmetic', () => expect(automaticPlan('2026-01-01', 'DAY', 1, 3, '10.00')).toEqual([{ sequence: 1, dueDate: '2026-01-02', pendingAmount: '3.33' }, { sequence: 2, dueDate: '2026-01-03', pendingAmount: '3.33' }, { sequence: 3, dueDate: '2026-01-04', pendingAmount: '3.34' }]));
+  it('puts the exact cents remainder in the last entry without Number arithmetic', () => expect(automaticPlan('2026-01-01', 'DAY', 1, 3, '10.00')).toEqual([{ sequence: 1, dueDate: '2026-01-02', pendingAmount: '3.33' }, { sequence: 2, dueDate: '2026-01-03', pendingAmount: '3.33' }, { sequence: 3, dueDate: '2026-01-05', pendingAmount: '3.34' }]));
+  it('moves Sundays and cascades collisions without changing the number of installments', () => {
+    expect(normalizeAutomaticPaymentDates(['2026-10-04', '2026-10-05', '2026-10-06']))
+      .toEqual(['2026-10-05', '2026-10-06', '2026-10-07']);
+    expect(automaticPlan('2026-10-02', 'DAY', 1, 3, '10.00')).toEqual([
+      { sequence: 1, dueDate: '2026-10-03', pendingAmount: '3.33' },
+      { sequence: 2, dueDate: '2026-10-05', pendingAmount: '3.33' },
+      { sequence: 3, dueDate: '2026-10-06', pendingAmount: '3.34' },
+    ]);
+  });
+  it('classifies Sundays, duplicates and out-of-order manual dates', () => {
+    const row = (dueDate: string) => ({ dueDate });
+    expect(paymentPlanDateIssue('2026-10-01', [row('2026-10-04')])).toBe('sunday');
+    expect(paymentPlanDateIssue('2026-10-01', [row('2026-10-02'), row('2026-10-02')])).toBe('duplicate');
+    expect(paymentPlanDateIssue('2026-10-01', [row('2026-10-06'), row('2026-10-05')])).toBe('order');
+    expect(paymentPlanDateIssue('2026-10-01', [row('2026-10-03')])).toBeNull();
+  });
   it('supports fifteen-day intervals and preserves the next month anchor', () => { expect(addInterval('2026-01-01', 'DAY/15', 1)).toBe('2026-01-16'); expect(addInterval('2026-01-31', 'MONTH', 2)).toBe('2026-03-31'); });
   it.each([
     ['2026-01-31', '20%'],

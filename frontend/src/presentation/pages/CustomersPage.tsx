@@ -5,7 +5,7 @@ import type { CustomerListItem, CustomerSummary } from '../../domain/entities/cu
 import { generateCustomerReport as createCustomerReport } from '../../infrastructure/reports/customer-report.service';
 import { generateCustomerFileReport } from '../../infrastructure/reports/customer-file-report.service';
 import { TableActions } from '../components/TableActions';
-import { customerActionDefinitions, visibleTableActions } from '../helpers/table-action-definitions';
+import { customerActionDefinitions, customerFinancialAnalysisPath, visibleTableActions } from '../helpers/table-action-definitions';
 import { useAuth } from '../hooks/auth-context';
 import { Icon } from '../components/layout/Icon';
 import type { CustomerSortBy, CustomerSortOrder } from '../../application/ports/customer.repository';
@@ -85,7 +85,9 @@ function SortableHeader({ column, label, sortBy, sortOrder, onSort }: { column: 
 }
 
 function CustomerActions({ customer, can, canAll, navigate, onStatus, onDownload }: { customer: CustomerListItem; can: (code: string) => boolean; canAll: (codes: string[]) => boolean; navigate: (path: string) => void; onStatus: () => void; onDownload: () => void }): ReactElement {
-  const actions = visibleTableActions(customerActionDefinitions(customer.isActive), can, canAll).map((action) => ({ ...action, onClick: action.key === 'view' ? () => navigate(`/customers/${customer.id}`) : action.key === 'edit' ? () => navigate(`/customers/${customer.id}/edit`) : action.key === 'download' ? onDownload : action.key === 'status' ? onStatus : undefined }));
+  const actions = visibleTableActions(customerActionDefinitions(customer.isActive), can, canAll).map((action) => ({ ...action,
+    to: action.key === 'analysis' ? customerFinancialAnalysisPath(customer.id) : undefined,
+    onClick: action.key === 'view' ? () => navigate(`/customers/${customer.id}`) : action.key === 'edit' ? () => navigate(`/customers/${customer.id}/edit`) : action.key === 'download' ? onDownload : action.key === 'status' ? onStatus : undefined }));
   return <TableActions actions={actions} ariaLabel={`Acciones de ${customer.fullName}`} />;
 }
 

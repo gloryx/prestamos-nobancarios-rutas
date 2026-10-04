@@ -4,6 +4,7 @@ export class RegisterCustomer { constructor(private readonly repository: Custome
 export class ListCustomers { constructor(private readonly repository: CustomerRepository) {} execute(query: Parameters<CustomerRepository['list']>[0]) { return this.repository.list(query); } }
 export class ListAssignedCustomers { constructor(private readonly repository: CustomerRepository) {} execute() { return this.repository.assigned(); } }
 export class GetCustomer { constructor(private readonly repository: CustomerRepository) {} execute(id: string): Promise<CustomerDetail> { return this.repository.detail(id); } }
+export class GetCustomerFinancialAnalysis { constructor(private readonly repository: CustomerRepository) {} execute(id: string, asOf: string) { return this.repository.financialAnalysis(id, asOf); } }
 export class GetCustomerSummary { constructor(private readonly repository: CustomerRepository) {} execute(query: Parameters<CustomerRepository['summary']>[0]) { return this.repository.summary(query); } }
 export class GetCustomerSite { constructor(private readonly repository: CustomerRepository) {} execute(id: string) { return this.repository.site(id); } }
 export class ListAssignedCollectors { constructor(private readonly repository: CustomerRepository) {} execute(id: string) { return this.repository.assignedCollectors(id); } }

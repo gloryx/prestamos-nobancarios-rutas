@@ -62,6 +62,17 @@ describe('payment remediation invariants', () => {
     expect(() => validatePlanCustomization([
       { dueDate: '2026-09-01', pendingAmount: '49.99' },
     ], '2026-09-01', '50.00')).toThrow('plan-total-mismatch');
+    expect(() => validatePlanCustomization([
+      { dueDate: '2026-09-06', pendingAmount: '50.00' },
+    ], '2026-09-01', '50.00')).toThrow('plan-date-sunday');
+    expect(() => validatePlanCustomization([
+      { dueDate: '2026-09-02', pendingAmount: '25.00' },
+      { dueDate: '2026-09-02', pendingAmount: '25.00' },
+    ], '2026-09-01', '50.00')).toThrow('plan-date-duplicate');
+    expect(() => validatePlanCustomization([
+      { dueDate: '2026-09-03', pendingAmount: '25.00' },
+      { dueDate: '2026-09-02', pendingAmount: '25.00' },
+    ], '2026-09-01', '50.00')).toThrow('plan-date-order');
   });
 
   it('keeps customer payment creation inside the payment workflow', () => {

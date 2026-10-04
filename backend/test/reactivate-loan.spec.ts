@@ -220,7 +220,7 @@ describe('manual UNCOLLECTIBLE to ACTIVE backend transaction', () => {
   it('enforces Payment POST and plan PUT ACTIVE guards before reactivation, then reaches their independent validations', async () => {
     const fake = store(); const payment = new RegisterPaymentUseCase(fake.source as never, fake.totals);
     const plan = new CustomizePaymentPlanUseCase(fake.source as never, fake.totals);
-    const capture = () => payment.execute({ loanId: LOAN, amount: '10.00', paymentDate: '2026-02-01', methodId: ROW, idempotencyKey: 'payment-key' }, ACTOR);
+    const capture = () => payment.execute({ loanId: LOAN, amount: '10.00', paymentDate: '2026-02-01', methodId: ROW, collectorId: OTHER, idempotencyKey: 'payment-key' }, ACTOR);
     const entries = fake.state().plans.filter((row) => cents(row.pendingAmount) > 0n).map(({ id, dueDate, pendingAmount }) => ({ id, dueDate, pendingAmount }));
     const base = { financialBalance: '100000.00', entries: entries.map((row) => ({ ...row, dueDate: '2026-11-01' })) };
     const customize = () => plan.execute(LOAN, entries, 'plan-key', base);

@@ -6,7 +6,7 @@ export class AnnulledLoansTypeormReader implements AnnulledLoansReader {
   async read(kind: 'annullable' | 'annulled', search?: string): Promise<AnnulledLoanRow[]> {
     const params: unknown[] = [];
     const where = [`l.status = '${kind === 'annulled' ? 'ANNULLED' : 'ACTIVE'}'`];
-    if (kind === 'annullable') where.push("NOT EXISTS (SELECT 1 FROM payments p WHERE p.loan_id = l.id AND p.status = 'VALID')");
+    if (kind === 'annullable') where.push("NOT EXISTS (SELECT 1 FROM payments p WHERE p.loan_id = l.id AND p.status = 'VALID')", "NOT EXISTS (SELECT 1 FROM loan_refinancings r WHERE r.new_loan_id = l.id)");
     if (search) {
       params.push(`%${search}%`);
       const p = `$${params.length}`;

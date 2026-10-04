@@ -9,8 +9,8 @@ const cents = (value: string) => { const [whole, fraction = ''] = value.split('.
 const money = (value: bigint) => `${value / 100n}.${(value % 100n).toString().padStart(2, '0')}`;
 type Row = { id: string; loanId: string; dueDate: string; sequence: number; pendingAmount: string };
 const row = (id: string, sequence: number, dueDate: string, pendingAmount: string, loanId = 'loan'): Row => ({ id, loanId, sequence, dueDate, pendingAmount });
-const initial = () => [row(A, 3, '2026-02-01', '400.00'), row(B, 7, '2026-03-01', '500.00'), row(ZERO, 9, '2026-01-15', '0.00'), row(FOREIGN, 30, '2026-02-01', '1.00', 'other')];
-const draft = (): PaymentPlanDraftEntry[] => [{ id: A, dueDate: '2026-04-01', pendingAmount: '400.00' }, { id: B, dueDate: '2026-03-01', pendingAmount: '500.00' }];
+const initial = () => [row(A, 3, '2026-02-02', '400.00'), row(B, 7, '2026-03-02', '500.00'), row(ZERO, 9, '2026-01-15', '0.00'), row(FOREIGN, 30, '2026-02-02', '1.00', 'other')];
+const draft = (): PaymentPlanDraftEntry[] => [{ id: A, dueDate: '2026-04-01', pendingAmount: '400.00' }, { id: B, dueDate: '2026-05-01', pendingAmount: '500.00' }];
 
 function executor() {
   const rows = initial();
@@ -57,11 +57,11 @@ describe('transaction-scoped ID-safe payment plan draft', () => {
   it('preserves referenced sequences, assigns consecutive sequences after every historical zero, and soft-closes omissions', async () => {
     const db = executor();
     const final = await applyPaymentPlanDraft(db, 'loan', '2026-01-01', 90000n, [
-      { id: A, dueDate: '2026-06-01', pendingAmount: '400.00' },
-      { id: null, dueDate: '2026-05-01', pendingAmount: '250.00' },
       { id: null, dueDate: '2026-04-01', pendingAmount: '250.00' },
+      { id: null, dueDate: '2026-05-01', pendingAmount: '250.00' },
+      { id: A, dueDate: '2026-06-01', pendingAmount: '400.00' },
     ]);
-    expect(final.map(({ id, sequence, pendingAmount }) => [id, sequence, pendingAmount])).toEqual([['new-11', 11, '250.00'], ['new-10', 10, '250.00'], [A, 3, '400.00']]);
+    expect(final.map(({ id, sequence, pendingAmount }) => [id, sequence, pendingAmount])).toEqual([['new-10', 10, '250.00'], ['new-11', 11, '250.00'], [A, 3, '400.00']]);
     expect(db.rows.find((item) => item.id === B)).toEqual({ ...initial()[1], pendingAmount: '0.00' });
     expect(db.rows.find((item) => item.id === ZERO)).toEqual(initial()[2]);
     expect(db.rows.find((item) => item.id === FOREIGN)).toEqual(initial()[3]);
@@ -88,7 +88,7 @@ describe('transaction-scoped ID-safe payment plan draft', () => {
     ['foreign ID', [{ ...draft()[0], id: FOREIGN }, draft()[1]], PaymentValidationError, 'The payment plan entry is not an active obligation of this loan.'],
     ['closed ID', [{ ...draft()[0], id: ZERO }, draft()[1]], PaymentValidationError, 'The payment plan entry is not an active obligation of this loan.'],
     ['invalid ID', [{ ...draft()[0], id: 'bad' }, draft()[1]], PaymentValidationError, 'The payment plan entry identifier is invalid or duplicated.'],
-    ['missing ID', [{ dueDate: '2026-03-01', pendingAmount: '900.00' } as PaymentPlanDraftEntry], PaymentValidationError, 'El formato del plan está desactualizado. Cada obligación debe indicar su identificador.'],
+    ['missing ID', [{ dueDate: '2026-03-02', pendingAmount: '900.00' } as PaymentPlanDraftEntry], PaymentValidationError, 'El formato del plan está desactualizado. Cada obligación debe indicar su identificador.'],
     ['zero amount', [{ ...draft()[0], pendingAmount: '0.00' }, draft()[1]], PaymentValidationError, 'The payment plan has an invalid date or amount.'],
     ['negative amount', [{ ...draft()[0], pendingAmount: '-1.00' }, draft()[1]], PaymentValidationError, 'The payment plan has an invalid date or amount.'],
     ['invalid amount', [{ ...draft()[0], pendingAmount: '400.001' }, draft()[1]], PaymentValidationError, 'The payment plan has an invalid date or amount.'],

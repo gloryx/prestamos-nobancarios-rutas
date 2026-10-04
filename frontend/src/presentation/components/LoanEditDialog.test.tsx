@@ -84,12 +84,12 @@ describe('Loan Edit dialog flow', () => {
     tree = render(); const withNew = nodes(tree).find((item) => item.type === PaymentPlanDraftFields)!;
     const entries = (withNew.props as { draft: Array<{ key: string; id: string | null; dueDate: string; pendingAmount: string }> }).draft;
     expect(entries[1].id).toBeNull();
-    (withNew.props as { onChange: (value: typeof entries) => void }).onChange([{ ...entries[0] }, { ...entries[1], dueDate: '2026-03-01', pendingAmount: '0.01' }]);
+    (withNew.props as { onChange: (value: typeof entries) => void }).onChange([{ ...entries[0] }, { ...entries[1], dueDate: '2026-03-02', pendingAmount: '0.01' }]);
     press(button(render(), 'Anterior')); expect(text(render())).toContain('₡60,01');
     submit(render()); submit(render());
     await vi.waitFor(() => expect(api.edit).toHaveBeenCalledOnce());
-    expect(api.edit.mock.calls[0][1].plan).toEqual([{ id: 'plan-a', dueDate: '2026-02-01', pendingAmount: '60.00' }, { id: null, dueDate: '2026-03-01', pendingAmount: '0.01' }]);
-    expect(editContext.baseline.plan).toEqual([{ id: 'plan-a', dueDate: '2026-02-01', pendingAmount: '60.00' }]);
+    expect(api.edit.mock.calls[0][1].plan).toEqual([{ id: 'plan-a', dueDate: '2026-02-02', pendingAmount: '60.00' }, { id: null, dueDate: '2026-03-02', pendingAmount: '0.01' }]);
+    expect(editContext.baseline.plan).toEqual([{ id: 'plan-a', dueDate: '2026-02-02', pendingAmount: '60.00' }]);
   });
 
   it('allows an empty plan only when the interest edit reduces the proposed balance to zero', async () => {

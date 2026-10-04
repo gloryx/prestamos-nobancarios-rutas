@@ -9,6 +9,13 @@ describe('loan validation seams', () => {
     expect(calculateLoanTotal('50000.00', '0')).toBe('50000.00');
   });
   it('requires strictly later ordered dates and exact cent totals', () => { expect(loanPlanDatesAreValid(base)).toBe(true); expect(loanPlanMatchesTotal(base)).toBe(true); expect(loanPlanDatesAreValid({ ...base, plan: [{ ...base.plan[0], dueDate: base.startDate }] })).toBe(false); expect(loanPlanMatchesTotal({ ...base, plan: [{ ...base.plan[0], pendingAmount: '109.99' }] })).toBe(false); });
+  it('rejects Sundays, duplicate dates and out-of-order dates', () => {
+    const entry = (sequence: number, dueDate: string) => ({ sequence, dueDate, pendingAmount: '55.00' });
+    expect(loanPlanDatesAreValid({ ...base, plan: [entry(1, '2026-02-01')] })).toBe(false);
+    expect(loanPlanDatesAreValid({ ...base, plan: [entry(1, '2026-02-02'), entry(2, '2026-02-02')] })).toBe(false);
+    expect(loanPlanDatesAreValid({ ...base, plan: [entry(1, '2026-02-03'), entry(2, '2026-02-02')] })).toBe(false);
+    expect(loanPlanDatesAreValid({ ...base, plan: [entry(1, '2026-02-07')] })).toBe(true);
+  });
   it('recovers an idempotency race inside a nested savepoint before querying the winner', async () => {
     let idempotencyChecks = 0;
     let winningFingerprint = '';

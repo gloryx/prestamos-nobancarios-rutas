@@ -19,14 +19,14 @@ import { LoanFinancialTotalsTypeormReader } from '../src/infrastructure/database
 const suite = process.env.RUN_LOAN_EDIT_B51_POSTGRES === '1' ? describe : describe.skip;
 const database = 'prestamos_nobancarios';
 const tables = ['migrations', 'roles', 'role_permissions', 'users', 'user_sessions', 'customers', 'customer_addresses',
-  'payment_methods', 'payment_frequencies', 'financial_openings', 'loans', 'loan_status_history', 'loan_disbursements',
+  'payment_methods', 'payment_frequencies', 'collectors', 'financial_openings', 'loans', 'loan_status_history', 'loan_disbursements',
   'payment_plan_entries', 'payments', 'payment_applications', 'payment_annulments', 'cash_movements', 'loan_edit_operations'];
 function fixture() {
   const tag = randomUUID();
   const day = new Date().toISOString().slice(0, 10);
   const due = (days: number) => new Date(Date.parse(`${day}T00:00:00Z`) + days * 86400000).toISOString().slice(0, 10);
   return { tag, day, due: [due(1), due(32)] as const, role: randomUUID(), actor: randomUUID(), customer: randomUUID(),
-    method: randomUUID(), frequency: randomUUID(), loan: randomUUID(), disbursement: randomUUID(),
+    method: randomUUID(), frequency: randomUUID(), collector: randomUUID(), loan: randomUUID(), disbursement: randomUUID(),
     plan: [randomUUID(), randomUUID()] as const,
     number: (100_000_000_000_000n + BigInt(`0x${randomBytes(6).toString('hex')}`)).toString(),
     payments: [`b51-p1-${tag}`, `b51-p2-${tag}`, `b51-race-${tag}`] as const,
@@ -86,6 +86,8 @@ async function setup(manager: EntityManager, db: DataSource, f: Fixture): Promis
     gender, birth_date, primary_phone, nationality) VALUES ($1,'NATIONAL',$2,'Test','Fixture','MALE','2000-01-01','00000000','COSTA_RICAN')`,
   [f.customer, `b51_${f.tag}`]);
   await manager.query('INSERT INTO public.payment_methods (id, name, display_order) VALUES ($1,$2,1)', [f.method, `B51 method ${f.tag}`]);
+  await manager.query(`INSERT INTO public.collectors (id, identification, first_name, first_last_name, phone, birth_date, address, is_active)
+    VALUES ($1,$2,'B51','Collector','00000000','2000-01-01','Test',true)`, [f.collector, `b51-collector-${f.tag}`]);
   await manager.query(`INSERT INTO public.payment_frequencies (id, name, interval_unit, interval_value, display_order)
     VALUES ($1,$2,'MONTH',1,1)`, [f.frequency, `B51 frequency ${f.tag}`]);
   // Explicit number avoids advancing the shared, non-rollbackable loan sequence.
@@ -268,7 +270,7 @@ async function cleanup(db: DataSource, f: Fixture, committed: boolean): Promise<
     for (const row of plan) await remove('payment_plan_entries', row.id!);
     await remove('loan_disbursements', f.disbursement);
     await remove('loans', f.loan);
-    for (const [table, id] of [['customers', f.customer], ['payment_frequencies', f.frequency],
+    for (const [table, id] of [['collectors', f.collector], ['customers', f.customer], ['payment_frequencies', f.frequency],
       ['payment_methods', f.method], ['users', f.actor], ['roles', f.role]] as const) await remove(table, id);
   });
   await verifyAbsent(db, f);
@@ -292,7 +294,7 @@ suite('B5.1 historical payments and unpublished loan edit on local PostgreSQL', 
       const editor = new EditLoanUseCase(new EditLoanTypeormWriter(db), totals);
       const payer = new RegisterPaymentUseCase(db, totals);
       const command = (body: LoanEditInput) => normalizeLoanEditCommand(body, f.loan, f.actor);
-       const pay = (amount: string, key: string, source = payer) => source.execute({ loanId: f.loan, methodId: f.method, paymentDate: f.day, amount, idempotencyKey: key }, f.actor);
+       const pay = (amount: string, key: string, source = payer) => source.execute({ loanId: f.loan, methodId: f.method, collectorId: f.collector, paymentDate: f.day, amount, idempotencyKey: key }, f.actor);
       const old = baseline(f, '20.00', '120.00', '60.00', true);
       const first = await pay('50.00', f.payments[0]);
       expect(first).toMatchObject({ amount: '50.00', principalApplied: '50.00', interestApplied: '0.00', cashId: expect.any(String) });

@@ -1,0 +1,14 @@
+export type PaymentHistoryFilters = { startDate: string; endDate: string; search: string; loanNumber: string;
+  status: '' | 'VALID' | 'ANNULLED'; paymentMethodId: string; collectorId: string };
+export type PaymentHistorySort = 'paymentDate' | 'customer' | 'loanNumber' | 'amount' | 'status';
+export type PaymentHistoryQuery = PaymentHistoryFilters & { sortBy: PaymentHistorySort; sortDir: 'asc' | 'desc'; page: number; pageSize: number };
+export type PaymentHistoryItem = { paymentId: string; paymentDate: string; amount: string; principalApplied: string;
+  interestApplied: string; status: 'VALID' | 'ANNULLED'; installments: number[];
+  loan: { id: string; loanNumber: string }; customer: { id: string; identification: string; fullName: string; primaryPhone: string };
+  paymentMethod: { id: string; name: string }; collector: { id: string; name: string } | null };
+export type PaymentHistorySummary = { validPaymentsCount: number; receivedAmount: string;
+  principalAppliedAmount: string; interestAppliedAmount: string };
+export type PaymentHistoryResult = { items: PaymentHistoryItem[]; total: number; page: number; pageSize: number;
+  summary: PaymentHistorySummary };
+export type PaymentHistoryOptions = { paymentMethods: Array<{ id: string; name: string; active: boolean }>;
+  collectors: Array<{ id: string; name: string; active: boolean }> };

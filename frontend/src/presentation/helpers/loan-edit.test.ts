@@ -9,14 +9,14 @@ describe('loan edit draft', () => {
     expect(reviewLoanEdit(editContext, { ...draft, interestAmount: '20', observations: ' original ' })).toMatchObject({ valid: true, changes: {}, interestChanged: false });
     const changes = reviewLoanEdit(editContext, { ...draft, paymentFrequencyId: 'frequency-new', preferredPaymentMethodId: 'method-new', observations: '   ' });
     expect(changes).toMatchObject({ valid: true, changes: { paymentFrequencyId: 'frequency-new', preferredPaymentMethodId: 'method-new', observations: null }, interestChanged: false });
-    expect(editContext.baseline.plan).toEqual([{ id: 'plan-a', dueDate: '2026-02-01', pendingAmount: '60.00' }]);
+    expect(editContext.baseline.plan).toEqual([{ id: 'plan-a', dueDate: '2026-02-02', pendingAmount: '60.00' }]);
     expect(reviewLoanEdit(editContext, { ...draft, paymentFrequencyId: 'frequency-off' }).valid).toBe(false);
     expect(reviewLoanEdit(editContext, { ...draft, preferredPaymentMethodId: 'method-off' }).valid).toBe(false);
   });
   it('previews exact cents without becoming financial authority or distributing obligations', () => {
     const draft = draftFromLoan(editContext);
     expect(reviewLoanEdit(editContext, { ...draft, interestAmount: '20.01' })).toMatchObject({ changes: { interestAmount: '20.01' }, newTotal: '120.01', newBalance: '60.01' });
-    expect(reviewPlanDraft('60.01', [{ key: 'plan-a', id: 'plan-a', dueDate: '2026-02-01', pendingAmount: '60.00' }], { allowEmpty: true, minDate: editContext.loan.startDate })).toMatchObject({ differenceCents: 1n, canSave: false });
+    expect(reviewPlanDraft('60.01', [{ key: 'plan-a', id: 'plan-a', dueDate: '2026-02-02', pendingAmount: '60.00' }], { allowEmpty: true, minDate: editContext.loan.startDate })).toMatchObject({ differenceCents: 1n, canSave: false });
     expect(reviewLoanEdit(editContext, { ...draft, interestAmount: '0' })).toMatchObject({ newTotal: '100.00', newBalance: '40.00' });
     const paidOff = { ...editContext, baseline: { ...editContext.baseline, financialBalance: '0.00', plan: [] } };
     expect(reviewPlanDraft('0.00', [], { allowEmpty: true }).canSave).toBe(true);

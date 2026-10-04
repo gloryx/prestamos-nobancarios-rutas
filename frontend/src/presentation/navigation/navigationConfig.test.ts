@@ -70,11 +70,15 @@ describe('sidebar navigation configuration', () => {
     expect(payments).toMatchObject({
       type: 'group',
       icon: 'payment',
-      items: [{ type: 'link', label: 'Registrar pago', path: '/payments/new', icon: 'payment', requiredPermission: 'payments.view' }],
+      items: [{ type: 'link', label: 'Registrar pago', path: '/payments/new', icon: 'payment', requiredPermission: 'payments.view' },
+        { type: 'link', label: 'Cobros del día', path: '/payments/daily-collections', icon: 'payment', requiredPermission: 'payments.view' },
+        { type: 'link', label: 'Historial de pagos', path: '/payments/history', icon: 'payment', requiredPermission: 'payments.view' }],
     });
     if (payments?.type !== 'group') return;
-    expect(payments.items).toHaveLength(1);
+    expect(payments.items).toHaveLength(3);
     expect(getActiveGroupIds(navigationEntries, '/payments/new')).toEqual(['payments']);
+    expect(getActiveGroupIds(navigationEntries, '/payments/daily-collections')).toEqual(['payments']);
+    expect(getActiveGroupIds(navigationEntries, '/payments/history')).toEqual(['payments']);
   });
 
   it('filters registration by payments.view using the existing navigation helper', () => {
@@ -84,26 +88,91 @@ describe('sidebar navigation configuration', () => {
     expect(denied.some((entry) => entry.label === 'PAGOS')).toBe(false);
     expect(allowed.find((entry) => entry.label === 'PAGOS')).toMatchObject({
       type: 'group',
-      items: [{ label: 'Registrar pago', path: '/payments/new', requiredPermission: 'payments.view' }],
+      items: [{ label: 'Registrar pago', path: '/payments/new', requiredPermission: 'payments.view' },
+        { label: 'Cobros del día', path: '/payments/daily-collections', requiredPermission: 'payments.view' },
+        { label: 'Historial de pagos', path: '/payments/history', requiredPermission: 'payments.view' }],
     });
+  });
+  it('publishes profitability under Finanzas and nested Reportes with the existing cash permission', () => {
+    const finance = navigationEntries.find((entry) => entry.label === 'Finanzas');
+    expect(finance?.type).toBe('group');
+    if (finance?.type !== 'group') return;
+    expect(finance.items[0]).toMatchObject({ type: 'link', label: 'Movimientos de caja',
+      path: '/finance/cash-movements', requiredPermission: 'cash-movements.view' });
+    expect(finance.items[1]).toMatchObject({ type: 'group', label: 'Reportes', requiredPermission: 'cash-movements.view',
+      items: [{ type: 'link', label: 'Rentabilidad integral', path: '/finance/reports/profitability',
+        requiredPermission: 'cash-movements.view' }] });
+    expect(getActiveGroupIds(navigationEntries, '/finance/reports/profitability'))
+      .toEqual(['finance', 'finance.reports']);
+    expect(filterNavigationEntries(navigationEntries, () => false).some((entry) => entry.label === 'Finanzas')).toBe(false);
+    expect(filterNavigationEntries(navigationEntries, (permission) => permission === 'cash-movements.view')
+      .find((entry) => entry.label === 'Finanzas')).toMatchObject({ type: 'group', items: [
+        { label: 'Movimientos de caja' }, { label: 'Reportes', items: [{ label: 'Rentabilidad integral' }] },
+      ] });
+  });
+  it('publishes customer financial analysis only with its dedicated permission', () => {
+    const allowed = filterNavigationEntries(navigationEntries, (permission) => permission === 'customers.analysis.view');
+    const customers = allowed.find((entry) => entry.label === 'Clientes');
+    expect(customers).toMatchObject({ type: 'group', items: [{ type: 'link', label: 'Análisis financiero',
+      path: '/customers/financial-analysis', requiredPermission: 'customers.analysis.view' }] });
+    expect(filterNavigationEntries(navigationEntries, () => false).some((entry) => entry.label === 'Clientes')).toBe(false);
+  });
+  it('publishes customer statistics between management and analysis with customers.summary.view', () => {
+    const customers = navigationEntries.find((entry) => entry.label === 'Clientes');
+    expect(customers?.type).toBe('group');
+    if (customers?.type !== 'group') return;
+    expect(customers.items.slice(0, 3)).toMatchObject([
+      { label: 'Gestión de clientes', path: '/customers', requiredPermission: 'customers.view' },
+      { label: 'Estadísticas', path: '/customers/statistics', requiredPermission: 'customers.summary.view' },
+      { label: 'Análisis financiero', path: '/customers/financial-analysis', requiredPermission: 'customers.analysis.view' },
+    ]);
+    const summaryOnly = filterNavigationEntries(navigationEntries, (permission) => permission === 'customers.summary.view');
+    expect(summaryOnly.find((entry) => entry.label === 'Clientes')).toMatchObject({ type: 'group', items: [
+      { label: 'Estadísticas', path: '/customers/statistics' },
+    ] });
   });
   it('adds one loans.view management link without hiding or reordering existing loan entries', () => {
     const loans = navigationEntries.find((entry) => entry.label === 'PRÉSTAMOS');
     expect(loans?.type).toBe('group');
     if (loans?.type !== 'group') return;
-    expect(loans.items.map((entry) => entry.label)).toEqual(['Préstamos', 'Préstamos cancelados', 'Préstamos incobrables', 'Préstamos anulados', 'Nuevo préstamo']);
+    expect(loans.items.map((entry) => entry.label)).toEqual(['Préstamos', 'Préstamos cancelados', 'Préstamos incobrables', 'Préstamos anulados', 'Nuevo préstamo', 'Refinanciamientos']);
     expect(loans.items[1]).toMatchObject({ path: '/loans/cancelled', requiredPermission: 'loans.view' });
     expect(loans.items[2]).toMatchObject({ type: 'link', path: '/loans/uncollectible-management', icon: 'payment', requiredPermission: 'loans.view' });
     expect(loans.items[3]).toMatchObject({ type: 'link', path: '/loans/annulments', icon: 'payment', requiredPermission: 'loans.view' });
     expect(getActiveGroupIds(navigationEntries, '/loans/cancelled')).toEqual(['loans']);
     expect(getActiveGroupIds(navigationEntries, '/loans/uncollectible-management')).toEqual(['loans']);
     expect(getActiveGroupIds(navigationEntries, '/loans/annulments')).toEqual(['loans']);
+    expect(loans.items[5]).toMatchObject({ type: 'group', requiredPermission: 'loans.refinance.view',
+      items: [{ label: 'Refinanciamientos', path: '/loan-refinancings', requiredPermission: 'loans.refinance.view' },
+        { label: 'Nuevo refinanciamiento', path: '/loan-refinancings/new', requiredPermission: 'loans.refinance.view' },
+        { label: 'Cadenas de refinanciamiento', path: '/loan-refinancings/chains', requiredPermission: 'loans.refinance.view' }] });
+    expect(getActiveGroupIds(navigationEntries, '/loan-refinancings')).toEqual(['loans', 'loans.refinancings']);
+    expect(getActiveGroupIds(navigationEntries, '/loan-refinancings/new')).toEqual(['loans', 'loans.refinancings']);
+    expect(getActiveGroupIds(navigationEntries, '/loan-refinancings/operation-id')).toEqual(['loans', 'loans.refinancings']);
+    expect(getActiveGroupIds(navigationEntries, '/loan-refinancings/chains')).toEqual(['loans', 'loans.refinancings']);
+    expect(getActiveGroupIds(navigationEntries, '/loan-refinancings/chains/loan/loan-id')).toEqual(['loans', 'loans.refinancings']);
+    if (loans.items[5].type === 'group') {
+      const [listing, creation, chains] = loans.items[5].items;
+      expect(isNavigationEntryActive(listing, '/loan-refinancings/new')).toBe(false);
+      expect(isNavigationEntryActive(creation, '/loan-refinancings/new')).toBe(true);
+      expect(isNavigationEntryActive(listing, '/loan-refinancings/operation-id')).toBe(true);
+      expect(isNavigationEntryActive(listing, '/loan-refinancings/chains/loan/loan-id')).toBe(false);
+      expect(isNavigationEntryActive(chains, '/loan-refinancings/chains/loan/loan-id')).toBe(true);
+    }
     const denied = filterNavigationEntries(navigationEntries, () => false).find((entry) => entry.label === 'PRÉSTAMOS');
     expect(denied).toBeUndefined();
     expect(filterNavigationEntries(navigationEntries, (permission) => permission === 'loans.status.uncollectible')
       .some((entry) => entry.label === 'PRÉSTAMOS')).toBe(false);
     const allowed = filterNavigationEntries(navigationEntries, (permission) => permission === 'loans.view').find((entry) => entry.label === 'PRÉSTAMOS');
     expect(allowed?.type === 'group' && allowed.items.map((entry) => entry.label)).toEqual(['Préstamos', 'Préstamos cancelados', 'Préstamos incobrables', 'Préstamos anulados']);
+    const refinanceOnly = filterNavigationEntries(navigationEntries, (permission) => permission === 'loans.refinance.view')
+      .find((entry) => entry.label === 'PRÉSTAMOS');
+    expect(refinanceOnly?.type === 'group' && refinanceOnly.items.map((entry) => entry.label)).toEqual(['Refinanciamientos']);
+    if (refinanceOnly?.type === 'group' && refinanceOnly.items[0].type === 'group') {
+      expect(refinanceOnly.items[0].items.map((entry) => entry.label)).toEqual([
+        'Refinanciamientos', 'Nuevo refinanciamiento', 'Cadenas de refinanciamiento',
+      ]);
+    }
   });
 
   it('opens both parent groups and identifies the active territorial child route', () => {

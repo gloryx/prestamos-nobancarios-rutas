@@ -1,4 +1,5 @@
 import { paymentDateOnlyKey } from './payment-date-only';
+import { paymentPlanDateIssue } from './payment-plan-dates';
 
 export type PendingPlanEntry = {
   id: string;
@@ -12,7 +13,6 @@ export type PlanBaseline = Readonly<{ financialBalance: string; entries: Readonl
 type PlanProposal = { dueDate: string; pendingAmount: string };
 
 const MONEY = /^(?:0|[1-9]\d{0,15})(?:\.\d{1,2})?$/;
-const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 function cents(value: string): bigint {
   const [whole, fraction = ''] = value.split('.');
@@ -24,10 +24,10 @@ export function filterPositivePendingEntries<T extends { pendingAmount: string }
 }
 
 export function validatePlanCustomization(entries: PlanProposal[], loanStartDate: string, financialBalance: string): true {
-  if (!entries.length || entries.some((entry) => typeof entry.dueDate !== 'string' || !DATE.test(entry.dueDate)
-    || !Number.isFinite(new Date(`${entry.dueDate}T00:00:00Z`).getTime())
-    || new Date(`${entry.dueDate}T00:00:00Z`).toISOString().slice(0, 10) !== entry.dueDate
-    || entry.dueDate < loanStartDate)) throw new Error('plan-date-before-loan');
+  if (!entries.length) throw new Error('plan-date-before-loan');
+  const dateIssue = paymentPlanDateIssue(loanStartDate, entries.map((entry) => entry.dueDate), true);
+  if (dateIssue === 'before-anchor' || dateIssue === 'invalid') throw new Error('plan-date-before-loan');
+  if (dateIssue) throw new Error(`plan-date-${dateIssue}`);
   if (entries.some((entry) => typeof entry.pendingAmount !== 'string' || !MONEY.test(entry.pendingAmount) || cents(entry.pendingAmount) <= 0n)) throw new Error('plan-amount-invalid');
   if (entries.reduce((sum, entry) => sum + cents(entry.pendingAmount), 0n) !== cents(financialBalance)) throw new Error('plan-total-mismatch');
   return true;

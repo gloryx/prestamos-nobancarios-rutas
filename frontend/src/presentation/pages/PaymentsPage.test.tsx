@@ -363,7 +363,7 @@ describe('payment selection presentation', () => {
   });
 
   it('renders valid payments alongside positive current obligations without reading selected.payments', () => {
-    const props = { context, canCreate: true, amount: '', methodId: 'cash', busy: false, onAmount: noop, onMethod: noop, onSubmit: noop };
+    const props = { context, canCreate: true, amount: '', methodId: 'cash', collectorId: '', busy: false, onAmount: noop, onMethod: noop, onCollector: noop, onSubmit: noop };
     const markup = renderToStaticMarkup(<PaymentDetails {...props} />);
     expect(markup).toContain('Ana');
     expect(markup).toContain('Capital pendiente (valor actual): 30.00');
@@ -519,9 +519,11 @@ describe('payment selection presentation', () => {
     expect(markup).toContain('class="money-input"');
     expect(markup).toContain('Forma de pago');
     expect(markup).toContain('Tarjeta');
-    expect(markup).toContain('Cobrador (opcional)');
+    expect(markup).toContain('Cobrador *');
     expect(markup).toContain('María');
-    expect(markup).toContain('Sin cobrador');
+    expect(markup).toContain('Seleccionar cobrador');
+    expect(markup).toContain('Seleccione un cobrador.');
+    expect(markup).toMatch(/<button[^>]*disabled=""[^>]*>Registrar pago<\/button>/);
     expect(markup).not.toContain('Observaciones');
     expect(defaultPaymentDate('2020-01-01', '2026-09-28')).toBe('2020-01-01');
     expect(defaultPaymentDate('2026-10-01', '2026-09-28')).toBe('2026-09-28');
@@ -561,10 +563,10 @@ describe('payment selection presentation', () => {
     const largerBalance = { ...context, balances: { ...context.balances, financialBalance: '100.00' } };
     const edited = paymentCapturePayload(largerBalance, { amount: '₡75,5', paymentDate: '2026-09-28', methodId: 'card', collectorId: 'collector-1' }, '2026-09-28');
     expect(edited).toEqual({ loanId: 'loan-1', paymentDate: '2026-09-28', amount: '75.50', methodId: 'card', collectorId: 'collector-1' });
-    const partial = paymentCapturePayload(context, { amount: '₡1.000,00', paymentDate: '2020-01-01', methodId: 'cash', collectorId: '' }, '2026-09-28');
-    expect(partial).toBeNull();
+    const partial = paymentCapturePayload(context, { amount: '₡25,00', paymentDate: '2020-01-01', methodId: 'cash', collectorId: 'collector-1' }, '2026-09-28');
+    expect(partial).toEqual({ loanId: 'loan-1', paymentDate: '2020-01-01', amount: '25.00', methodId: 'cash', collectorId: 'collector-1' });
     const withoutCollector = paymentCapturePayload(context, { amount: '₡12,5', paymentDate: '2020-01-01', methodId: 'cash', collectorId: '' }, '2026-09-28');
-    expect(withoutCollector).toEqual({ loanId: 'loan-1', paymentDate: '2020-01-01', amount: '12.50', methodId: 'cash' });
+    expect(withoutCollector).toBeNull();
     expect(paymentCapturePayload(context, { amount: '0', paymentDate: '2020-01-01', methodId: 'cash', collectorId: '' }, '2026-09-28')).toBeNull();
     expect(paymentCapturePayload(context, { amount: '12', paymentDate: '2026-09-29', methodId: 'cash', collectorId: '' }, '2026-09-28')).toBeNull();
     expect(paymentCapturePayload(context, { amount: '12', paymentDate: '2020-01-01', methodId: 'inactive', collectorId: '' }, '2026-09-28')).toBeNull();
@@ -572,7 +574,8 @@ describe('payment selection presentation', () => {
     const key = vi.fn().mockReturnValueOnce('key-1').mockReturnValueOnce('key-2');
     const first = paymentCaptureAttempt(null, edited!, key);
     expect(paymentCaptureAttempt(first, edited!, key)).toEqual(first);
-    expect(paymentCaptureAttempt(first, withoutCollector!, key)).toEqual({ fingerprint: JSON.stringify(withoutCollector), key: 'key-2' });
+    const changed = paymentCapturePayload(context, { amount: '12.50', paymentDate: '2020-01-01', methodId: 'cash', collectorId: 'collector-1' }, '2026-09-28');
+    expect(paymentCaptureAttempt(first, changed!, key)).toEqual({ fingerprint: JSON.stringify(changed), key: 'key-2' });
     expect(key).toHaveBeenCalledTimes(2);
   });
 
@@ -705,8 +708,8 @@ describe('payment selection presentation', () => {
 
 describe('payment plan editor', () => {
   const draft: PlanDraftEntry[] = [
-    { key: 'old-a', id: 'old-a', dueDate: '2026-12-01', pendingAmount: '40.00' },
-    { key: 'old-b', id: 'old-b', dueDate: '2026-11-01', pendingAmount: '60.00' },
+    { key: 'old-a', id: 'old-a', dueDate: '2026-11-02', pendingAmount: '40.00' },
+    { key: 'old-b', id: 'old-b', dueDate: '2026-12-01', pendingAmount: '60.00' },
   ];
   const props = (options: Partial<Parameters<typeof PaymentPlanEditorDialog>[0]> = {}): Parameters<typeof PaymentPlanEditorDialog>[0] => ({
     draft, balance: '100.00', busy: false, error: '', onChange: noop, onAdd: noop, onSave: noop, onClose: noop,
@@ -726,11 +729,11 @@ describe('payment plan editor', () => {
     expect(review.canSave).toBe(true);
     expect(review.entries).toEqual([
       { id: 'old-a', dueDate: '2026-10-01', pendingAmount: '40.01' },
-      { id: 'old-b', dueDate: '2026-11-01', pendingAmount: '59.99' },
+      { id: 'old-b', dueDate: '2026-12-01', pendingAmount: '59.99' },
       { id: null, dueDate: '2026-12-10', pendingAmount: '0.01' },
     ]);
-    expect(reviewPlanDraft('60.00', [draft[1]]).entries).toEqual([{ id: 'old-b', dueDate: '2026-11-01', pendingAmount: '60.00' }]);
-    expect(draft[0]).toEqual({ key: 'old-a', id: 'old-a', dueDate: '2026-12-01', pendingAmount: '40.00' });
+    expect(reviewPlanDraft('60.00', [draft[1]]).entries).toEqual([{ id: 'old-b', dueDate: '2026-12-01', pendingAmount: '60.00' }]);
+    expect(draft[0]).toEqual({ key: 'old-a', id: 'old-a', dueDate: '2026-11-02', pendingAmount: '40.00' });
   });
 
   it('captures an immutable positive-only opening baseline independently from editable and refreshed drafts', () => {
@@ -758,6 +761,8 @@ describe('payment plan editor', () => {
     expect(reviewPlanDraft('100.00', [{ ...draft[0], pendingAmount: '0' }, draft[1]]).canSave).toBe(false);
     expect(reviewPlanDraft('100.00', [{ ...draft[0], dueDate: '2026-02-30' }, draft[1]]).canSave).toBe(false);
     expect(reviewPlanDraft('100.00', [{ ...draft[0], pendingAmount: '12.' }, draft[1]]).canSave).toBe(false);
+    expect(reviewPlanDraft('100.00', [{ ...draft[0], dueDate: '2026-11-01' }, draft[1]])).toMatchObject({ dateIssue: 'sunday', canSave: false });
+    expect(reviewPlanDraft('100.00', [draft[1], draft[0]])).toMatchObject({ dateIssue: 'order', canSave: false });
     expect(reviewPlanDraft('100.00', []).canSave).toBe(false);
   });
 
@@ -796,13 +801,13 @@ describe('payment plan editor', () => {
     const fields = elements(PaymentPlanDraftFields(tree.find((element) => element.type === PaymentPlanDraftFields)!.props as Parameters<typeof PaymentPlanDraftFields>[0]));
     const dates = fields.filter((element) => element.type === 'input');
     (dates[0].props as { onChange: (event: ChangeEvent<HTMLInputElement>) => void }).onChange({ target: { value: '2026-10-01' } } as ChangeEvent<HTMLInputElement>);
-    expect(onChange).toHaveBeenCalledWith([draft[0], { ...draft[1], dueDate: '2026-10-01' }]);
+    expect(onChange).toHaveBeenCalledWith([{ ...draft[0], dueDate: '2026-10-01' }, draft[1]]);
     const money = fields.find((element) => element.type === MoneyInput)!;
     (money.props as { onChange: (value: string) => void }).onChange('59.99');
-    expect(onChange).toHaveBeenCalledWith([draft[0], { ...draft[1], pendingAmount: '59.99' }]);
+    expect(onChange).toHaveBeenCalledWith([{ ...draft[0], pendingAmount: '59.99' }, draft[1]]);
     const remove = fields.find((element) => element.type === TableActions)!.props as { actions: TableAction[] };
     remove.actions[0].onClick?.();
-    expect(onChange).toHaveBeenCalledWith([draft[0]]);
+    expect(onChange).toHaveBeenCalledWith([draft[1]]);
     const button = (label: string) => tree.find((element) => element.type === 'button' && (element.props as { children?: ReactNode }).children === label)!;
     (fields.find((element) => element.type === 'button' && (element.props as { children?: ReactNode }).children === 'Agregar obligación')!.props as { onClick: () => void }).onClick();
     (button('Cancelar').props as { onClick: () => void }).onClick();

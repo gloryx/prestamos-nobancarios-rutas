@@ -145,6 +145,8 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--focus); outline
 .loan-customer-dialog__search input { width: 100%; }
 .loan-customer-dialog__table-wrap { min-height: 0; flex: 1 1 auto; overflow-x: hidden; overflow-y: auto; }
 .loan-customer-dialog__footer { margin-top: .8rem; }
+.customer-selection-dialog__footer { align-items: center; flex-wrap: wrap; }
+.customer-selection-dialog__footer span { color: var(--muted); font-size: .82rem; font-variant-numeric: tabular-nums; }
 .loan-customer-table { width: 100%; min-width: 0; table-layout: fixed; border-collapse: separate; border-spacing: 0; }
 .loan-customer-table th, .loan-customer-table td { white-space: normal; }
 .loan-customer-table thead th { position: sticky; z-index: 1; top: 0; background: #f8fafd; }
@@ -434,6 +436,52 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--focus); outline
 .loan-list__pagination { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: .65rem; padding: .8rem 1rem; border-top: 1px solid var(--border); color: var(--muted); font-size: .78rem; }
 .loan-list__sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 
+.refinancing-origin__section-title { margin: 0; padding: 1rem; border-bottom: 1px solid var(--border); color: var(--navy-900); font-size: 1rem; }
+.refinancing-origin .loan-list__toolbar { grid-template-columns: minmax(0, 1fr) minmax(8rem, 10rem); }
+.refinancing-origin .loan-list__table { min-width: 74rem; }
+.refinancing-origin .loan-list__actions { width: 5rem; min-width: 5rem; }
+.refinancing-origin__preview { min-width: 0; }
+.refinancing-origin__identity { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; padding: 1rem; border: 1px solid var(--border); border-radius: .35rem; background: #f8fafd; }
+.refinancing-origin__identity h2 { margin: .25rem 0; color: var(--navy-900); font-size: 1.2rem; }
+.refinancing-origin__identity p { margin: .2rem 0; color: var(--muted); }
+.refinancing-origin__identity .status-badge { flex: 0 0 auto; }
+.refinancing-origin__eligibility-result { margin: .75rem 0 0; padding: .65rem .75rem; border-radius: .35rem; font-size: .83rem; font-weight: 700; }
+.refinancing-origin__eligibility-result--eligible { color: #17633a; background: #e3f4e9; }
+.refinancing-origin__eligibility-result--blocked { color: #9f2f2f; background: #fff1f1; }
+.refinancing-origin__footer { display: flex; justify-content: flex-end; gap: .65rem; flex-wrap: wrap; margin-top: 1.25rem; }
+@media (max-width: 640px) { .refinancing-origin .loan-list__toolbar { grid-template-columns: 1fr; }.refinancing-origin .loan-list__toolbar label:first-child { grid-column: auto; }.refinancing-origin__identity { flex-wrap: wrap; }.refinancing-origin__footer .button { flex: 1 1 auto; } }
+.refinancing-conditions h2 { margin: 0; color: var(--navy-900); font-size: 1.2rem; }
+.refinancing-conditions__origin, .refinancing-conditions__hint { margin: .6rem 0; color: var(--muted); font-size: .83rem; line-height: 1.5; }
+.refinancing-conditions__form { margin-top: 1rem; }
+.refinancing-conditions__modes { justify-content: flex-start; margin-top: 1.2rem; }
+.refinancing-conditions__warning { margin: .55rem 0; color: #9f2f2f; font-size: .83rem; }
+.refinancing-conditions__footer { display: flex; flex-wrap: wrap; justify-content: flex-end; margin-top: 1.2rem; }
+@media (max-width: 640px) { .refinancing-conditions__footer .button { flex: 1 1 auto; } }
+.refinancing-confirmation h2, .refinancing-result .loan-confirmation__section h2 { margin: 0 0 .6rem; color: var(--navy-900); font-size: 1.05rem; }
+.refinancing-confirmation__equation { display: grid; gap: .25rem; max-width: 42rem; margin: 0; }
+.refinancing-confirmation__equation > div { display: flex; justify-content: space-between; flex-wrap: wrap; gap: .35rem 1rem; padding: .55rem .75rem; border-radius: .3rem; }
+.refinancing-confirmation__equation > div:nth-child(odd) { background: #f8fafd; }
+.refinancing-confirmation__equation dt { color: var(--muted); }
+.refinancing-confirmation__equation dd { margin: 0; color: var(--navy-900); font-weight: 700; font-variant-numeric: tabular-nums; }
+.refinancing-confirmation__equation .refinancing-confirmation__subtotal, .refinancing-confirmation__equation .refinancing-confirmation__total { border-top: 1px solid var(--border); font-weight: 700; }
+.refinancing-confirmation__equation .refinancing-confirmation__total { background: #e9f4fc; }
+.refinancing-confirmation__warning { margin-top: 1rem; padding: 1rem; border: 1px solid var(--border); border-radius: .35rem; background: #f8fafd; }
+.refinancing-confirmation__warning h3 { margin: 0; color: var(--navy-900); font-size: .85rem; }
+.refinancing-confirmation__warning p { margin: .6rem 0 0; font-size: .85rem; line-height: 1.5; }
+.refinancing-result__loans { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.refinancing-result__loans p { margin: .4rem 0; }
+.refinancing-result__actions { display: flex; flex-wrap: wrap; justify-content: flex-start; margin-top: 1.25rem; }
+@media (max-width: 640px) { .refinancing-result__loans { grid-template-columns: 1fr; } .refinancing-result__actions .button { flex: 1 1 auto; } }
+.refinancing-list .loan-list__table { min-width: 112rem; }
+.refinancing-list .loan-list__actions { width: 7.5rem; min-width: 7.5rem; }
+.refinancing-list__filters { grid-template-columns: minmax(15rem, 2fr) minmax(14rem, 1.5fr) repeat(2, minmax(9rem, 1fr)); }
+.refinancing-list__client-filter { display: flex; min-width: 0; flex-direction: column; align-items: flex-start; gap: .35rem; color: var(--muted); font-size: .75rem; font-weight: 700; }
+.refinancing-list__client-filter strong { max-width: 100%; color: var(--navy-900); overflow-wrap: anywhere; }
+.refinancing-list__client-filter .button { min-height: 2.45rem; padding: .45rem .7rem; }
+.refinancing-list__client-filter small { font-weight: 400; }
+@media (max-width: 980px) { .refinancing-list__filters { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 640px) { .refinancing-list__filters { grid-template-columns: 1fr; } .refinancing-list__filters label:first-child { grid-column: auto; } }
+
 .cancelled-loans__summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .75rem; margin-bottom: 1rem; }
 .cancelled-loans__summary > div { display: grid; gap: .3rem; min-width: 0; padding: .85rem 1rem; border: 1px solid var(--border); border-radius: .5rem; background: var(--surface); }
 .cancelled-loans__summary span { color: var(--muted); font-size: .78rem; }
@@ -587,6 +635,15 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--focus); outline
 .loan-management__stale { margin: 0; padding: .5rem 1rem; color: var(--muted); font-size: .8rem; }
 .loan-management .loan-list__pagination select { margin-left: .3rem; padding: .35rem; border: 1px solid var(--border); border-radius: .3rem; background: var(--surface); }
 .loan-management .loan-list__table-wrap:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+.daily-collections__date-bar { display: flex; flex-wrap: wrap; align-items: center; gap: .65rem; margin-bottom: 1rem; }
+.daily-collections__date-bar label { display: flex; align-items: center; gap: .4rem; }
+.daily-collections__date-bar input { min-height: 2.45rem; padding: .35rem; border: 1px solid var(--border); border-radius: .35rem; }
+.daily-collections__sections { display: grid; gap: 1rem; }
+.daily-collections__section-title { margin: 0; padding: 1rem; color: var(--navy-900); font-size: 1rem; }
+.daily-collections .loan-list__toolbar { grid-template-columns: minmax(12rem, 25rem); }
+.daily-collections .loan-list__table { min-width: 48rem; }
+.daily-collections .loan-list__actions { width: 10rem; min-width: 10rem; }
+.daily-collections__customer strong, .daily-collections__customer small { display: block; }
 .loan-annulment__warning { padding: .7rem; border-radius: .35rem; background: #fff3eb; color: #7b3618; font-weight: 700; }
 .loan-annulment__resolution { display: grid; gap: .5rem; margin: .8rem 0; padding: 0; border: 0; }
 .loan-annulment__resolution legend { margin-bottom: .4rem; font-weight: 700; }
@@ -594,3 +651,245 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--focus); outline
 .loan-annulment__counter { display: block; color: var(--muted); font-size: .8rem; text-align: right; }
 @media (max-width: 760px) { .loan-management__summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } .loan-management .loan-list__toolbar { grid-template-columns: 1fr; } .loan-management .loan-list__toolbar label:first-child { grid-column: auto; } }
 @media (max-width: 420px) { .loan-management__summary { grid-template-columns: 1fr; } .loan-management__dialog { padding: 1rem; } }
+.payment-history .payment-history__filters { grid-template-columns: repeat(auto-fit, minmax(min(11rem, 100%), 1fr)); margin-bottom: 1rem; }
+.payment-history .payment-history__filters label:first-child { grid-column: auto; }
+.payment-history__filters > button { align-self: end; min-height: 2.45rem; }
+.payment-history .loan-list__table { min-width: 54rem; }
+.payment-history .loan-list__actions { width: 5rem; min-width: 5rem; }
+.payment-history .loan-list__numeric { white-space: nowrap; }
+.payment-history .loan-list__table-wrap:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+.dialog.payment-history__dialog { width: min(100%, 35rem); max-height: calc(100dvh - 2rem); overflow-y: auto; }
+.payment-history__dialog h2 { margin: 0 0 1rem; color: var(--navy-900); }
+.payment-history__dialog dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; margin: 0; }
+.payment-history__dialog dt { color: var(--muted); font-size: .75rem; }
+.payment-history__dialog dd { margin: .2rem 0 0; overflow-wrap: anywhere; color: var(--navy-900); font-weight: 700; }
+@media (max-width: 540px) { .payment-history__dialog dl { grid-template-columns: 1fr; } }
+
+.refinancing-chain { width: 100%; max-width: 90rem; margin: 0 auto; }
+.refinancing-chain__customer-picker, .refinancing-chain__customer, .refinancing-chain__customer-summary,
+.refinancing-chain__chain-summary, .refinancing-chain__overview { border: 1px solid var(--border); border-radius: .55rem; background: var(--surface); box-shadow: 0 5px 18px rgb(20 48 83 / 5%); }
+.refinancing-chain__customer-picker { display: flex; align-items: center; flex-wrap: wrap; gap: .65rem; margin: 1rem 0; padding: 1rem 1.2rem; }
+.refinancing-chain__customer-picker p { flex: 1 1 20rem; margin: 0; color: var(--muted); }
+.refinancing-chain__customer-picker > div { display: grid; flex: 1 1 20rem; gap: .2rem; }
+.refinancing-chain__customer-picker span, .refinancing-chain__customer span { color: var(--muted); font-size: .85rem; }
+.refinancing-chain__customer-picker small { flex-basis: 100%; color: var(--muted); }
+.refinancing-chain__customer { display: flex; align-items: baseline; flex-wrap: wrap; gap: .4rem 1rem; margin: 1rem 0; padding: 1rem 1.2rem; color: var(--navy-900); }
+.refinancing-chain__customer-result, .refinancing-chain__detail { display: grid; gap: 1rem; }
+.refinancing-chain__customer-summary, .refinancing-chain__chain-summary { padding: 1.25rem; }
+.refinancing-chain__customer-summary h2, .refinancing-chain__chain-summary h2 { margin: 0 0 .35rem; color: var(--navy-900); font-size: 1.25rem; }
+.refinancing-chain__chain-summary p { margin: 0 0 1rem; color: var(--muted); }
+.refinancing-chain__summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .7rem; margin: 1rem 0 0; }
+.refinancing-chain__summary-grid > div { min-width: 0; padding: .8rem; border-radius: .4rem; background: #f6f8fb; }
+.refinancing-chain__summary-grid dt, .refinancing-chain__facts dt { color: var(--muted); font-size: .72rem; font-weight: 700; }
+.refinancing-chain__summary-grid dd, .refinancing-chain__facts dd { margin: .25rem 0 0; color: var(--navy-900); font-weight: 750; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.refinancing-chain__cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(22rem, 100%), 1fr)); gap: 1rem; }
+.refinancing-chain__overview { display: grid; gap: 1rem; padding: 1.2rem; }
+.refinancing-chain__overview h2 { margin: .3rem 0 0; color: var(--navy-900); }
+.refinancing-chain__overview .button { justify-self: start; }
+.refinancing-chain__history { position: relative; display: grid; gap: 0; padding-left: 1.25rem; }
+.refinancing-chain__history::before { position: absolute; top: 1rem; bottom: 1rem; left: .35rem; width: 2px; background: var(--border); content: ""; }
+.refinancing-chain__step { position: relative; display: grid; justify-items: stretch; gap: 0; }
+.refinancing-chain__loan-card, .refinancing-chain__transition { position: relative; padding: 1.2rem; border: 1px solid var(--border); border-radius: .55rem; background: var(--surface); box-shadow: 0 5px 18px rgb(20 48 83 / 5%); }
+.refinancing-chain__loan-card::before, .refinancing-chain__transition::before { position: absolute; top: 1.4rem; left: -1.38rem; width: .65rem; height: .65rem; border: 2px solid var(--surface); border-radius: 50%; background: var(--blue-500); content: ""; }
+.refinancing-chain__loan-card header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
+.refinancing-chain__loan-card h3, .refinancing-chain__transition h3 { margin: .3rem 0 0; color: var(--navy-900); font-size: 1.2rem; }
+.refinancing-chain__node-label { display: inline-block; color: var(--blue-700); font-size: .7rem; font-weight: 800; letter-spacing: .08em; }
+.refinancing-chain__node-label + .refinancing-chain__node-label { margin-left: .5rem; }
+.refinancing-chain__facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .75rem; margin: 1rem 0; }
+.refinancing-chain__facts > div { min-width: 0; padding-top: .65rem; border-top: 1px solid var(--border); }
+.refinancing-chain__note { margin: 0 0 1rem; padding: .65rem .8rem; border-radius: .35rem; background: #edf4fc; color: var(--navy-800); font-size: .85rem; }
+.refinancing-chain__transition { width: min(100%, 48rem); margin: 1rem auto; border-style: dashed; background: #f8fafd; }
+.refinancing-chain__transition::before { background: var(--navy-800); }
+.refinancing-chain__connector { position: absolute; top: -1.35rem; left: 50%; color: var(--blue-700); font-size: 1.4rem; font-weight: 800; transform: translateX(-50%); }
+.refinancing-chain__status--active { background: #e8f6ee; color: #23643d; }
+.refinancing-chain__status--refinanced { background: #edf4fc; color: #245a91; }
+.refinancing-chain__status--cancelled { background: #f1f2f4; color: #46515d; }
+.refinancing-chain__status--uncollectible, .refinancing-chain__status--annulled { background: #fff1f1; color: #8b1f1f; }
+@media (max-width: 760px) {
+  .refinancing-chain__summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .refinancing-chain__facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 520px) {
+  .refinancing-chain__customer-picker { align-items: stretch; flex-direction: column; }
+  .refinancing-chain__customer-picker > div, .refinancing-chain__customer-picker p { flex-basis: auto; }
+  .refinancing-chain__customer-picker .button { align-self: flex-start; }
+  .refinancing-chain__summary-grid, .refinancing-chain__facts { grid-template-columns: 1fr; }
+  .refinancing-chain__history { padding-left: .9rem; }
+  .refinancing-chain__loan-card::before, .refinancing-chain__transition::before { left: -1.03rem; }
+  .refinancing-chain__loan-card header { flex-direction: column; }
+}
+
+.profitability { width: 100%; max-width: 90rem; margin: 0 auto; }
+.profitability__period { display: flex; align-items: flex-end; flex-wrap: wrap; gap: .8rem 1.2rem; margin-bottom: 1rem; }
+.profitability__period label { display: grid; gap: .3rem; color: var(--navy-900); font-size: .8rem; font-weight: 700; }
+.profitability__period input { min-height: 2.45rem; padding: .35rem .5rem; border: 1px solid var(--border); border-radius: .35rem; background: var(--surface); }
+.profitability__period span { padding-bottom: .55rem; color: var(--muted); }
+.profitability__integrity { display: grid; grid-template-columns: max-content 1fr; gap: .25rem .75rem; margin-bottom: 1rem; padding: .8rem 1rem; border: 1px solid #bddfc9; border-radius: .45rem; background: #edf8f1; color: #225c37; }
+.profitability__integrity strong { font-size: .75rem; letter-spacing: .05em; }
+.profitability__integrity ul { grid-column: 1 / -1; margin: .35rem 0 0; padding-left: 1.2rem; }
+.profitability__integrity--con_advertencias { border-color: #ead39b; background: #fff8e6; color: #755715; }
+.profitability__integrity--inconsistente, .profitability__integrity--no_disponible { border-color: #ecc0c0; background: #fff1f1; color: #842b2b; }
+
+.customer-financial-analysis { width: 100%; max-width: 90rem; margin: 0 auto; }
+.customer-financial-analysis--landing { display: grid; justify-items: start; gap: .85rem; max-width: 50rem; padding: clamp(1.3rem, 4vw, 2.3rem); border: 1px solid var(--border); border-radius: .65rem; background: var(--surface); box-shadow: 0 10px 28px rgb(20 48 83 / 8%); }
+.customer-financial-analysis--landing h1, .customer-financial-analysis--landing p { margin: 0; }
+.customer-financial-analysis--landing p { color: var(--muted); line-height: 1.55; }
+.customer-financial-analysis__header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
+.customer-financial-analysis__header h1 { margin: .2rem 0 .55rem; color: var(--navy-900); }
+.customer-financial-analysis__identity { display: flex; align-items: baseline; flex-wrap: wrap; gap: .35rem 1rem; color: var(--navy-900); }
+.customer-financial-analysis__identity strong { font-size: 1.08rem; }
+.customer-financial-analysis__identity span { color: var(--muted); font-size: .86rem; }
+.customer-financial-analysis__change-customer { display: grid; justify-items: end; gap: .35rem; }
+.customer-financial-analysis__change-customer small { max-width: 16rem; color: var(--muted); font-size: .72rem; text-align: right; }
+.customer-financial-analysis__cutoff { display: flex; align-items: flex-end; flex-wrap: wrap; gap: .7rem 1.1rem; margin-bottom: 1rem; padding: .85rem 1rem; border-left: 3px solid var(--blue-500); background: #f7f9fc; }
+.customer-financial-analysis__cutoff label { display: grid; gap: .3rem; color: var(--navy-900); font-size: .78rem; font-weight: 750; }
+.customer-financial-analysis__cutoff input { min-height: 2.4rem; padding: .35rem .5rem; border: 1px solid var(--border); border-radius: .35rem; background: var(--surface); color: var(--navy-900); }
+.customer-financial-analysis__cutoff p { margin: 0 0 .5rem; color: var(--muted); font-size: .82rem; }
+.customer-financial-analysis__integrity { margin-bottom: 1rem; padding: .8rem 1rem; border: 1px solid #bddfc9; border-radius: .45rem; background: #edf8f1; color: #225c37; }
+.customer-financial-analysis__integrity > div { display: flex; align-items: baseline; flex-wrap: wrap; gap: .35rem .75rem; }
+.customer-financial-analysis__integrity strong { font-size: .74rem; letter-spacing: .06em; }
+.customer-financial-analysis__integrity span { font-size: .86rem; }
+.customer-financial-analysis__integrity details { margin-top: .55rem; }
+.customer-financial-analysis__integrity summary { cursor: pointer; font-weight: 700; }
+.customer-financial-analysis__integrity ul { margin: .45rem 0 0; padding-left: 1.2rem; }
+.customer-financial-analysis__integrity--con_advertencias { border-color: #ead39b; background: #fff8e6; color: #755715; }
+.customer-financial-analysis__integrity--inconsistente, .customer-financial-analysis__integrity--no_disponible { border-color: #ecc0c0; background: #fff1f1; color: #842b2b; }
+.customer-financial-analysis__summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .85rem; margin-bottom: 1rem; }
+.customer-financial-analysis__metric { display: grid; align-content: start; gap: .45rem; min-height: 9.5rem; padding: 1.1rem; border: 1px solid var(--border); border-radius: .6rem; background: var(--surface); box-shadow: 0 6px 20px rgb(20 48 83 / 6%); }
+.customer-financial-analysis__metric--emphasis { border-color: transparent; background: linear-gradient(145deg, var(--navy-900), #17466f); color: #fff; }
+.customer-financial-analysis__metric > span { color: var(--muted); font-size: .7rem; font-weight: 800; letter-spacing: .07em; }
+.customer-financial-analysis__metric--emphasis > span { color: #c8daeb; }
+.customer-financial-analysis__metric strong { color: var(--navy-900); font-size: clamp(1.3rem, 2.7vw, 1.9rem); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.customer-financial-analysis__metric--emphasis strong { color: #fff; }
+.customer-financial-analysis__metric small { align-self: end; color: #d8e5f0; line-height: 1.5; }
+.customer-financial-analysis__columns { display: grid; grid-template-columns: 1.2fr .8fr; gap: 1rem; margin-bottom: 1rem; }
+.customer-financial-analysis__panel, .customer-financial-analysis__history, .customer-financial-analysis__loans { padding: 1.2rem; }
+.customer-financial-analysis__panel h2, .customer-financial-analysis__history h2, .customer-financial-analysis__loans h2 { margin: .2rem 0 1rem; color: var(--navy-900); }
+.customer-financial-analysis__panel dl, .customer-financial-analysis__history dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .65rem; margin: 0; }
+.customer-financial-analysis__panel dl > div, .customer-financial-analysis__history dl > div { padding: .75rem; border-top: 1px solid var(--border); }
+.customer-financial-analysis__panel dt, .customer-financial-analysis__history dt { color: var(--muted); font-size: .76rem; }
+.customer-financial-analysis__panel dd, .customer-financial-analysis__history dd { margin: .32rem 0 0; color: var(--navy-900); font-weight: 780; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.customer-financial-analysis__returns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .65rem; margin-bottom: .8rem; }
+.customer-financial-analysis__returns .customer-financial-analysis__metric { min-height: 11rem; background: #f7f9fc; box-shadow: none; }
+.customer-financial-analysis__returns .customer-financial-analysis__metric strong { font-size: clamp(1.55rem, 3vw, 2.15rem); }
+.customer-financial-analysis__returns .customer-financial-analysis__metric small { color: var(--muted); }
+.customer-financial-analysis__panel .customer-financial-analysis__profitability-secondary { grid-template-columns: 1fr; }
+.customer-financial-analysis__profitability-secondary dd { font-size: .96rem; font-weight: 700; }
+.customer-financial-analysis__help { display: block; margin-top: .38rem; color: var(--muted); font-size: .7rem; line-height: 1.4; }
+.customer-financial-analysis__history { display: grid; grid-template-columns: minmax(13rem, .7fr) minmax(0, 1.3fr); gap: 1rem; margin-bottom: 1rem; }
+.customer-financial-analysis__history p { margin: 0; color: var(--muted); }
+.customer-financial-analysis__history dl { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.customer-financial-analysis__loans .loan-list__message { margin-bottom: 0; }
+@media (max-width: 980px) { .customer-financial-analysis__summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } .customer-financial-analysis__columns { grid-template-columns: 1fr; } }
+@media (max-width: 640px) { .customer-financial-analysis__header { flex-direction: column; } .customer-financial-analysis__change-customer { justify-items: start; } .customer-financial-analysis__change-customer small { text-align: left; } .customer-financial-analysis__summary, .customer-financial-analysis__returns { grid-template-columns: 1fr; } .customer-financial-analysis__metric { min-height: auto; } .customer-financial-analysis__history { grid-template-columns: 1fr; } .customer-financial-analysis__history dl, .customer-financial-analysis__panel dl { grid-template-columns: 1fr; } .customer-financial-analysis__cutoff { align-items: stretch; flex-direction: column; } .customer-financial-analysis__cutoff input { width: 100%; } .customer-selection-table thead { display: none; } .customer-selection-table, .customer-selection-table tbody, .customer-selection-table tr, .customer-selection-table td { display: block; width: 100%; } .customer-selection-table tr { padding: .7rem; border-bottom: 1px solid var(--border); } .customer-selection-table td { display: grid; grid-template-columns: 7.2rem minmax(0, 1fr); gap: .5rem; padding: .35rem; text-align: left !important; white-space: normal !important; } .customer-selection-table td::before { content: attr(data-label); color: var(--muted); font-size: .72rem; font-weight: 750; text-transform: uppercase; } .customer-selection-table td:last-child .button { justify-self: start; } .customer-selection-dialog__footer { justify-content: flex-start; } }
+.customer-statistics { width: 100%; max-width: 90rem; margin: 0 auto; }
+.customer-statistics__header { align-items: flex-end; }
+.customer-statistics__header label { display: grid; min-width: 8rem; gap: .35rem; color: var(--navy-900); font-size: .78rem; font-weight: 750; }
+.customer-statistics__header select { min-height: 2.45rem; padding: .4rem .7rem; border: 1px solid var(--border); border-radius: .35rem; background: var(--surface); color: var(--navy-900); font: inherit; }
+.customer-statistics h2 { margin: .25rem 0 1rem; color: var(--navy-900); }
+.customer-statistics__overview { display: grid; grid-template-columns: 1.25fr repeat(3, minmax(0, 1fr)); gap: .85rem; margin-bottom: 1rem; }
+.customer-statistics__indicator { display: grid; align-content: start; gap: .55rem; min-height: 9.5rem; padding: 1rem; border: 1px solid var(--border); border-radius: .6rem; background: var(--surface); box-shadow: 0 6px 20px rgb(20 48 83 / 6%); }
+.customer-statistics__indicator--primary { border-color: transparent; background: linear-gradient(145deg, var(--navy-900), #17466f); color: #fff; }
+.customer-statistics__indicator > span, .customer-statistics__growth-cards span, .customer-statistics__history-grid span { color: var(--muted); font-size: .7rem; font-weight: 800; letter-spacing: .07em; }
+.customer-statistics__indicator--primary > span { color: #c8daeb; }
+.customer-statistics__indicator strong { color: var(--navy-900); font-size: clamp(1.8rem, 4vw, 2.8rem); font-variant-numeric: tabular-nums; }
+.customer-statistics__indicator--primary strong { color: #fff; }
+.customer-statistics__indicator small, .customer-statistics__history-grid small { align-self: end; color: var(--muted); font-size: .72rem; line-height: 1.45; }
+.customer-statistics__panel, .customer-statistics__growth { margin-bottom: 1rem; padding: 1.2rem; }
+.customer-statistics__panel > p { margin: -.5rem 0 1rem; color: var(--muted); font-size: .82rem; line-height: 1.5; }
+.customer-statistics__situation-layout { display: grid; grid-template-columns: minmax(13rem, .7fr) minmax(18rem, 1.3fr); align-items: center; gap: clamp(1.4rem, 5vw, 4rem); }
+.customer-statistics__donut { display: grid; place-items: center; width: min(100%, 18rem); aspect-ratio: 1; margin: 0 auto; border-radius: 50%; }
+.customer-statistics__donut::before { content: ''; grid-area: 1 / 1; width: 62%; aspect-ratio: 1; border-radius: 50%; background: var(--surface); box-shadow: inset 0 0 0 1px var(--border); }
+.customer-statistics__donut > div { z-index: 1; grid-area: 1 / 1; display: grid; text-align: center; }
+.customer-statistics__donut strong { color: var(--navy-900); font-size: clamp(1.7rem, 4vw, 2.6rem); font-variant-numeric: tabular-nums; }
+.customer-statistics__donut span { color: var(--muted); font-size: .75rem; }
+.customer-statistics__legend { display: grid; gap: .7rem; }
+.customer-statistics__legend > div { display: grid; grid-template-columns: .75rem minmax(0, 1fr) auto 3.5rem; align-items: center; gap: .65rem; padding: .7rem .8rem; border-bottom: 1px solid var(--border); }
+.customer-statistics__legend i { width: .7rem; height: .7rem; border-radius: 50%; }
+.customer-statistics__legend span { color: var(--navy-900); }
+.customer-statistics__legend strong { color: var(--navy-900); font-size: 1.05rem; font-variant-numeric: tabular-nums; }
+.customer-statistics__legend small { color: var(--muted); text-align: right; }
+.customer-statistics__growth { border: 1px solid var(--border); border-radius: .6rem; background: #f7f9fc; }
+.customer-statistics__growth-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .85rem; margin-bottom: 1rem; }
+.customer-statistics__growth-cards article { display: grid; gap: .45rem; padding: 1rem; border: 1px solid var(--border); border-radius: .5rem; background: var(--surface); }
+.customer-statistics__growth-cards strong { color: var(--navy-900); font-size: clamp(1.5rem, 3vw, 2rem); font-variant-numeric: tabular-nums; }
+.customer-statistics__monthly-chart { margin: 0; padding: 1rem; border: 1px solid var(--border); border-radius: .5rem; background: var(--surface); }
+.customer-statistics__monthly-chart figcaption { display: grid; gap: .25rem; margin-bottom: .85rem; color: var(--navy-900); }
+.customer-statistics__bars { display: grid; grid-template-columns: repeat(12, minmax(2rem, 1fr)); align-items: end; min-height: 14rem; gap: .45rem; overflow: hidden; }
+.customer-statistics__bar-column { display: grid; grid-template-rows: 1.2rem 10rem 1.2rem; gap: .3rem; min-width: 0; text-align: center; }
+.customer-statistics__bar-column > span, .customer-statistics__bar-column small { color: var(--muted); font-size: .68rem; font-variant-numeric: tabular-nums; }
+.customer-statistics__bar-column > div { display: flex; align-items: flex-end; overflow: hidden; border-radius: .25rem .25rem 0 0; background: #edf2f7; }
+.customer-statistics__bar-column i { display: block; width: 100%; min-height: 0; border-radius: .25rem .25rem 0 0; background: linear-gradient(180deg, #3d91db, var(--blue-500)); }
+.customer-statistics__history-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: .7rem; }
+.customer-statistics__history-grid article { display: grid; align-content: start; gap: .45rem; min-height: 8rem; padding: .85rem; border-top: 2px solid #8fb8db; background: #f8fafc; }
+.customer-statistics__history-grid strong { color: var(--navy-900); font-size: 1.45rem; font-variant-numeric: tabular-nums; }
+@media (max-width: 980px) { .customer-statistics__overview { grid-template-columns: repeat(2, minmax(0, 1fr)); } .customer-statistics__history-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 700px) { .customer-statistics__header { align-items: stretch; flex-direction: column; } .customer-statistics__header label { width: 100%; } .customer-statistics__overview, .customer-statistics__growth-cards, .customer-statistics__situation-layout { grid-template-columns: 1fr; } .customer-statistics__history-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .customer-statistics__bars { grid-template-columns: repeat(6, minmax(2rem, 1fr)); min-height: auto; row-gap: 1rem; } }
+@media (max-width: 420px) { .customer-statistics__overview, .customer-statistics__history-grid { grid-template-columns: 1fr; } .customer-statistics__panel, .customer-statistics__growth { padding: .9rem; } .customer-statistics__legend > div { grid-template-columns: .75rem minmax(0, 1fr) auto; } .customer-statistics__legend small { grid-column: 2 / -1; text-align: left; } }
+.profitability__hero, .profitability__origins button { width: 100%; border: 1px solid transparent; border-radius: .65rem; text-align: left; cursor: pointer; }
+.profitability__hero { display: grid; gap: .4rem; padding: clamp(1.35rem, 4vw, 2.4rem); background: linear-gradient(135deg, var(--navy-900), #173f67); color: #fff; box-shadow: 0 12px 28px rgb(20 48 83 / 18%); }
+.profitability__hero:hover, .profitability__hero:focus-visible { border-color: #80b8eb; transform: translateY(-1px); }
+.profitability__hero span, .profitability__origins span, .profitability__indicators span { font-size: .72rem; font-weight: 800; letter-spacing: .08em; }
+.profitability__hero strong { font-size: clamp(2rem, 6vw, 3.5rem); font-variant-numeric: tabular-nums; }
+.profitability__hero small { color: #cbdbea; }
+.profitability__origins { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; margin: 1rem 0; }
+.profitability__origins button { display: grid; gap: .45rem; min-height: 9rem; padding: 1.2rem; border-color: var(--border); background: var(--surface); color: var(--navy-900); box-shadow: 0 5px 18px rgb(20 48 83 / 5%); }
+.profitability__origins button:hover, .profitability__origins button:focus-visible { border-color: var(--blue-500); }
+.profitability__origins strong { font-size: clamp(1.45rem, 4vw, 2.1rem); font-variant-numeric: tabular-nums; }
+.profitability__origins small { align-self: end; color: var(--muted); line-height: 1.45; }
+.profitability__indicators { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; overflow: hidden; margin-bottom: 1rem; border: 1px solid var(--border); border-radius: .55rem; background: var(--border); }
+.profitability__indicators > div { display: grid; gap: .45rem; padding: 1.2rem; background: #f7f9fc; }
+.profitability__indicators span { color: var(--muted); }
+.profitability__indicators strong { color: var(--navy-900); font-size: clamp(1.3rem, 3vw, 1.8rem); font-variant-numeric: tabular-nums; }
+.profitability__capital { padding: 1.2rem; }
+.profitability__capital h2 { margin: .2rem 0 1rem; color: var(--navy-900); }
+.profitability__capital dl { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .75rem; margin: 0; }
+.profitability__capital dl > div { padding: .8rem; border-top: 1px solid var(--border); }
+.profitability__capital dt { color: var(--muted); font-size: .76rem; }
+.profitability__capital dd { margin: .3rem 0 0; color: var(--navy-900); font-weight: 750; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.profitability__chart-section { margin-top: 1rem; padding: 1.2rem; }
+.profitability__chart { margin: 0; }
+.profitability__chart figcaption { display: grid; gap: .2rem; margin-bottom: .8rem; color: var(--navy-900); }
+.profitability__chart figcaption span { color: var(--muted); font-size: .82rem; }
+.profitability__chart svg { display: block; width: 100%; height: 12rem; overflow: visible; border-bottom: 1px solid var(--border); background: linear-gradient(to bottom, #f5f9fd, transparent); }
+.profitability__chart polyline { fill: none; stroke: var(--blue-500); stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+.profitability__chart-range { display: flex; justify-content: space-between; margin-top: .4rem; color: var(--muted); font-size: .75rem; }
+.profitability__chart details, .profitability__explanation { margin-top: 1rem; color: var(--navy-900); }
+.profitability__chart summary, .profitability__explanation summary { cursor: pointer; font-weight: 700; }
+.profitability__daily-values { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: .35rem; margin-top: .7rem; color: var(--muted); font-size: .78rem; }
+.profitability__daily-values strong { color: var(--navy-900); }
+.profitability__explanation { padding: 1rem 1.2rem; border-left: 3px solid var(--blue-500); background: #f7f9fc; }
+.profitability__explanation p { margin: .7rem 0 0; color: var(--muted); line-height: 1.55; }
+.dialog.profitability__dialog { width: min(96vw, 82rem); max-height: calc(100dvh - 2rem); overflow-y: auto; }
+.profitability__dialog > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
+.profitability__dialog h2 { margin: .25rem 0 0; color: var(--navy-900); }
+.profitability__dialog header p { margin: .25rem 0 0; color: var(--muted); }
+.profitability__detail-filter { display: flex; margin-bottom: 1rem; padding: .8rem 1rem; border: 1px solid var(--border); border-radius: .45rem; background: #f7f9fc; }
+.profitability__detail-filter label { display: grid; gap: .3rem; color: var(--navy-900); font-size: .78rem; font-weight: 700; }
+.profitability__detail-filter select { min-width: min(18rem, 75vw); min-height: 2.4rem; padding: .35rem .5rem; border: 1px solid var(--border); border-radius: .35rem; background: var(--surface); color: var(--navy-900); }
+.profitability__detail-summary { display: flex; align-items: stretch; flex-wrap: wrap; gap: 0; margin-bottom: 1rem; overflow: hidden; border: 1px solid var(--border); border-radius: .45rem; background: #f7f9fc; }
+.profitability__detail-summary > div { display: grid; align-content: center; gap: .25rem; min-width: 9rem; padding: .75rem 1rem; border-left: 1px solid var(--border); }
+.profitability__detail-summary > div:first-child { border-left: 0; }
+.profitability__detail-summary span { color: var(--muted); font-size: .67rem; font-weight: 800; letter-spacing: .06em; }
+.profitability__detail-summary strong { color: var(--navy-900); font-size: .95rem; font-variant-numeric: tabular-nums; }
+.profitability__detail-summary .profitability__detail-summary-primary { flex: 1 1 17rem; background: #edf4fc; }
+.profitability__detail-summary-primary strong { font-size: 1.3rem; }
+.profitability__dialog .loan-list__table { min-width: 64rem; }
+.profitability__dialog .loan-list__table-wrap:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+.profitability__dialog .status-badge { background: #edf2f7; color: var(--navy-800); }
+
+@media (max-width: 760px) {
+  .profitability__origins, .profitability__capital dl { grid-template-columns: 1fr; }
+  .profitability__indicators { grid-template-columns: 1fr; }
+  .profitability__dialog > header { flex-direction: column; }
+  .profitability__dialog > header .button { align-self: flex-end; }
+}
+@media (max-width: 420px) {
+  .profitability__period { align-items: stretch; flex-direction: column; }
+  .profitability__period input { width: 100%; }
+  .profitability__hero { padding: 1.2rem; }
+  .dialog.profitability__dialog { width: calc(100vw - 1rem); padding: 1rem; }
+  .profitability__detail-summary { display: grid; grid-template-columns: 1fr 1fr; }
+  .profitability__detail-summary > div { min-width: 0; border-top: 1px solid var(--border); border-left: 0; }
+  .profitability__detail-summary .profitability__detail-summary-primary { grid-column: 1 / -1; border-top: 0; }
+}

@@ -1,11 +1,14 @@
 import type { CustomerStatistics } from '../../domain/entities/customer-statistics';
 
 export interface CustomerStatisticsPort {
-  load(year: number): Promise<CustomerStatistics>;
+  load(year: number, limit: number): Promise<CustomerStatistics>;
 }
+
+export const DEFAULT_CUSTOMER_RANKING_LIMIT = 10;
 
 export type CustomerStatisticsState = Readonly<{
   year: number;
+  limit: number;
   statistics: CustomerStatistics | null;
   loading: boolean;
   error: string;
@@ -24,7 +27,7 @@ export class CustomerStatisticsController {
   private generation = 0;
 
   constructor(private readonly api: CustomerStatisticsPort, initialYear: number, private readonly currentYear: number) {
-    this.state = { year: initialYear, statistics: null, loading: true, error: '' };
+    this.state = { year: initialYear, limit: DEFAULT_CUSTOMER_RANKING_LIMIT, statistics: null, loading: true, error: '' };
   }
 
   getSnapshot = (): CustomerStatisticsState => this.state;
@@ -40,9 +43,10 @@ export class CustomerStatisticsController {
   async load(): Promise<void> {
     const token = ++this.generation;
     const year = this.state.year;
+    const limit = this.state.limit;
     this.publish({ ...this.state, statistics: null, loading: true, error: '' });
     try {
-      const statistics = await this.api.load(year);
+      const statistics = await this.api.load(year, limit);
       if (token === this.generation) this.publish({ ...this.state, statistics, loading: false, error: '' });
     } catch (cause) {
       if (token === this.generation) this.publish({ ...this.state, statistics: null, loading: false, error: errorMessage(cause) });
@@ -52,7 +56,14 @@ export class CustomerStatisticsController {
   setYear(year: number): void {
     if (!Number.isSafeInteger(year) || year < 1000 || year > this.currentYear || year === this.state.year) return;
     ++this.generation;
-    this.publish({ year, statistics: null, loading: true, error: '' });
+    this.publish({ ...this.state, year, statistics: null, loading: true, error: '' });
+    void this.load();
+  }
+
+  setLimit(limit: number): void {
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit === this.state.limit) return;
+    ++this.generation;
+    this.publish({ ...this.state, limit, statistics: null, loading: true, error: '' });
     void this.load();
   }
 

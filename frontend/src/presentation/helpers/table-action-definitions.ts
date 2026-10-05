@@ -24,7 +24,7 @@ export function customerActionDefinitions(isActive: boolean): Definition[] {
     { key: 'view', icon: 'view', label: 'Ver información', title: 'Ver información', ariaLabel: 'Ver información', permission: 'customers.view' },
     { key: 'edit', icon: 'edit', label: 'Editar cliente', title: 'Editar cliente', ariaLabel: 'Editar cliente', permission: 'customers.update' },
     { key: 'analysis', icon: 'dashboard', label: 'Análisis financiero', title: 'Análisis financiero', ariaLabel: 'Consultar análisis financiero', permission: 'customers.analysis.view' },
-    { key: 'payment', icon: 'payment', label: 'Disponible próximamente', title: 'Disponible próximamente', ariaLabel: 'Disponible próximamente', disabled: true },
+    { key: 'loan', icon: 'hand-coins', label: 'Nuevo préstamo', title: isActive ? 'Nuevo préstamo' : 'El cliente debe estar activo', ariaLabel: 'Otorgar nuevo préstamo', disabled: !isActive, permission: 'loans.create' },
     { key: 'download', icon: 'download', label: 'Descargar expediente', title: 'Descargar expediente', ariaLabel: 'Descargar expediente', allPermissions: ['customers.export', 'customers.files.view'] },
     { key: 'status', icon: isActive ? 'lock' : 'unlock', label: isActive ? 'Inactivar cliente' : 'Activar cliente', title: isActive ? 'Inactivar cliente' : 'Activar cliente', ariaLabel: isActive ? 'Inactivar cliente' : 'Activar cliente', permission: 'customers.status.change' },
   ];

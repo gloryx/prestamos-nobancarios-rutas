@@ -18,10 +18,11 @@ const facts = (overrides: Partial<CustomerStatisticsFacts> = {}): CustomerStatis
   newCustomersCurrentMonth: 0,
   currentSituation: { activeDebt: 0, uncollectibleOnly: 0, noCurrentDebt: 0 },
   monthlyNewCustomers: months(),
+  topCustomers: { capitalDisbursed: [], loansPlaced: [], realizedGain: [], recoveredPrincipal: [], currentBalance: [] },
   ...overrides,
 });
 const calculate = (input: CustomerStatisticsFacts, year = 2026, currentYear = 2026) =>
-  calculateCustomerStatistics(year, currentYear, input);
+  calculateCustomerStatistics(year, currentYear, 10, input);
 
 describe('customer population statistics', () => {
   it('returns a stable zero snapshot with twelve empty months', () => {
@@ -35,6 +36,7 @@ describe('customer population statistics', () => {
     });
     expect(result.monthlyNewCustomers).toHaveLength(12);
     expect(result.monthlyNewCustomers.every((item) => item.newCustomers === 0)).toBe(true);
+    expect(result.topCustomers).toEqual({ capitalDisbursed: [], loansPlaced: [], realizedGain: [], recoveredPrincipal: [], currentBalance: [] });
   });
 
   it.each([
@@ -122,6 +124,24 @@ describe('customer population statistics', () => {
       currentSituation: { activeDebt: 0, uncollectibleOnly: 0, noCurrentDebt: 1 } })))
       .toThrow(CustomerStatisticsIntegrityError);
   });
+
+  it('returns validated descending rankings without recalculating their financial values', () => {
+    const topCustomers = {
+      capitalDisbursed: [{ customerId: 'c1', fullName: 'Ana', value: '1000.00' }, { customerId: 'c2', fullName: 'Bea', value: '500.00' }],
+      loansPlaced: [{ customerId: 'c1', fullName: 'Ana', value: 4 }],
+      realizedGain: [{ customerId: 'c2', fullName: 'Bea', value: '125.50' }],
+      recoveredPrincipal: [{ customerId: 'c1', fullName: 'Ana', value: '600.00' }],
+      currentBalance: [{ customerId: 'c2', fullName: 'Bea', value: '300.00' }],
+    };
+    expect(calculate(facts({ topCustomers })).topCustomers).toEqual(topCustomers);
+  });
+
+  it('rejects malformed, duplicate, unsorted or oversized rankings', () => {
+    expect(() => calculate(facts({ topCustomers: { ...facts().topCustomers, capitalDisbursed: [
+      { customerId: 'c1', fullName: 'Ana', value: '10.00' }, { customerId: 'c2', fullName: 'Bea', value: '20.00' },
+    ] } }))).toThrow(CustomerStatisticsIntegrityError);
+    expect(() => calculateCustomerStatistics(2026, 2026, 5, facts({ topCustomers: { ...facts().topCustomers, loansPlaced: Array.from({ length: 6 }, (_, index) => ({ customerId: `c${index}`, fullName: 'Cliente', value: 6 - index })) } }))).toThrow(CustomerStatisticsIntegrityError);
+  });
 });
 
 describe('CustomerStatisticsUseCase', () => {
@@ -129,7 +149,7 @@ describe('CustomerStatisticsUseCase', () => {
     const reader: CustomerStatisticsReader = { read: jest.fn(async () => facts()) };
     const useCase = new CustomerStatisticsUseCase(reader, () => ({ year: 2026, month: 10 }));
     await expect(useCase.execute()).resolves.toMatchObject({ year: 2026 });
-    expect(reader.read).toHaveBeenCalledWith(2026, 10);
+    expect(reader.read).toHaveBeenCalledWith(2026, 10, 10);
   });
 
   it('accepts a strict historical year and rejects malformed years', async () => {
@@ -139,6 +159,16 @@ describe('CustomerStatisticsUseCase', () => {
       summary: { newCustomersCurrentMonth: null } });
     for (const year of ['26', '02026', '2026.0', 'abcd', '0000'])
       await expect(useCase.execute(year)).rejects.toBeInstanceOf(CustomerValidationError);
+    expect(reader.read).toHaveBeenCalledTimes(1);
+  });
+
+  it('forwards a positive ranking limit and rejects invalid values', async () => {
+    const reader: CustomerStatisticsReader = { read: jest.fn(async () => facts()) };
+    const useCase = new CustomerStatisticsUseCase(reader, () => ({ year: 2026, month: 10 }));
+    await useCase.execute('2026', 25);
+    expect(reader.read).toHaveBeenCalledWith(2026, 10, 25);
+    for (const limit of [0, -1, 1.5, Number.NaN])
+      await expect(useCase.execute('2026', limit)).rejects.toBeInstanceOf(CustomerValidationError);
     expect(reader.read).toHaveBeenCalledTimes(1);
   });
 });

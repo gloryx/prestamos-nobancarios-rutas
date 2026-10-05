@@ -20,6 +20,8 @@ import { RefinancingChainsPage } from '../pages/RefinancingChainsPage';
 import { ProfitabilityPage } from '../pages/ProfitabilityPage';
 import { FinancialAnalysisPage } from '../pages/FinancialAnalysisPage';
 import { CustomerStatisticsPage } from '../pages/CustomerStatisticsPage';
+import { CollectorStatisticsPage } from '../pages/CollectorStatisticsPage';
+import { PortfolioTrackingPage } from '../pages/PortfolioTrackingPage';
 import { AppRouter } from './AppRouter';
 
 const elements = (node: ReactNode): ReactElement[] => Children.toArray(node).flatMap((child) =>
@@ -48,8 +50,8 @@ describe('payment browser routes', () => {
 
     const paymentRoutes = elements((layoutRoute?.props as { children?: ReactNode }).children)
       .filter((element) => element.type === Route &&
-        ['/payments', '/payments/new'].includes((element.props as { path?: string }).path ?? ''));
-    expect(paymentRoutes).toHaveLength(2);
+        ['/payments', '/payments/new', '/payments/portfolio-tracking'].includes((element.props as { path?: string }).path ?? ''));
+    expect(paymentRoutes).toHaveLength(3);
 
     const legacyRoute = paymentRoutes.find((route) => (route.props as { path?: string }).path === '/payments');
     const legacyElement = (legacyRoute?.props as { element?: ReactNode }).element;
@@ -61,6 +63,19 @@ describe('payment browser routes', () => {
       type: RouteGuard,
       props: { permission: 'payments.view', children: { type: PaymentsPage } },
     });
+
+    const trackingRoute = paymentRoutes.find((route) => (route.props as { path?: string }).path === '/payments/portfolio-tracking');
+    expect((trackingRoute?.props as { element?: ReactNode }).element).toMatchObject({
+      type: RouteGuard,
+      props: { permission: 'payments.view', children: { type: PortfolioTrackingPage } },
+    });
+  });
+
+  it('protects portfolio tracking with centralized payments.view and preserves the superadmin bypass', () => {
+    const path = '/payments/portfolio-tracking';
+    expect(renderRoute(path, { ...identity, permissions: ['payments.view'] })).toContain('Seguimiento de cartera');
+    expect(renderRoute(path, identity)).toContain('No tienes permiso');
+    expect(renderRoute(path, { ...identity, role: { ...identity.role, isSuperAdmin: true } })).toContain('Seguimiento de cartera');
   });
 });
 
@@ -213,6 +228,33 @@ describe('customer statistics publication', () => {
   it('does not publish the customer statistics screen inside the main dashboard', () => {
     const dashboard = renderRoute('/dashboard', { ...identity, permissions: ['customers.summary.view'] });
     expect(dashboard).not.toContain('class="page-section customer-statistics"');
+  });
+});
+
+describe('customer portfolio export action', () => {
+  it('shows the PDF export only through centralized customers.export access', () => {
+    const allowed = renderRoute('/customers', { ...identity, permissions: ['customers.view', 'customers.export'] });
+    expect(allowed).toContain('Exportar clientes PDF');
+    expect(renderRoute('/customers', { ...identity, permissions: ['customers.view'] })).not.toContain('Exportar clientes PDF');
+    expect(renderRoute('/customers', { ...identity, role: { ...identity.role, isSuperAdmin: true } })).toContain('Exportar clientes PDF');
+  });
+});
+
+describe('collector statistics publication', () => {
+  const path = '/collectors/statistics';
+  it('guards the independent collector statistics route with payments.view', () => {
+    const routes = elements(AppRouter()).filter((element) => element.type === Route);
+    const entry = routes.find((route) => (route.props as { path?: string }).path === path);
+    expect((entry?.props as { element?: ReactNode }).element).toMatchObject({ type: RouteGuard,
+      props: { permission: 'payments.view', children: { type: CollectorStatisticsPage } } });
+    expect(renderRoute(path, { ...identity, permissions: ['payments.view'] })).toContain('Estadísticas de cobradores');
+    expect(renderRoute(path, { ...identity, permissions: ['collectors.view'] })).toContain('No tienes permiso');
+    expect(renderRoute(path, { ...identity, role: { ...identity.role, isSuperAdmin: true } })).toContain('Estadísticas de cobradores');
+  });
+
+  it('does not publish collector statistics inside the main dashboard', () => {
+    const dashboard = renderRoute('/dashboard', { ...identity, permissions: ['payments.view'] });
+    expect(dashboard).not.toContain('class="page-section collector-statistics"');
   });
 });
 

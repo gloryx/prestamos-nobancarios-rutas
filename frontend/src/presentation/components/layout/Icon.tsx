@@ -1,4 +1,5 @@
 import type { ReactElement } from "react";
+import { HandCoins } from "lucide-react";
 import type { NavigationIcon } from "../../navigation/navigationConfig";
 
 export type TableActionIcon =
@@ -15,10 +16,14 @@ export type TableActionIcon =
   | "delete"
   | "sort"
   | "sort-asc"
-  | "sort-desc";
+  | "sort-desc"
+  | "hand-coins";
 type IconProps = { name: TableActionIcon };
 
 export function Icon({ name }: IconProps): ReactElement {
+  if (name === "hand-coins")
+    return <HandCoins aria-hidden="true" size={20} strokeWidth={1.8} />;
+
   const common = {
     width: 20,
     height: 20,

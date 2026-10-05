@@ -91,6 +91,7 @@ describe('security guards and permission metadata', () => {
     expect(Reflect.getMetadata(PERMISSIONS_KEY, CustomerController.prototype.list)).toEqual(['customers.view']);
     expect(Reflect.getMetadata(PERMISSIONS_KEY, CustomerController.prototype.summary)).toEqual(['customers.summary.view']);
     expect(Reflect.getMetadata(PERMISSIONS_KEY, CustomerController.prototype.getStatistics)).toEqual(['customers.summary.view']);
+    expect(Reflect.getMetadata(PERMISSIONS_KEY, CustomerController.prototype.exportAll)).toEqual(['customers.export']);
     expect(Reflect.getMetadata(PERMISSIONS_KEY, CustomerController.prototype.getFinancialAnalysis)).toEqual(['customers.analysis.view']);
     expect(Reflect.getMetadata(PERMISSIONS_KEY, CustomerController.prototype.file)).toEqual(['customers.files.view']);
     expect(Reflect.getMetadata(PERMISSIONS_KEY, CustomerController.prototype.create)).toEqual(['customers.create']);

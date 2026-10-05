@@ -12,7 +12,8 @@ const evolution = (year: number, month: number | null) => {
   return Array.from({ length }, (_, index) => ({
     period: month === null ? `${year}-${String(index + 1).padStart(2, '0')}` :
       `${year}-${String(month).padStart(2, '0')}-${String(index + 1).padStart(2, '0')}`,
-    validPaymentsCount: 0, totalCollectedAmount: '0.00', annulledPaymentsCount: 0, annulledAmount: '0.00',
+    validPaymentsCount: 0, uniqueCustomersServed: 0, totalCollectedAmount: '0.00',
+    annulledPaymentsCount: 0, annulledAmount: '0.00',
   }));
 };
 const facts = (year = 2026, month: number | null = null): CollectorStatisticsFacts => ({
@@ -20,7 +21,7 @@ const facts = (year = 2026, month: number | null = null): CollectorStatisticsFac
     totalCollectors: 0, activeCollectors: 0, inactiveCollectors: 0,
     collectorsWithValidPayments: 0, collectorsWithoutValidPayments: 0,
     activeCollectorsWithoutValidPayments: 0, linkedCollectors: 0, unlinkedCollectors: 0,
-    validPaymentsCount: 0, totalCollectedAmount: '0.00', principalAppliedAmount: '0.00',
+    validPaymentsCount: 0, uniqueCustomersServed: 0, totalCollectedAmount: '0.00', principalAppliedAmount: '0.00',
     interestAppliedAmount: '0.00', averageValidPaymentAmount: '0.00',
     annulledPaymentsCount: 0, annulledAmount: '0.00',
   },
@@ -49,27 +50,31 @@ describe('collector statistics', () => {
     const input = facts();
     input.summary = { ...input.summary, totalCollectors: 2, activeCollectors: 1, inactiveCollectors: 1,
       collectorsWithValidPayments: 1, collectorsWithoutValidPayments: 1, activeCollectorsWithoutValidPayments: 0,
-      linkedCollectors: 1, unlinkedCollectors: 1, validPaymentsCount: 2, totalCollectedAmount: '150.00',
+      linkedCollectors: 1, unlinkedCollectors: 1, validPaymentsCount: 2, uniqueCustomersServed: 1,
+      totalCollectedAmount: '150.00',
       principalAppliedAmount: '100.00', interestAppliedAmount: '50.00', averageValidPaymentAmount: '75.00',
       annulledPaymentsCount: 1, annulledAmount: '40.00' };
     input.byCollector = [
       { collectorId: 'c1', identification: '1', fullName: 'ANA PEREZ', isActive: true, userLinked: true,
-        validPaymentsCount: 2, totalCollectedAmount: '150.00', principalAppliedAmount: '100.00',
+        validPaymentsCount: 2, uniqueCustomersServed: 1, totalCollectedAmount: '150.00', principalAppliedAmount: '100.00',
         interestAppliedAmount: '50.00', averageValidPaymentAmount: '75.00', annulledPaymentsCount: 1,
         annulledAmount: '40.00', currentActiveRoutes: 2, currentAssignedActiveCustomers: 3 },
       { collectorId: 'c2', identification: '2', fullName: 'LUIS ROJAS', isActive: false, userLinked: false,
-        validPaymentsCount: 0, totalCollectedAmount: '0.00', principalAppliedAmount: '0.00',
+        validPaymentsCount: 0, uniqueCustomersServed: 0, totalCollectedAmount: '0.00', principalAppliedAmount: '0.00',
         interestAppliedAmount: '0.00', averageValidPaymentAmount: '0.00', annulledPaymentsCount: 0,
         annulledAmount: '0.00', currentActiveRoutes: 0, currentAssignedActiveCustomers: 0 },
     ];
     input.paymentMethods = [{ paymentMethodId: 'm1', name: 'Efectivo', currentlyActive: true,
       validPaymentsCount: 2, totalCollectedAmount: '150.00' }];
-    input.evolution[0] = { ...input.evolution[0], validPaymentsCount: 2,
+    input.evolution[0] = { ...input.evolution[0], validPaymentsCount: 2, uniqueCustomersServed: 1,
       totalCollectedAmount: '150.00', annulledPaymentsCount: 1, annulledAmount: '40.00' };
     input.unattributedPayments = { validPaymentsCount: 1, totalCollectedAmount: '20.00',
       annulledPaymentsCount: 1, annulledAmount: '10.00' };
     const result = buildCollectorStatistics(period(), input);
     expect(result.summary.averageAssignedCustomersPerActiveCollector).toBe(3);
+    expect(result.summary.uniqueCustomersServed).toBe(1);
+    expect(result.byCollector[0].uniqueCustomersServed).toBe(1);
+    expect(result.evolution[0].uniqueCustomersServed).toBe(1);
     expect(result.summary.totalCollectedAmount).toBe('150.00');
     expect(result.unattributedPayments.totalCollectedAmount).toBe('20.00');
   });
@@ -81,6 +86,9 @@ describe('collector statistics', () => {
     const mismatch = facts();
     mismatch.summary.totalCollectedAmount = '1.00';
     expect(() => buildCollectorStatistics(period(), mismatch)).toThrow('Capital e interés');
+    const impossibleCustomers = facts();
+    impossibleCustomers.summary.uniqueCustomersServed = 1;
+    expect(() => buildCollectorStatistics(period(), impossibleCustomers)).toThrow('clientes atendidos');
   });
 });
 

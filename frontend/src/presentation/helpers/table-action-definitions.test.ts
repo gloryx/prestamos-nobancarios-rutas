@@ -4,13 +4,15 @@ import { collectorActionDefinitions, customerActionDefinitions, customerFinancia
 const allowAll = () => true;
 
 describe('table action definitions', () => {
-  it('preserves the Customer order, disabled future payment, and status convention', () => {
+  it('preserves the Customer order, loan action, and status convention', () => {
     const active = visibleTableActions(customerActionDefinitions(true), allowAll);
-    expect(active.map((action) => action.key)).toEqual(['view', 'edit', 'analysis', 'payment', 'download', 'status']);
+    expect(active.map((action) => action.key)).toEqual(['view', 'edit', 'analysis', 'loan', 'download', 'status']);
     expect(active[2]).toMatchObject({ icon: 'dashboard', label: 'Análisis financiero', ariaLabel: 'Consultar análisis financiero' });
-    expect(active[3]).toMatchObject({ icon: 'payment', label: 'Disponible próximamente', disabled: true, title: 'Disponible próximamente', ariaLabel: 'Disponible próximamente' });
+    expect(active[3]).toMatchObject({ icon: 'hand-coins', label: 'Nuevo préstamo', disabled: false, title: 'Nuevo préstamo', ariaLabel: 'Otorgar nuevo préstamo' });
     expect(active[5]).toMatchObject({ icon: 'lock', label: 'Inactivar cliente', title: 'Inactivar cliente', ariaLabel: 'Inactivar cliente' });
-    expect(visibleTableActions(customerActionDefinitions(false), allowAll)[5]).toMatchObject({ icon: 'unlock', label: 'Activar cliente' });
+    const inactive = visibleTableActions(customerActionDefinitions(false), allowAll);
+    expect(inactive[3]).toMatchObject({ key: 'loan', disabled: true, title: 'El cliente debe estar activo' });
+    expect(inactive[5]).toMatchObject({ icon: 'unlock', label: 'Activar cliente' });
     expect(customerFinancialAnalysisPath('customer/id')).toBe('/customers/customer%2Fid/financial-analysis');
     expect(customerFinancialAnalysisPath('customer/id', '2026-10-03'))
       .toBe('/customers/customer%2Fid/financial-analysis?asOf=2026-10-03');
@@ -52,11 +54,18 @@ describe('table action definitions', () => {
   it('requires both Customer permissions for the expediente action', () => {
     const can = () => false;
     const canAll = (permissions: string[]) => permissions.includes('customers.export') && permissions.includes('customers.files.view');
-    expect(visibleTableActions(customerActionDefinitions(true), can, canAll).map((action) => action.key)).toEqual(['payment', 'download']);
+    expect(visibleTableActions(customerActionDefinitions(true), can, canAll).map((action) => action.key)).toEqual(['download']);
   });
 
   it('publishes customer analysis only with its dedicated permission', () => {
     const onlyAnalysis = (permission: string) => permission === 'customers.analysis.view';
-    expect(visibleTableActions(customerActionDefinitions(true), onlyAnalysis).map((action) => action.key)).toEqual(['analysis', 'payment']);
+    expect(visibleTableActions(customerActionDefinitions(true), onlyAnalysis).map((action) => action.key)).toEqual(['analysis']);
+  });
+
+  it('publishes the customer loan action only with loans.create', () => {
+    const onlyCreateLoan = (permission: string) => permission === 'loans.create';
+    expect(visibleTableActions(customerActionDefinitions(true), onlyCreateLoan)).toEqual([
+      expect.objectContaining({ key: 'loan', icon: 'hand-coins', disabled: false }),
+    ]);
   });
 });

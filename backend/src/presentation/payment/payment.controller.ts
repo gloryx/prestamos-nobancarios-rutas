@@ -4,13 +4,14 @@ import type { CurrentIdentity } from '../../domain/security/security.types';
 import { CustomizePaymentPlanUseCase, PaymentConflictError, PaymentContextUseCase, PaymentNotFoundError, PaymentValidationError, RegisterPaymentUseCase } from '../../application/payment/payment.use-case';
 import { DailyCollectionsUseCase, DailyCollectionsValidationError } from '../../application/payment/daily-collections.use-case';
 import { PaymentHistoryUseCase, PaymentHistoryValidationError } from '../../application/payment/payment-history.use-case';
-import { AnnulPaymentDto, CreatePaymentDto, CustomizePaymentPlanDto, DailyCollectionDateDto, DailyCollectionsQueryDto, PaymentHistoryQueryDto } from './payment.dto';
+import { AnnulPaymentDto, CreatePaymentDto, CustomizePaymentPlanDto, DailyCollectionDateDto, DailyCollectionsQueryDto, PaymentHistoryQueryDto, PortfolioTrackingQueryDto } from './payment.dto';
+import { PortfolioTrackingUseCase } from '../../application/payment/portfolio-tracking.use-case';
 
 @Controller('payments')
 export class PaymentController {
   constructor(private readonly register: RegisterPaymentUseCase, private readonly context: PaymentContextUseCase,
     private readonly customize: CustomizePaymentPlanUseCase, @Optional() private readonly daily?: DailyCollectionsUseCase,
-    @Optional() private readonly history?: PaymentHistoryUseCase) {}
+    @Optional() private readonly history?: PaymentHistoryUseCase, @Optional() private readonly portfolio?: PortfolioTrackingUseCase) {}
   @Get('history') @RequirePermissions('payments.view') async paymentHistory(@Query() query: PaymentHistoryQueryDto) {
     try { return await this.history!.list({ ...query, page: query.page === undefined ? undefined : Number(query.page),
       pageSize: query.pageSize === undefined ? undefined : Number(query.pageSize) }); }
@@ -33,6 +34,10 @@ export class PaymentController {
     page: query.page === undefined ? undefined : Number(query.page),
     pageSize: query.pageSize === undefined ? undefined : Number(query.pageSize) }; }
   private mapDaily(error: unknown): never { if (error instanceof DailyCollectionsValidationError) throw new BadRequestException(error.message); throw error; }
+  @Get('portfolio-tracking') @RequirePermissions('payments.view') portfolioTracking(@Query() query: PortfolioTrackingQueryDto) {
+    return this.portfolio!.execute({ search: query.search ?? '', status: query.status ?? 'ALL',
+      collectionStatus: query.collectionStatus ?? 'ALL', position: Number(query.position ?? 1) }).catch((error) => this.map(error));
+  }
   @Get('loans') @RequirePermissions('payments.view') loans(@Query() query: { search?: string; page?: string; pageSize?: string }) {
     const page = Number(query.page ?? 1); const pageSize = Number(query.pageSize ?? 20);
     return this.context.listLoans({ search: query.search, page: Number.isSafeInteger(page) && page > 0 ? page : 1, pageSize: Number.isSafeInteger(pageSize) && pageSize > 0 ? Math.min(100, pageSize) : 20 }).catch((error) => this.map(error));

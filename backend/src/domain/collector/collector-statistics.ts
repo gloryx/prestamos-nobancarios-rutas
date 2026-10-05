@@ -16,6 +16,7 @@ export type CollectorStatisticsSummaryFacts = {
   linkedCollectors: number;
   unlinkedCollectors: number;
   validPaymentsCount: number;
+  uniqueCustomersServed: number;
   totalCollectedAmount: string;
   principalAppliedAmount: string;
   interestAppliedAmount: string;
@@ -31,6 +32,7 @@ export type CollectorStatisticsRow = {
   isActive: boolean;
   userLinked: boolean;
   validPaymentsCount: number;
+  uniqueCustomersServed: number;
   totalCollectedAmount: string;
   principalAppliedAmount: string;
   interestAppliedAmount: string;
@@ -52,6 +54,7 @@ export type CollectorPaymentMethodStatistics = {
 export type CollectorStatisticsEvolution = {
   period: string;
   validPaymentsCount: number;
+  uniqueCustomersServed: number;
   totalCollectedAmount: string;
   annulledPaymentsCount: number;
   annulledAmount: string;
@@ -97,7 +100,7 @@ export function buildCollectorStatistics(period: CollectorStatisticsPeriod, fact
     else money(value, `summary.${field}`);
   }
   for (const row of facts.byCollector) {
-    for (const field of ['validPaymentsCount', 'annulledPaymentsCount', 'currentActiveRoutes',
+    for (const field of ['validPaymentsCount', 'uniqueCustomersServed', 'annulledPaymentsCount', 'currentActiveRoutes',
       'currentAssignedActiveCustomers'] as const) count(row[field], `byCollector.${field}`);
     for (const field of ['totalCollectedAmount', 'principalAppliedAmount', 'interestAppliedAmount',
       'averageValidPaymentAmount', 'annulledAmount'] as const) money(row[field], `byCollector.${field}`);
@@ -108,6 +111,7 @@ export function buildCollectorStatistics(period: CollectorStatisticsPeriod, fact
   }
   for (const item of facts.evolution) {
     count(item.validPaymentsCount, 'evolution.validPaymentsCount');
+    count(item.uniqueCustomersServed, 'evolution.uniqueCustomersServed');
     count(item.annulledPaymentsCount, 'evolution.annulledPaymentsCount');
     money(item.totalCollectedAmount, 'evolution.totalCollectedAmount');
     money(item.annulledAmount, 'evolution.annulledAmount');
@@ -123,6 +127,10 @@ export function buildCollectorStatistics(period: CollectorStatisticsPeriod, fact
     summary.linkedCollectors + summary.unlinkedCollectors !== summary.totalCollectors ||
     summary.collectorsWithValidPayments + summary.collectorsWithoutValidPayments !== summary.totalCollectors)
     throw new CollectorStatisticsIntegrityError('La clasificación de cobradores no coincide con el total.');
+  if (summary.uniqueCustomersServed > summary.validPaymentsCount ||
+    facts.byCollector.some((collector) => collector.uniqueCustomersServed > collector.validPaymentsCount) ||
+    facts.evolution.some((item) => item.uniqueCustomersServed > item.validPaymentsCount))
+    throw new CollectorStatisticsIntegrityError('Los clientes atendidos superan los pagos válidos.');
 
   if (cents(summary.principalAppliedAmount) + cents(summary.interestAppliedAmount) !==
     cents(summary.totalCollectedAmount) || facts.byCollector.some((collector) =>

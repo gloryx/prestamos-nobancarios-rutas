@@ -55,6 +55,18 @@ describe('CustomerApi list sorting', () => {
   });
 });
 
+describe('CustomerApi export', () => {
+  it('requests the dedicated complete portfolio endpoint without cache', async () => {
+    const response = { ok: true, status: 200, json: async () => [] } as Response;
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(response);
+
+    await new CustomerApi().exportAll();
+
+    expect(fetchMock).toHaveBeenCalledWith('http://localhost:3000/customers/export', expect.objectContaining({ credentials: 'include', cache: 'no-store' }));
+    fetchMock.mockRestore();
+  });
+});
+
 describe('CustomerApi financial analysis', () => {
   it('requests the customer-scoped endpoint with the explicit cutoff and no cache', async () => {
     const response = { ok: true, status: 200, json: async () => ({ cliente: { id: 'customer/1' } }) } as Response;

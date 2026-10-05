@@ -6,7 +6,7 @@ describe('CollectorStatisticsTypeOrmReader', () => {
       totalCollectors: 1, activeCollectors: 1, inactiveCollectors: 0,
       collectorsWithValidPayments: 1, collectorsWithoutValidPayments: 0,
       activeCollectorsWithoutValidPayments: 0, linkedCollectors: 1, unlinkedCollectors: 0,
-      validPaymentsCount: 2, totalCollectedAmount: '100.00', principalAppliedAmount: '70.00',
+      validPaymentsCount: 2, uniqueCustomersServed: 1, totalCollectedAmount: '100.00', principalAppliedAmount: '70.00',
       interestAppliedAmount: '30.00', averageValidPaymentAmount: '50.00',
       annulledPaymentsCount: 1, annulledAmount: '25.00',
       byCollector: [{ collectorId: 'c1' }], paymentMethods: [{ paymentMethodId: 'm1' }],
@@ -23,12 +23,14 @@ describe('CollectorStatisticsTypeOrmReader', () => {
       ['2026-01-01', '2026-12-31', 'MONTH']);
     expect(source.transaction).not.toHaveBeenCalled();
     expect(result.summary).toMatchObject({ totalCollectedAmount: '100.00',
-      principalAppliedAmount: '70.00', interestAppliedAmount: '30.00' });
+      principalAppliedAmount: '70.00', interestAppliedAmount: '30.00', uniqueCustomersServed: 1 });
     expect(result.byCollector).toEqual(row.byCollector);
   });
 
   it('encodes attribution, validity, annulment audit, current assignments and complete zero buckets in SQL', () => {
     expect(COLLECTOR_STATISTICS_SQL).toContain('JOIN collectors collector ON collector.id = payment.collector_id');
+    expect(COLLECTOR_STATISTICS_SQL).toContain('JOIN loans loan ON loan.id = payment.loan_id');
+    expect(COLLECTOR_STATISTICS_SQL).toContain('COUNT(DISTINCT payment.customer_id)');
     expect(COLLECTOR_STATISTICS_SQL).toContain(`payment.status = 'VALID'`);
     expect(COLLECTOR_STATISTICS_SQL).toContain(`payment.status = 'ANNULLED'`);
     expect(COLLECTOR_STATISTICS_SQL).toContain('SUM(payment.amount)');

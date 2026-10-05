@@ -12,12 +12,13 @@ export type TableAction = {
   buttonRef?: RefObject<HTMLButtonElement | null>;
   onClick?: () => void;
   to?: string;
+  state?: unknown;
 };
 
 export function TableActions({ actions, ariaLabel }: { actions: TableAction[]; ariaLabel?: string }): ReactElement {
   return <div className="icon-actions" aria-label={ariaLabel}>
-    {actions.map((action) => action.to
-      ? <Link key={action.key} to={action.to} title={action.title} aria-label={action.ariaLabel}><Icon name={action.icon} /></Link>
+    {actions.map((action) => action.to && !action.disabled
+      ? <Link key={action.key} to={action.to} state={action.state} title={action.title} aria-label={action.ariaLabel}><Icon name={action.icon} /></Link>
       : <button key={action.key} ref={action.buttonRef} type="button" title={action.title} aria-label={action.ariaLabel} disabled={action.disabled} onClick={action.onClick}><Icon name={action.icon} /></button>)}
   </div>;
 }

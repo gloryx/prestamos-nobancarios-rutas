@@ -1,7 +1,7 @@
 import { QueryFailedError, Repository } from 'typeorm';
 import { CustomerIdentificationAlreadyExistsError } from '../../../../domain/customer/customer.errors';
 import type { Customer, CustomerAddress } from '../../../../domain/customer/customer.types';
-import type { CreateCustomerAddressInput, CreateCustomerInput, CustomerRepository, CustomerAggregate, CustomerListQuery, CustomerSummary, CustomerSummaryQuery, CustomerUpdate } from '../../../../application/customer/customer.repository';
+import type { CreateCustomerAddressInput, CreateCustomerInput, CustomerRepository, CustomerAggregate, CustomerExportItem, CustomerListQuery, CustomerSummary, CustomerSummaryQuery, CustomerUpdate } from '../../../../application/customer/customer.repository';
 import { CustomerAddressOrmEntity, CustomerOrmEntity } from '../entities';
 export const CUSTOMER_SORT_COLUMNS = { identification: 'LOWER(customer.identification)', name: `LOWER(CONCAT_WS(' ', customer.first_name, customer.middle_name, customer.first_last_name, customer.second_last_name))`, phone: 'customer.primary_phone', address: 'LOWER(address.exact_address)', status: 'customer.is_active' } as const;
 export const customerSortColumn = (sortBy: keyof typeof CUSTOMER_SORT_COLUMNS | undefined): string | undefined => sortBy ? CUSTOMER_SORT_COLUMNS[sortBy] : undefined;
@@ -31,6 +31,16 @@ export class CustomerTypeOrmRepository implements CustomerRepository {
     else qb.orderBy('customer.created_at', 'DESC').addOrderBy('customer.id', 'DESC');
     const [rows, total] = await Promise.all([qb.skip((query.page - 1) * query.pageSize).take(query.pageSize).getRawMany(), qb.getCount()]);
     return { items: rows.map((row) => ({ id: row.id, identification: row.identification, fullName: row.fullName, primaryPhone: row.primaryPhone, address: row.address, isActive: row.isActive === true || row.isActive === 'true' })), total };
+  }
+  async exportAll(): Promise<CustomerExportItem[]> {
+    const rows = await this.customers.createQueryBuilder('customer')
+      .leftJoin('customer.address', 'address').leftJoin('address.district', 'district')
+      .leftJoin('district.canton', 'canton').leftJoin('canton.province', 'province')
+      .select(['customer.identification AS identification', `CONCAT_WS(' ', customer.first_name, customer.middle_name, customer.first_last_name, customer.second_last_name) AS "fullName"`,
+        `customer.primary_phone AS "primaryPhone"`, 'province.name AS province', 'canton.name AS canton', 'district.name AS district', `customer.is_active AS "isActive"`])
+      .orderBy(CUSTOMER_SORT_COLUMNS.name, 'ASC').addOrderBy('customer.id', 'ASC').getRawMany();
+    return rows.map((row) => ({ identification: row.identification, fullName: row.fullName, primaryPhone: row.primaryPhone,
+      province: row.province ?? '', canton: row.canton ?? '', district: row.district ?? '', isActive: row.isActive === true || row.isActive === 'true' }));
   }
   async summary(query: CustomerSummaryQuery = { status: 'ALL' }): Promise<CustomerSummary> {
     const row = await this.scopedQuery(query).select([

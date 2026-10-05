@@ -66,6 +66,7 @@ const replacementKey = (identification: string, folder: string, fileOrExtension:
 export class CustomerManagementUseCase {
   constructor(private readonly repository: CustomerRepository, private readonly storage: FileStorage, private readonly districtExists: (code: number) => Promise<boolean>) {}
   async list(query: CustomerListQuery) { const result = await this.repository.list(query); return { ...result, page: query.page, pageSize: query.pageSize, totalPages: Math.ceil(result.total / query.pageSize) }; }
+  async exportAll() { return this.repository.exportAll(); }
   async summary(query: CustomerSummaryQuery = { status: 'ALL' }) { return this.repository.summary(query); }
   async detail(id: string) { const result = await this.repository.findAggregateById(id); if (!result) throw new CustomerNotFoundError(); return detailOutput(result); }
   async status(id: string, isActive: boolean) { try { return await this.repository.updateStatus(id, isActive); } catch { throw new CustomerNotFoundError(); } }

@@ -3,10 +3,19 @@ import { createCustomerStatistics } from '../../app/customer-statistics';
 import { CustomerStatisticsController, type CustomerStatisticsState } from '../../application/use-cases/customer-statistics-controller';
 import type { CustomerStatistics } from '../../domain/entities/customer-statistics';
 import { costaRicaDateOnly } from '../../shared/utils/date';
+import { formatCRCAggregate } from '../../shared/utils/money';
 
 const months = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
 const integer = new Intl.NumberFormat('es-CR', { maximumFractionDigits: 0 });
 const decimal = new Intl.NumberFormat('es-CR', { maximumFractionDigits: 2 });
+const topCriteria = [
+  { key: 'capitalDisbursed', label: 'Mayor capital prestado', monetary: true },
+  { key: 'loansPlaced', label: 'Más préstamos', monetary: false },
+  { key: 'realizedGain', label: 'Mayor ganancia', monetary: true },
+  { key: 'recoveredPrincipal', label: 'Mayor capital recuperado', monetary: true },
+  { key: 'currentBalance', label: 'Mayor saldo actual', monetary: true },
+] as const;
+export type CustomerTopCriterion = (typeof topCriteria)[number]['key'];
 
 export function CustomerStatisticsPage({ controller: supplied, currentYear: suppliedCurrentYear }: {
   controller?: CustomerStatisticsController;
@@ -69,8 +78,28 @@ function MonthlyCustomersChart({ series }: { series: CustomerStatistics['monthly
   </figure>;
 }
 
-function HistoryMetric({ label, value, help }: { label: string; value: number; help?: string }): ReactElement {
-  return <article><span>{label}</span><strong>{decimal.format(value)}</strong>{help && <small>{help}</small>}</article>;
+export function TopCustomersRanking({ rankings, criterion, limit, onSelect = () => undefined }: {
+  rankings: CustomerStatistics['topCustomers']; criterion: CustomerTopCriterion; limit: number;
+  onSelect?: (criterion: CustomerTopCriterion) => void;
+}): ReactElement {
+  const selected = topCriteria.find((item) => item.key === criterion) ?? topCriteria[0];
+  const ranking = rankings[selected.key];
+  const maximum = Math.max(0, ...ranking.map((item) => Number(item.value)));
+  return <>
+    <div className="customer-statistics__top-tabs" role="tablist" aria-label="Criterio del top de clientes">
+      {topCriteria.map((item) => <button key={item.key} type="button" role="tab"
+        aria-selected={item.key === selected.key} onClick={() => onSelect(item.key)}>{item.label}</button>)}
+    </div>
+    <strong className="customer-statistics__top-heading" aria-live="polite">TOP {limit} · {selected.label}</strong>
+    {ranking.length === 0 ? <p className="customer-statistics__top-empty">No hay información disponible para este indicador.</p>
+      : <ol className="customer-statistics__top-list" aria-label={`Top ${limit}: ${selected.label}`}>
+        {ranking.map((item, index) => { const numericValue = Number(item.value); return <li key={item.customerId}>
+          <strong className="customer-statistics__top-position">{index + 1}</strong>
+          <div><span>{item.fullName}</span><i><b style={{ width: `${maximum > 0 ? numericValue * 100 / maximum : 0}%` }} /></i></div>
+          <strong className="customer-statistics__top-value">{selected.monetary ? formatCRCAggregate(String(item.value)) : integer.format(numericValue)}</strong>
+        </li>; })}
+      </ol>}
+  </>;
 }
 
 export function CustomerStatisticsView({ state, controller, years }: {
@@ -79,6 +108,14 @@ export function CustomerStatisticsView({ state, controller, years }: {
   years: number[];
 }): ReactElement {
   const report = state.statistics;
+  const [topCriterion, setTopCriterion] = useState<CustomerTopCriterion>('capitalDisbursed');
+  const [topLimitInput, setTopLimitInput] = useState(String(state.limit));
+  useEffect(() => { setTopLimitInput(String(state.limit)); }, [state.limit]);
+  const commitTopLimit = (value: string) => {
+    const limit = Number(value);
+    if (/^[1-9]\d*$/.test(value) && Number.isSafeInteger(limit)) controller.setLimit(limit);
+    else setTopLimitInput(String(state.limit));
+  };
   return <section className="page-section customer-statistics" aria-labelledby="customer-statistics-title">
     <header className="loan-list__heading customer-statistics__header"><div><span className="eyebrow">CLIENTES · ESTADÍSTICAS</span>
       <h1 id="customer-statistics-title">Estadísticas de clientes</h1>
@@ -118,17 +155,16 @@ export function CustomerStatisticsView({ state, controller, years }: {
         </div>
         <MonthlyCustomersChart series={report.monthlyNewCustomers} />
       </section>
-      <section className="loan-list__surface customer-statistics__panel" aria-labelledby="customer-statistics-history">
-        <span className="eyebrow">HISTORIAL DE CLIENTES</span><h2 id="customer-statistics-history">Relación histórica</h2>
-        <p>Las categorías históricas pueden superponerse.</p>
-        <div className="customer-statistics__history-grid">
-          <HistoryMetric label="CON PRÉSTAMOS CANCELADOS" value={report.summary.customersWithCancelledLoans} />
-          <HistoryMetric label="HAN REFINANCIADO" value={report.summary.customersWithRefinancingHistory} />
-          <HistoryMetric label="CON PRÉSTAMOS ANULADOS" value={report.summary.customersWithAnnulledLoans} />
-          <HistoryMetric label="CON MÚLTIPLES PRÉSTAMOS" value={report.summary.customersWithMultipleLoans} />
-          <HistoryMetric label="PROMEDIO DE PRÉSTAMOS POR CLIENTE" value={report.summary.averageLoansPerCustomer}
-            help="Promedio de préstamos históricos válidos por cliente. Los préstamos anulados no forman parte del cálculo." />
-        </div>
+      <section className="loan-list__surface customer-statistics__panel customer-statistics__top" aria-labelledby="customer-statistics-top">
+        <span className="eyebrow">ANÁLISIS DE CLIENTES</span><h2 id="customer-statistics-top">Top de clientes</h2>
+        <p>Compara los clientes con mayor valor en el indicador seleccionado.</p>
+        <label className="customer-statistics__top-limit" htmlFor="customer-statistics-top-limit">Cantidad de clientes
+          <input id="customer-statistics-top-limit" type="number" min="1" step="1" inputMode="numeric"
+            value={topLimitInput} onChange={(event) => setTopLimitInput(event.target.value)}
+            onBlur={(event) => commitTopLimit(event.target.value)}
+            onKeyDown={(event) => { if (event.key === 'Enter') { commitTopLimit(event.currentTarget.value); event.currentTarget.blur(); } }} />
+        </label>
+        <TopCustomersRanking rankings={report.topCustomers} criterion={topCriterion} limit={state.limit} onSelect={setTopCriterion} />
       </section>
     </>}
   </section>;

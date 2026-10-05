@@ -1,16 +1,6 @@
 import { apiClient } from './api-client';
-export type PaymentLoan = { id: string; loanNumber: string; identification: string; customerName: string; financialBalance: string; isOverdue: boolean };
-export type PaymentLoanPage = { items: PaymentLoan[]; total: number; page: number; pageSize: number };
-export type ValidPayment = { id: string; amount: string; paymentDate: string; status: 'VALID' };
-export type PendingPaymentEntry = { id: string; dueDate: string; sequence: number; pendingAmount: string };
-export type PlanBaseline = Readonly<{ financialBalance: string; entries: ReadonlyArray<Readonly<Pick<PendingPaymentEntry, 'id' | 'dueDate' | 'pendingAmount'>>> }>;
-export type PaymentContext = {
-  summary: { loanId: string; loanNumber: string; identification: string; customerName: string; totalAmount: string; interestAmount: string };
-  balances: { financialBalance: string; outstandingPrincipal: string; outstandingInterest: string };
-  combinedPlan: PendingPaymentEntry[]; validPayments: ValidPayment[]; firstOperationalRow: PendingPaymentEntry | null;
-  lastValidPayment: ValidPayment | null; refinanceEligibility: boolean;
-  preferredMethod: { id: string | null; activeMethods: Array<{ id: string; name: string }>; collectors: Array<{ id: string; name: string }> };
-};
+import type { PaymentContext, PaymentLoanPage, PlanBaseline } from '../../domain/entities/payment';
+export type { PaymentContext, PaymentLoan, PaymentLoanPage, PendingPaymentEntry, PlanBaseline, ValidPayment } from '../../domain/entities/payment';
 export const paymentApi = {
   listLoans: (search = '', page = 1, pageSize = 20) => apiClient.request<PaymentLoanPage>(`/payments/loans?search=${encodeURIComponent(search)}&page=${page}&pageSize=${pageSize}`, { cache: 'no-store' }),
   context: (loanId: string) => apiClient.request<PaymentContext>(`/payments/loans/${loanId}`),

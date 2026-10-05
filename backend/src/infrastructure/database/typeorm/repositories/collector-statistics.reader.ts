@@ -12,17 +12,19 @@ import type {
 type StatisticsRow = Record<string, unknown>;
 
 export const COLLECTOR_STATISTICS_SQL = `WITH period_payments AS (
-  SELECT p.id, p.collector_id, p.method_id, p.amount, p.principal_applied,
+  SELECT p.id, p.loan_id, p.collector_id, p.method_id, p.amount, p.principal_applied,
     p.interest_applied, p.payment_date, p.status
   FROM payments p
   WHERE p.payment_date >= $1::date AND p.payment_date <= $2::date
 ), attributed_payments AS (
-  SELECT payment.*
+  SELECT payment.*, loan.customer_id
   FROM period_payments payment
   JOIN collectors collector ON collector.id = payment.collector_id
+  JOIN loans loan ON loan.id = payment.loan_id
 ), collector_activity AS (
   SELECT payment.collector_id,
     COUNT(*) FILTER (WHERE payment.status = 'VALID')::int AS "validPaymentsCount",
+    COUNT(DISTINCT payment.customer_id) FILTER (WHERE payment.status = 'VALID')::int AS "uniqueCustomersServed",
     COALESCE(SUM(payment.amount) FILTER (WHERE payment.status = 'VALID'), 0.00)::numeric(38,2) AS "totalCollectedAmount",
     COALESCE(SUM(payment.principal_applied) FILTER (WHERE payment.status = 'VALID'), 0.00)::numeric(38,2) AS "principalAppliedAmount",
     COALESCE(SUM(payment.interest_applied) FILTER (WHERE payment.status = 'VALID'), 0.00)::numeric(38,2) AS "interestAppliedAmount",
@@ -49,6 +51,7 @@ export const COLLECTOR_STATISTICS_SQL = `WITH period_payments AS (
     concat_ws(' ', collector.first_name, collector.first_last_name, collector.second_last_name) AS "fullName",
     collector.is_active AS "isActive", collector.user_id IS NOT NULL AS "userLinked",
     COALESCE(activity."validPaymentsCount", 0)::int AS "validPaymentsCount",
+    COALESCE(activity."uniqueCustomersServed", 0)::int AS "uniqueCustomersServed",
     COALESCE(activity."totalCollectedAmount", 0.00)::numeric(38,2) AS "totalCollectedAmount",
     COALESCE(activity."principalAppliedAmount", 0.00)::numeric(38,2) AS "principalAppliedAmount",
     COALESCE(activity."interestAppliedAmount", 0.00)::numeric(38,2) AS "interestAppliedAmount",
@@ -75,6 +78,7 @@ export const COLLECTOR_STATISTICS_SQL = `WITH period_payments AS (
   SELECT CASE WHEN $3::text = 'MONTH'
       THEN date_trunc('month', payment.payment_date)::date ELSE payment.payment_date END AS bucket,
     COUNT(*) FILTER (WHERE payment.status = 'VALID')::int AS "validPaymentsCount",
+    COUNT(DISTINCT payment.customer_id) FILTER (WHERE payment.status = 'VALID')::int AS "uniqueCustomersServed",
     COALESCE(SUM(payment.amount) FILTER (WHERE payment.status = 'VALID'), 0.00)::numeric(38,2) AS "totalCollectedAmount",
     COUNT(*) FILTER (WHERE payment.status = 'ANNULLED')::int AS "annulledPaymentsCount",
     COALESCE(SUM(payment.amount) FILTER (WHERE payment.status = 'ANNULLED'), 0.00)::numeric(38,2) AS "annulledAmount"
@@ -84,6 +88,7 @@ export const COLLECTOR_STATISTICS_SQL = `WITH period_payments AS (
   SELECT CASE WHEN $3::text = 'MONTH' THEN to_char(bucket.bucket, 'YYYY-MM')
       ELSE to_char(bucket.bucket, 'YYYY-MM-DD') END AS period,
     COALESCE(facts."validPaymentsCount", 0)::int AS "validPaymentsCount",
+    COALESCE(facts."uniqueCustomersServed", 0)::int AS "uniqueCustomersServed",
     COALESCE(facts."totalCollectedAmount", 0.00)::numeric(38,2) AS "totalCollectedAmount",
     COALESCE(facts."annulledPaymentsCount", 0)::int AS "annulledPaymentsCount",
     COALESCE(facts."annulledAmount", 0.00)::numeric(38,2) AS "annulledAmount",
@@ -106,6 +111,8 @@ SELECT COUNT(*)::int AS "totalCollectors",
   COUNT(*) FILTER (WHERE "userLinked")::int AS "linkedCollectors",
   COUNT(*) FILTER (WHERE NOT "userLinked")::int AS "unlinkedCollectors",
   COALESCE(SUM("validPaymentsCount"), 0)::int AS "validPaymentsCount",
+  (SELECT COUNT(DISTINCT customer_id)::int FROM attributed_payments
+    WHERE status = 'VALID') AS "uniqueCustomersServed",
   COALESCE(SUM("totalCollectedAmount"), 0.00)::numeric(38,2)::text AS "totalCollectedAmount",
   COALESCE(SUM("principalAppliedAmount"), 0.00)::numeric(38,2)::text AS "principalAppliedAmount",
   COALESCE(SUM("interestAppliedAmount"), 0.00)::numeric(38,2)::text AS "interestAppliedAmount",
@@ -117,6 +124,7 @@ SELECT COUNT(*)::int AS "totalCollectors",
   COALESCE(jsonb_agg(jsonb_build_object(
     'collectorId', "collectorId", 'identification', identification, 'fullName', "fullName",
     'isActive', "isActive", 'userLinked', "userLinked", 'validPaymentsCount', "validPaymentsCount",
+    'uniqueCustomersServed', "uniqueCustomersServed",
     'totalCollectedAmount', "totalCollectedAmount"::text,
     'principalAppliedAmount', "principalAppliedAmount"::text,
     'interestAppliedAmount', "interestAppliedAmount"::text,
@@ -132,6 +140,7 @@ SELECT COUNT(*)::int AS "totalCollectors",
   ) ORDER BY "totalCollectedAmount" DESC, lower(name), "paymentMethodId"), '[]'::jsonb) FROM method_rows) AS "paymentMethods",
   (SELECT COALESCE(jsonb_agg(jsonb_build_object(
     'period', period, 'validPaymentsCount', "validPaymentsCount",
+    'uniqueCustomersServed', "uniqueCustomersServed",
     'totalCollectedAmount', "totalCollectedAmount"::text,
     'annulledPaymentsCount', "annulledPaymentsCount", 'annulledAmount', "annulledAmount"::text
   ) ORDER BY bucket), '[]'::jsonb) FROM evolution_rows) AS evolution,
@@ -158,6 +167,7 @@ export class CollectorStatisticsTypeOrmReader implements CollectorStatisticsRead
         linkedCollectors: number(row, 'linkedCollectors'),
         unlinkedCollectors: number(row, 'unlinkedCollectors'),
         validPaymentsCount: number(row, 'validPaymentsCount'),
+        uniqueCustomersServed: number(row, 'uniqueCustomersServed'),
         totalCollectedAmount: text(row, 'totalCollectedAmount'),
         principalAppliedAmount: text(row, 'principalAppliedAmount'),
         interestAppliedAmount: text(row, 'interestAppliedAmount'),

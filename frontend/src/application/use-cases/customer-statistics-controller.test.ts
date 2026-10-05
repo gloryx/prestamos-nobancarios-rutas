@@ -11,6 +11,7 @@ const statistics = (year = 2026): CustomerStatistics => ({
     newCustomersInYear: 3, newCustomersCurrentMonth: year === 2026 ? 1 : null },
   currentSituation: { activeDebt: 3, uncollectibleOnly: 1, noCurrentDebt: 6 },
   monthlyNewCustomers: Array.from({ length: 12 }, (_, index) => ({ month: index + 1, newCustomers: index < 3 ? 1 : 0 })),
+  topCustomers: { capitalDisbursed: [], loansPlaced: [], realizedGain: [], recoveredPrincipal: [], currentBalance: [] },
 });
 const tick = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
@@ -22,9 +23,9 @@ function setup() {
 describe('CustomerStatisticsController', () => {
   it('loads the current year from the aggregate statistics endpoint', async () => {
     const { api, controller } = setup();
-    expect(controller.getSnapshot()).toMatchObject({ year: 2026, statistics: null, loading: true });
+    expect(controller.getSnapshot()).toMatchObject({ year: 2026, limit: 10, statistics: null, loading: true });
     await controller.load();
-    expect(api.load).toHaveBeenCalledExactlyOnceWith(2026);
+    expect(api.load).toHaveBeenCalledExactlyOnceWith(2026, 10);
     expect(controller.getSnapshot()).toMatchObject({ statistics: statistics(), loading: false, error: '' });
   });
 
@@ -34,7 +35,7 @@ describe('CustomerStatisticsController', () => {
     controller.setYear(2025);
     expect(controller.getSnapshot()).toMatchObject({ year: 2025, statistics: null, loading: true, error: '' });
     await tick();
-    expect(api.load).toHaveBeenLastCalledWith(2025);
+    expect(api.load).toHaveBeenLastCalledWith(2025, 10);
     expect(controller.getSnapshot().statistics).toEqual(statistics(2025));
   });
 
@@ -55,6 +56,19 @@ describe('CustomerStatisticsController', () => {
     for (const year of [2027, 999, 2025.5, Number.NaN]) controller.setYear(year);
     expect(api.load).not.toHaveBeenCalled();
     expect(controller.getSnapshot().year).toBe(2026);
+  });
+
+  it('reloads only when a different positive integer limit is applied and preserves it across years', async () => {
+    const { api, controller } = setup();
+    for (const limit of [0, -1, 1.5, Number.NaN, 10]) controller.setLimit(limit);
+    expect(api.load).not.toHaveBeenCalled();
+    controller.setLimit(25);
+    await tick();
+    expect(api.load).toHaveBeenCalledExactlyOnceWith(2026, 25);
+    controller.setYear(2025);
+    await tick();
+    expect(api.load).toHaveBeenLastCalledWith(2025, 25);
+    expect(controller.getSnapshot().limit).toBe(25);
   });
 
   it('maps permission and network errors and retries without stale values', async () => {

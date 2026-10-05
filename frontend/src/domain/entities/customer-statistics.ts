@@ -19,4 +19,11 @@ export type CustomerStatistics = {
     noCurrentDebt: number;
   };
   monthlyNewCustomers: Array<{ month: number; newCustomers: number }>;
+  topCustomers: {
+    capitalDisbursed: Array<{ customerId: string; fullName: string; value: string }>;
+    loansPlaced: Array<{ customerId: string; fullName: string; value: number }>;
+    realizedGain: Array<{ customerId: string; fullName: string; value: string }>;
+    recoveredPrincipal: Array<{ customerId: string; fullName: string; value: string }>;
+    currentBalance: Array<{ customerId: string; fullName: string; value: string }>;
+  };
 };

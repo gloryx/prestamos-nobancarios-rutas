@@ -11,6 +11,12 @@ import {
 describe('sidebar navigation configuration', () => {
   const allowAll = () => true;
 
+  it('publishes the requested top-level section order', () => {
+    expect(navigationEntries.map((entry) => entry.id)).toEqual([
+      'dashboard', 'loans', 'customers', 'collector', 'payments', 'finance', 'administration', 'settings',
+    ]);
+  });
+
   it('keeps territorial links under the nested División territorial group', () => {
     const settings = navigationEntries.find((entry) => entry.label === 'Configuración');
 
@@ -71,12 +77,14 @@ describe('sidebar navigation configuration', () => {
       type: 'group',
       icon: 'payment',
       items: [{ type: 'link', label: 'Registrar pago', path: '/payments/new', icon: 'payment', requiredPermission: 'payments.view' },
+        { type: 'link', label: 'Seguimiento de cartera', path: '/payments/portfolio-tracking', icon: 'payment', requiredPermission: 'payments.view' },
         { type: 'link', label: 'Cobros del día', path: '/payments/daily-collections', icon: 'payment', requiredPermission: 'payments.view' },
         { type: 'link', label: 'Historial de pagos', path: '/payments/history', icon: 'payment', requiredPermission: 'payments.view' }],
     });
     if (payments?.type !== 'group') return;
-    expect(payments.items).toHaveLength(3);
+    expect(payments.items).toHaveLength(4);
     expect(getActiveGroupIds(navigationEntries, '/payments/new')).toEqual(['payments']);
+    expect(getActiveGroupIds(navigationEntries, '/payments/portfolio-tracking')).toEqual(['payments']);
     expect(getActiveGroupIds(navigationEntries, '/payments/daily-collections')).toEqual(['payments']);
     expect(getActiveGroupIds(navigationEntries, '/payments/history')).toEqual(['payments']);
   });
@@ -89,6 +97,7 @@ describe('sidebar navigation configuration', () => {
     expect(allowed.find((entry) => entry.label === 'PAGOS')).toMatchObject({
       type: 'group',
       items: [{ label: 'Registrar pago', path: '/payments/new', requiredPermission: 'payments.view' },
+        { label: 'Seguimiento de cartera', path: '/payments/portfolio-tracking', requiredPermission: 'payments.view' },
         { label: 'Cobros del día', path: '/payments/daily-collections', requiredPermission: 'payments.view' },
         { label: 'Historial de pagos', path: '/payments/history', requiredPermission: 'payments.view' }],
     });
@@ -117,28 +126,41 @@ describe('sidebar navigation configuration', () => {
       path: '/customers/financial-analysis', requiredPermission: 'customers.analysis.view' }] });
     expect(filterNavigationEntries(navigationEntries, () => false).some((entry) => entry.label === 'Clientes')).toBe(false);
   });
-  it('publishes customer statistics between management and analysis with customers.summary.view', () => {
+  it('publishes the requested customer navigation options in order', () => {
     const customers = navigationEntries.find((entry) => entry.label === 'Clientes');
     expect(customers?.type).toBe('group');
     if (customers?.type !== 'group') return;
-    expect(customers.items.slice(0, 3)).toMatchObject([
-      { label: 'Gestión de clientes', path: '/customers', requiredPermission: 'customers.view' },
-      { label: 'Estadísticas', path: '/customers/statistics', requiredPermission: 'customers.summary.view' },
+    expect(customers.items).toMatchObject([
+      { label: 'Clientes', path: '/customers', requiredPermission: 'customers.view' },
+      { label: 'Nuevo cliente', path: '/customers/new', requiredPermission: 'customers.create' },
       { label: 'Análisis financiero', path: '/customers/financial-analysis', requiredPermission: 'customers.analysis.view' },
+      { label: 'Estadísticas de clientes', path: '/customers/statistics', requiredPermission: 'customers.summary.view' },
     ]);
-    const summaryOnly = filterNavigationEntries(navigationEntries, (permission) => permission === 'customers.summary.view');
-    expect(summaryOnly.find((entry) => entry.label === 'Clientes')).toMatchObject({ type: 'group', items: [
-      { label: 'Estadísticas', path: '/customers/statistics' },
+    expect(customers.items.some((entry) => entry.label === 'Clientes asignados')).toBe(false);
+  });
+  it('publishes collector statistics after management with payments.view', () => {
+    const collectors = navigationEntries.find((entry) => entry.label === 'Cobradores');
+    expect(collectors?.type).toBe('group');
+    if (collectors?.type !== 'group') return;
+    expect(collectors.items).toMatchObject([
+      { label: 'Cobradores', path: '/collectors', requiredPermission: 'collectors.view' },
+      { label: 'Estadísticas', path: '/collectors/statistics', requiredPermission: 'payments.view' },
+    ]);
+    expect(getActiveGroupIds(navigationEntries, '/collectors/statistics')).toEqual(['collector']);
+    const statisticsOnly = filterNavigationEntries(navigationEntries, (permission) => permission === 'payments.view');
+    expect(statisticsOnly.find((entry) => entry.label === 'Cobradores')).toMatchObject({ type: 'group', items: [
+      { label: 'Estadísticas', path: '/collectors/statistics' },
     ] });
   });
-  it('adds one loans.view management link without hiding or reordering existing loan entries', () => {
+  it('places new loan second without changing the remaining loan entries', () => {
     const loans = navigationEntries.find((entry) => entry.label === 'PRÉSTAMOS');
     expect(loans?.type).toBe('group');
     if (loans?.type !== 'group') return;
-    expect(loans.items.map((entry) => entry.label)).toEqual(['Préstamos', 'Préstamos cancelados', 'Préstamos incobrables', 'Préstamos anulados', 'Nuevo préstamo', 'Refinanciamientos']);
-    expect(loans.items[1]).toMatchObject({ path: '/loans/cancelled', requiredPermission: 'loans.view' });
-    expect(loans.items[2]).toMatchObject({ type: 'link', path: '/loans/uncollectible-management', icon: 'payment', requiredPermission: 'loans.view' });
-    expect(loans.items[3]).toMatchObject({ type: 'link', path: '/loans/annulments', icon: 'payment', requiredPermission: 'loans.view' });
+    expect(loans.items.map((entry) => entry.label)).toEqual(['Préstamos', 'Nuevo préstamo', 'Préstamos cancelados', 'Préstamos incobrables', 'Préstamos anulados', 'Refinanciamientos']);
+    expect(loans.items[1]).toMatchObject({ type: 'link', path: '/loans/new', icon: 'payment', requiredPermission: 'loans.create' });
+    expect(loans.items[2]).toMatchObject({ path: '/loans/cancelled', requiredPermission: 'loans.view' });
+    expect(loans.items[3]).toMatchObject({ type: 'link', path: '/loans/uncollectible-management', icon: 'payment', requiredPermission: 'loans.view' });
+    expect(loans.items[4]).toMatchObject({ type: 'link', path: '/loans/annulments', icon: 'payment', requiredPermission: 'loans.view' });
     expect(getActiveGroupIds(navigationEntries, '/loans/cancelled')).toEqual(['loans']);
     expect(getActiveGroupIds(navigationEntries, '/loans/uncollectible-management')).toEqual(['loans']);
     expect(getActiveGroupIds(navigationEntries, '/loans/annulments')).toEqual(['loans']);

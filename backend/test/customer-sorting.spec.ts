@@ -54,4 +54,24 @@ describe('customer list sorting', () => {
 
     expect(directions).toEqual(['DESC', 'ASC']);
   });
+
+  it('exports every customer with territorial fields in alphabetical order and without pagination', async () => {
+    const events: string[] = [];
+    const queryBuilder = {
+      leftJoin: () => queryBuilder,
+      select: () => queryBuilder,
+      orderBy: (column: string, direction: string) => { events.push(`order:${column}:${direction}`); return queryBuilder; },
+      addOrderBy: (column: string, direction: string) => { events.push(`order:${column}:${direction}`); return queryBuilder; },
+      getRawMany: async () => [{ identification: '101', fullName: 'ANA MORA', primaryPhone: '8888', province: 'SAN JOSÉ', canton: 'CENTRAL', district: 'CARMEN', isActive: false }],
+    };
+    const repository = new CustomerTypeOrmRepository({ createQueryBuilder: () => queryBuilder } as never, {} as never);
+
+    await expect(repository.exportAll()).resolves.toEqual([{ identification: '101', fullName: 'ANA MORA', primaryPhone: '8888', province: 'SAN JOSÉ', canton: 'CENTRAL', district: 'CARMEN', isActive: false }]);
+    expect(events).toEqual([
+      'order:LOWER(CONCAT_WS(\' \', customer.first_name, customer.middle_name, customer.first_last_name, customer.second_last_name)):ASC',
+      'order:customer.id:ASC',
+    ]);
+    expect(queryBuilder).not.toHaveProperty('skip');
+    expect(queryBuilder).not.toHaveProperty('take');
+  });
 });

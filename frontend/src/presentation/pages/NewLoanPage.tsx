@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import type { PaymentFrequency } from "../../domain/entities/payment-frequency";
 import type { PaymentMethod } from "../../domain/entities/payment-method";
 import type { LoanPlanEntry } from "../../domain/entities/loan";
@@ -13,14 +13,7 @@ import { MoneyInput } from "../components/MoneyInput";
 import { LoanPaymentPlanTable } from "../components/LoanPaymentPlanTable";
 import { useToast } from "../components/ToastContext";
 import { getLoanConfirmationSummary, getLoanCreatedToastMessage } from "../helpers/loan-confirmation";
-
-type CustomerListItem = {
-  id: string;
-  identification: string;
-  fullName: string;
-  primaryPhone: string;
-  address?: string;
-};
+import { initialLoanCustomer, type LoanCustomer } from "../helpers/new-loan-navigation";
 
 const cents = (value: string) => parseMoneyCents(value) ?? 0n;
 const money = (value: bigint) => moneyFromCents(value);
@@ -29,13 +22,13 @@ function CustomerPicker({
   selected,
   onSelect,
 }: {
-  selected?: CustomerListItem;
-  onSelect: (customer: CustomerListItem) => void;
+  selected?: LoanCustomer;
+  onSelect: (customer: LoanCustomer) => void;
 }): ReactElement {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
-  const [items, setItems] = useState<CustomerListItem[]>([]);
+  const [items, setItems] = useState<LoanCustomer[]>([]);
   const [total, setTotal] = useState(0);
   useEffect(() => {
     if (!open) return;
@@ -159,9 +152,10 @@ function CustomerPicker({
 
 export function NewLoanPage(): ReactElement {
   const navigate = useNavigate();
+  const location = useLocation();
   const { toast } = useToast();
   const [step, setStep] = useState(1);
-  const [customer, setCustomer] = useState<CustomerListItem>();
+  const [customer, setCustomer] = useState<LoanCustomer | undefined>(() => initialLoanCustomer(location.state));
   const [frequencies, setFrequencies] = useState<PaymentFrequency[]>([]);
   const [methods, setMethods] = useState<PaymentMethod[]>([]);
   const [paymentFrequencyId, setPaymentFrequencyId] = useState("");

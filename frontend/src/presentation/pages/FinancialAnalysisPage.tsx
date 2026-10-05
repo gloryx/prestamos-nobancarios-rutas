@@ -35,12 +35,12 @@ export function FinancialAnalysisPage({ controller: supplied }: { controller?: C
   const effectiveCustomerId = customerId ?? supplied?.getSnapshot().customerId;
   const asOf = searchParams.get('asOf') || supplied?.getSnapshot().asOf || costaRicaDateOnly();
   const canListCustomers = can('customers.view');
-  const [customerSelectionOpen, setCustomerSelectionOpen] = useState(!effectiveCustomerId);
+  const [customerSelectionOpen, setCustomerSelectionOpen] = useState(false);
   const previousCustomerId = useRef(effectiveCustomerId);
   useEffect(() => {
     if (previousCustomerId.current === effectiveCustomerId) return;
     previousCustomerId.current = effectiveCustomerId;
-    setCustomerSelectionOpen(!effectiveCustomerId);
+    setCustomerSelectionOpen(false);
   }, [effectiveCustomerId]);
   const selectCustomer = (customer: CustomerListItem) => {
     setCustomerSelectionOpen(false);

@@ -4,8 +4,10 @@ import { CustomerValidationError } from '../../domain/customer/customer.errors';
 export const CUSTOMER_STATISTICS_READER = Symbol('CUSTOMER_STATISTICS_READER');
 
 export interface CustomerStatisticsReader {
-  read(year: number, currentMonth: number): Promise<CustomerStatisticsFacts>;
+  read(year: number, currentMonth: number, limit: number): Promise<CustomerStatisticsFacts>;
 }
+
+export const DEFAULT_CUSTOMER_RANKING_LIMIT = 10;
 
 const costaRicaPeriod = (): { year: number; month: number } => {
   const parts = new Intl.DateTimeFormat('en-US', {
@@ -20,13 +22,15 @@ const costaRicaPeriod = (): { year: number; month: number } => {
 export class CustomerStatisticsUseCase {
   constructor(private readonly reader: CustomerStatisticsReader, private readonly currentPeriod = costaRicaPeriod) {}
 
-  async execute(requestedYear?: string) {
+  async execute(requestedYear?: string, requestedLimit = DEFAULT_CUSTOMER_RANKING_LIMIT) {
     const current = this.currentPeriod();
     const year = requestedYear === undefined ? current.year : Number(requestedYear);
     if (!Number.isSafeInteger(year) || year < 1000 || year > 9999 ||
       (requestedYear !== undefined && !/^[1-9]\d{3}$/.test(requestedYear)))
       throw new CustomerValidationError('El año debe tener formato YYYY.');
-    const facts = await this.reader.read(year, current.month);
-    return calculateCustomerStatistics(year, current.year, facts);
+    if (!Number.isSafeInteger(requestedLimit) || requestedLimit < 1)
+      throw new CustomerValidationError('La cantidad del ranking debe ser un entero positivo.');
+    const facts = await this.reader.read(year, current.month, requestedLimit);
+    return calculateCustomerStatistics(year, current.year, requestedLimit, facts);
   }
 }

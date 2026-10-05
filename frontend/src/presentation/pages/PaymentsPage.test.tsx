@@ -18,7 +18,7 @@ vi.mock('../hooks/auth-context', () => ({ useAuth: () => ({ can: () => true }) }
 
 const loan: PaymentLoan = { id: 'loan-1', loanNumber: '7', identification: '101', customerName: 'Ana', financialBalance: '60.00', isOverdue: true };
 const context: PaymentContext = {
-  summary: { loanId: 'loan-1', loanNumber: '7', identification: '101', customerName: 'Ana', totalAmount: '100.00', interestAmount: '30.00' },
+  summary: { loanId: 'loan-1', loanNumber: '7', status: 'ACTIVE', identification: '101', customerName: 'Ana', totalAmount: '100.00', principal: '70.00', interestAmount: '30.00' },
   balances: { financialBalance: '60.00', outstandingPrincipal: '30.00', outstandingInterest: '30.00' },
   combinedPlan: [{ id: 'entry', sequence: 2, dueDate: '2020-01-01', pendingAmount: '60.00' }],
   validPayments: [{ id: 'payment', paymentDate: '2020-01-02', amount: '40.00', status: 'VALID' }],
@@ -614,7 +614,7 @@ describe('payment selection presentation', () => {
     const paidOff = { ...context, combinedPlan: [], firstOperationalRow: null, balances: { ...context.balances, financialBalance: '0.00' } };
     expect(selected({ context: paidOff, canAnnul: true })).toContain('title="Anular último pago válido"');
     expect(selected({ context: paidOff, canAnnul: true })).not.toContain('Pagar cuota');
-    const cancelledAfterPayment = { ...paidOff, summary: { ...paidOff.summary, status: 'CANCELLED' } };
+    const cancelledAfterPayment: PaymentContext = { ...paidOff, summary: { ...paidOff.summary, status: 'CANCELLED' } };
     expect(selected({ context: cancelledAfterPayment, canAnnul: true })).toContain('title="Anular último pago válido"');
     const user: AuthIdentity = { id: 'u', username: 'u', fullName: 'User', role: { id: 'r', code: 'STAFF', name: 'Staff', isSuperAdmin: false }, permissions: [] };
     expect(selected({ canAnnul: canAccess(user, 'payments.annul') })).not.toContain('Anular último pago válido');

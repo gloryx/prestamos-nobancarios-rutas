@@ -19,6 +19,7 @@ import { UsersPage } from '../pages/UsersPage';
 import { LoginPage } from '../pages/LoginPage';
 import { CollectorCustomersPage } from '../pages/CollectorCustomersPage';
 import { CollectorsPage } from '../pages/CollectorsPage';
+import { CollectorStatisticsPage } from '../pages/CollectorStatisticsPage';
 import { AuthProvider } from '../hooks/useAuth';
 import { RouteGuard } from '../components/auth/RouteGuard';
 import { FinancialOpeningPage } from '../pages/FinancialOpeningPage';
@@ -37,6 +38,7 @@ import { PaymentsPage } from '../pages/PaymentsPage';
 import { DailyCollectionsPage } from '../pages/DailyCollectionsPage';
 import { PaymentHistoryPage } from '../pages/PaymentHistoryPage';
 import { ProfitabilityPage } from '../pages/ProfitabilityPage';
+import { PortfolioTrackingPage } from '../pages/PortfolioTrackingPage';
 
 export function AppRouter(): ReactElement {
   return <BrowserRouter><AuthProvider><Routes><Route path="/login" element={<LoginPage />} /><Route element={<RouteGuard><AppLayout /></RouteGuard>}>
@@ -52,6 +54,7 @@ export function AppRouter(): ReactElement {
     <Route path="/customers/:id" element={<RouteGuard permission="customers.view"><CustomerDetailPage /></RouteGuard>} />
      <Route path="/customers" element={<RouteGuard permission="customers.view"><CustomersPage /></RouteGuard>} />
      <Route path="/collector/customers" element={<RouteGuard permission="customers.assigned.view"><CollectorCustomersPage /></RouteGuard>} />
+     <Route path="/collectors/statistics" element={<RouteGuard permission="payments.view"><CollectorStatisticsPage /></RouteGuard>} />
      <Route path="/collectors" element={<RouteGuard permission="collectors.view"><CollectorsPage /></RouteGuard>} />
     <Route path="/settings/provinces" element={<RouteGuard permission="territorial.view"><ProvincesPage /></RouteGuard>} />
     <Route path="/settings/cantons" element={<RouteGuard permission="territorial.view"><CantonsPage /></RouteGuard>} />
@@ -75,6 +78,7 @@ export function AppRouter(): ReactElement {
          <Route path="/loan-refinancings/:id" element={<RouteGuard permission="loans.refinance.view"><RefinancingDetailPage /></RouteGuard>} />
        <Route path="/payments" element={<Navigate to="/payments/new" replace />} />
        <Route path="/payments/new" element={<RouteGuard permission="payments.view"><PaymentsPage /></RouteGuard>} />
+        <Route path="/payments/portfolio-tracking" element={<RouteGuard permission="payments.view"><PortfolioTrackingPage /></RouteGuard>} />
         <Route path="/payments/daily-collections" element={<RouteGuard permission="payments.view"><DailyCollectionsPage /></RouteGuard>} />
         <Route path="/payments/history" element={<RouteGuard permission="payments.view"><PaymentHistoryPage /></RouteGuard>} />
     <Route path="*" element={<Navigate to="/dashboard" replace />} />

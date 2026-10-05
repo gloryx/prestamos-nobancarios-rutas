@@ -12,4 +12,4 @@ export class UpdateCustomerDto {
 export class CustomerListQueryDto { @IsOptional() @IsString() search?: string; @IsOptional() @IsIn(['ACTIVE', 'INACTIVE', 'ALL']) status?: string; @IsOptional() @IsIn(['identification', 'name', 'phone', 'address', 'status']) sortBy?: 'identification' | 'name' | 'phone' | 'address' | 'status'; @IsOptional() @IsIn(['asc', 'desc']) sortOrder?: 'asc' | 'desc'; @IsOptional() @IsInt() @Transform(({ value }) => Number(value)) @Min(1) page?: number; @IsOptional() @IsIn([10, 20, 50]) @IsInt() @Transform(({ value }) => Number(value)) pageSize?: number; }
 export class CustomerStatusDto { @IsBoolean() isActive!: boolean; }
 export class CustomerFinancialAnalysisQueryDto { @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}$/) asOf?: string; }
-export class CustomerStatisticsQueryDto { @IsOptional() @Matches(/^[1-9]\d{3}$/) year?: string; }
+export class CustomerStatisticsQueryDto { @IsOptional() @Matches(/^[1-9]\d{3}$/) year?: string; @IsOptional() @IsInt() @Transform(({ value }) => Number(value)) @Min(1) limit?: number; }

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { CurrentIdentity } from '../../domain/security/security.types';
 import type { SiteUpdateScope } from '../../domain/customer-site/customer-site.types';
 import { CustomerSiteBadRequestError, CustomerSiteForbiddenError, CustomerSiteNotFoundError } from '../../domain/customer-site/customer-site.errors';
-import type { CustomerSiteRepository } from './customer-site.repository';
+import type { AssignmentBatchOperation, AssignmentWorkspaceQuery, CustomerSiteRepository } from './customer-site.repository';
 import type { FileStorage, UploadFile } from '../customer/file-storage';
 
 const scopes: readonly SiteUpdateScope[] = ['LOCATION', 'PHOTO', 'LOCATION_AND_PHOTO'];
@@ -33,6 +33,35 @@ export class CustomerSiteUseCases {
   async routeAssignmentOptions(actor: CurrentIdentity) {
     if (!can(actor, 'routes.assign.customers') && !can(actor, 'routes.assign.collectors')) throw new CustomerSiteForbiddenError('No tiene permiso para consultar opciones de asignación.');
     return this.repository.listRouteAssignmentOptions();
+  }
+
+  async assignmentWorkspace(query: AssignmentWorkspaceQuery, actor: CurrentIdentity) {
+    const views = ['collectors.view', 'routes.view', 'customers.view'];
+    const canAssign = can(actor, 'routes.assign.customers') || can(actor, 'routes.assign.collectors');
+    if (!views.every((permission) => can(actor, permission)) || !canAssign) throw new CustomerSiteForbiddenError('No tiene permiso para consultar el espacio de asignaciones.');
+    return this.repository.readAssignmentWorkspace(query);
+  }
+
+  async applyAssignmentBatch(snapshotToken: string, operations: AssignmentBatchOperation[], actor: CurrentIdentity) {
+    if (!operations.length) throw new CustomerSiteBadRequestError('Debe enviar al menos una operación.');
+    if (operations.length > 100) throw new CustomerSiteBadRequestError('El lote no puede superar 100 operaciones.');
+    const routeTypes = new Set(['ASSIGN_ROUTE_TO_COLLECTOR', 'MOVE_ROUTE_TO_COLLECTOR', 'UNASSIGN_ROUTE_FROM_COLLECTOR']);
+    const routeOperations = operations.filter((operation) => routeTypes.has(operation.type));
+    const customerOperations = operations.filter((operation) => !routeTypes.has(operation.type));
+    if (routeOperations.length && !can(actor, 'routes.assign.collectors')) throw new CustomerSiteForbiddenError('No tiene permiso para asignar rutas a cobradores.');
+    if (customerOperations.length && !can(actor, 'routes.assign.customers')) throw new CustomerSiteForbiddenError('No tiene permiso para asignar clientes a rutas.');
+    const resources = new Set<string>();
+    for (const operation of operations) {
+      const requiresCollector = operation.type === 'ASSIGN_ROUTE_TO_COLLECTOR' || operation.type === 'MOVE_ROUTE_TO_COLLECTOR';
+      const requiresCustomer = operation.type === 'ASSIGN_CUSTOMER_TO_ROUTE' || operation.type === 'MOVE_CUSTOMER_TO_ROUTE' || operation.type === 'UNASSIGN_CUSTOMER_FROM_ROUTE';
+      const requiresRoute = operation.type !== 'UNASSIGN_CUSTOMER_FROM_ROUTE';
+      const requiresExpected = operation.type.startsWith('MOVE_') || operation.type.startsWith('UNASSIGN_');
+      if ((requiresCollector && !('collectorUserId' in operation && operation.collectorUserId)) || (requiresCustomer && !('customerId' in operation && operation.customerId)) || (requiresRoute && !('routeId' in operation && operation.routeId)) || (requiresExpected && !('expectedAssignmentId' in operation && operation.expectedAssignmentId))) throw new CustomerSiteBadRequestError('La operación de asignación está incompleta.');
+      const key = 'customerId' in operation ? `customer:${operation.customerId}` : `route:${operation.routeId}`;
+      if (resources.has(key)) throw new CustomerSiteBadRequestError('El lote contiene operaciones contradictorias para el mismo recurso.');
+      resources.add(key);
+    }
+    return this.repository.applyAssignmentBatch({ snapshotToken, operations, actorId: actor.id });
   }
 
   async hasAccess(customerId: string, actor: CurrentIdentity): Promise<void> {

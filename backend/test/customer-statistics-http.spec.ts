@@ -62,21 +62,21 @@ describe('customer statistics HTTP boundary', () => {
     expect((await get('', 'super')).status).toBe(200);
   });
 
-  it('returns the aggregate contract and forwards year without list/search parameters', async () => {
-    const response = await get('?year=2026', 'summary');
+  it('returns the aggregate contract and forwards year and ranking limit without list/search parameters', async () => {
+    const response = await get('?year=2026&limit=25', 'summary');
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual(result);
-    expect(execute).toHaveBeenLastCalledWith('2026');
+    expect(execute).toHaveBeenLastCalledWith('2026', 25);
   });
 
   it('uses the current year when omitted', async () => {
     expect((await get('', 'summary')).status).toBe(200);
-    expect(execute).toHaveBeenLastCalledWith(undefined);
+    expect(execute).toHaveBeenLastCalledWith(undefined, undefined);
   });
 
   it('rejects malformed years, search and unexpected query fields before execution', async () => {
     execute.mockClear();
-    for (const query of ['?year=26', '?year=2026.0', '?year=0000', '?search=ana', '?unexpected=1'])
+    for (const query of ['?year=26', '?year=2026.0', '?year=0000', '?limit=0', '?limit=-1', '?limit=1.5', '?limit=abc', '?search=ana', '?unexpected=1'])
       expect((await get(query, 'summary')).status).toBe(400);
     expect(execute).not.toHaveBeenCalled();
   });

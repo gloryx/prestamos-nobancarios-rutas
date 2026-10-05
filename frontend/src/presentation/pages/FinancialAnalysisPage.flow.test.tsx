@@ -66,9 +66,13 @@ describe('financial analysis customer selection flow', () => {
     route.canListCustomers = true;
   });
 
-  it('opens the selector on the module base route and cancellation leaves the empty module in place', () => {
+  it('waits for the user to open the selector on the module base route', () => {
     let page = renderPage();
-    expect(components(page).some((element) => element.type === FinancialAnalysisLanding)).toBe(true);
+    const landing = components(page).find((element) => element.type === FinancialAnalysisLanding);
+    expect(landing).toBeDefined();
+    expect(components(page).some((element) => element.type === CustomerSelectionModal)).toBe(false);
+    (landing?.props as { onSelectCustomer: () => void }).onSelectCustomer();
+    page = renderPage();
     const modal = components(page).find((element) => element.type === CustomerSelectionModal);
     expect(modal).toBeDefined();
     (modal?.props as { onClose: () => void }).onClose();

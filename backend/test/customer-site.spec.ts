@@ -1,4 +1,4 @@
-import { CustomerSiteConflictError, CustomerSiteForbiddenError } from '../src/domain/customer-site/customer-site.errors';
+import { CustomerSiteBadRequestError, CustomerSiteConflictError, CustomerSiteForbiddenError } from '../src/domain/customer-site/customer-site.errors';
 import { CustomerSiteUseCases } from '../src/application/customer-site/customer-site.use-cases';
 import { CustomerController } from '../src/presentation/customer/customer.controller';
 import type { CurrentIdentity } from '../src/domain/security/security.types';
@@ -71,6 +71,37 @@ describe('customer site application security', () => {
     await expect(useCase.routeAssignmentOptions(actor(['routes.assign.customers']))).resolves.toEqual(options);
     await expect(useCase.routeAssignmentOptions(actor([]))).rejects.toBeInstanceOf(CustomerSiteForbiddenError);
     expect(repository.listRouteAssignmentOptions).toHaveBeenCalledTimes(1);
+  });
+
+  it('requires all view permissions and an assignment permission for the workspace', async () => {
+    const workspace = { snapshotToken: 'a'.repeat(64), collectors: [], unassignedRoutes: [], unassignedCustomers: { items: [], total: 0, page: 1, pageSize: 20 } };
+    const repository = { readAssignmentWorkspace: jest.fn().mockResolvedValue(workspace) };
+    const useCase = new CustomerSiteUseCases(repository as never, storage());
+    const allowed = actor(['collectors.view', 'routes.view', 'customers.view', 'routes.assign.customers']);
+    await expect(useCase.assignmentWorkspace({ page: 1, pageSize: 20 }, allowed)).resolves.toEqual(workspace);
+    await expect(useCase.assignmentWorkspace({ page: 1, pageSize: 20 }, actor(['routes.view', 'customers.view', 'routes.assign.customers']))).rejects.toBeInstanceOf(CustomerSiteForbiddenError);
+  });
+
+  it('requires the permission for every operation family in a mixed batch', async () => {
+    const repository = { applyAssignmentBatch: jest.fn().mockResolvedValue({ applied: 2, snapshotToken: 'b'.repeat(64) }) };
+    const useCase = new CustomerSiteUseCases(repository as never, storage());
+    const operations = [
+      { type: 'ASSIGN_ROUTE_TO_COLLECTOR' as const, routeId: 'route-1', collectorUserId: 'collector-1' },
+      { type: 'ASSIGN_CUSTOMER_TO_ROUTE' as const, customerId: 'customer-1', routeId: 'route-1' },
+    ];
+    await expect(useCase.applyAssignmentBatch('a'.repeat(64), operations, actor(['routes.assign.customers']))).rejects.toBeInstanceOf(CustomerSiteForbiddenError);
+    await expect(useCase.applyAssignmentBatch('a'.repeat(64), operations, actor(['routes.assign.customers', 'routes.assign.collectors']))).resolves.toEqual({ applied: 2, snapshotToken: 'b'.repeat(64) });
+  });
+
+  it('rejects contradictory operations for one resource before persistence', async () => {
+    const repository = { applyAssignmentBatch: jest.fn() };
+    const useCase = new CustomerSiteUseCases(repository as never, storage());
+    const operations = [
+      { type: 'ASSIGN_CUSTOMER_TO_ROUTE' as const, customerId: 'customer-1', routeId: 'route-1' },
+      { type: 'ASSIGN_CUSTOMER_TO_ROUTE' as const, customerId: 'customer-1', routeId: 'route-2' },
+    ];
+    await expect(useCase.applyAssignmentBatch('a'.repeat(64), operations, actor(['routes.assign.customers']))).rejects.toBeInstanceOf(CustomerSiteBadRequestError);
+    expect(repository.applyAssignmentBatch).not.toHaveBeenCalled();
   });
 
   it('exposes an active authorization only to its matching scoped collector', async () => {

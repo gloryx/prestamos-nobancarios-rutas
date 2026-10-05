@@ -1,4 +1,13 @@
 export type MonthlyNewCustomers = { month: number; newCustomers: number };
+export type CustomerMonetaryRankingItem = { customerId: string; fullName: string; value: string };
+export type CustomerCountRankingItem = { customerId: string; fullName: string; value: number };
+export type CustomerTopRankings = {
+  capitalDisbursed: CustomerMonetaryRankingItem[];
+  loansPlaced: CustomerCountRankingItem[];
+  realizedGain: CustomerMonetaryRankingItem[];
+  recoveredPrincipal: CustomerMonetaryRankingItem[];
+  currentBalance: CustomerMonetaryRankingItem[];
+};
 
 export type CustomerStatisticsFacts = {
   totalCustomers: number;
@@ -13,6 +22,7 @@ export type CustomerStatisticsFacts = {
   newCustomersCurrentMonth: number;
   currentSituation: { activeDebt: number; uncollectibleOnly: number; noCurrentDebt: number };
   monthlyNewCustomers: MonthlyNewCustomers[];
+  topCustomers: CustomerTopRankings;
 };
 
 export class CustomerStatisticsIntegrityError extends Error {
@@ -28,7 +38,27 @@ const countFields = [
   'customersWithMultipleLoans', 'validLoanCount', 'newCustomersInYear', 'newCustomersCurrentMonth',
 ] as const;
 
-export function calculateCustomerStatistics(year: number, currentYear: number, facts: CustomerStatisticsFacts) {
+const moneyCents = (value: string): bigint | null => {
+  if (!/^(?:0|[1-9]\d*)(?:\.\d{1,2})?$/.test(value)) return null;
+  const [whole, fraction = ''] = value.split('.');
+  return BigInt(whole) * 100n + BigInt(fraction.padEnd(2, '0'));
+};
+
+const validateRanking = (name: string, items: Array<CustomerMonetaryRankingItem | CustomerCountRankingItem>, monetary: boolean, limit: number): void => {
+  if (items.length > limit) throw new CustomerStatisticsIntegrityError(`El ranking ${name} supera el TOP ${limit}.`);
+  const ids = new Set<string>();
+  let previous: bigint | null = null;
+  for (const item of items) {
+    if (!item.customerId || !item.fullName.trim() || ids.has(item.customerId)) throw new CustomerStatisticsIntegrityError(`El ranking ${name} contiene un cliente inválido o duplicado.`);
+    ids.add(item.customerId);
+    const value = monetary ? typeof item.value === 'string' ? moneyCents(item.value) : null
+      : typeof item.value === 'number' && Number.isSafeInteger(item.value) && item.value >= 0 ? BigInt(item.value) : null;
+    if (value === null || value <= 0n || (previous !== null && value > previous)) throw new CustomerStatisticsIntegrityError(`El ranking ${name} contiene valores inválidos o desordenados.`);
+    previous = value;
+  }
+};
+
+export function calculateCustomerStatistics(year: number, currentYear: number, rankingLimit: number, facts: CustomerStatisticsFacts) {
   for (const field of countFields) {
     if (!Number.isSafeInteger(facts[field]) || facts[field] < 0)
       throw new CustomerStatisticsIntegrityError(`El conteo ${field} no es válido.`);
@@ -58,6 +88,11 @@ export function calculateCustomerStatistics(year: number, currentYear: number, f
   if (facts.newCustomersInYear > facts.totalCustomers || facts.newCustomersCurrentMonth > facts.totalCustomers ||
     facts.monthlyNewCustomers.some((item) => item.newCustomers > facts.totalCustomers))
     throw new CustomerStatisticsIntegrityError('Los clientes nuevos superan el total de clientes.');
+  validateRanking('capitalDisbursed', facts.topCustomers.capitalDisbursed, true, rankingLimit);
+  validateRanking('loansPlaced', facts.topCustomers.loansPlaced, false, rankingLimit);
+  validateRanking('realizedGain', facts.topCustomers.realizedGain, true, rankingLimit);
+  validateRanking('recoveredPrincipal', facts.topCustomers.recoveredPrincipal, true, rankingLimit);
+  validateRanking('currentBalance', facts.topCustomers.currentBalance, true, rankingLimit);
   const averageLoansPerCustomer = facts.totalCustomers === 0
     ? 0
     : Number((facts.validLoanCount / facts.totalCustomers).toFixed(2));
@@ -78,5 +113,6 @@ export function calculateCustomerStatistics(year: number, currentYear: number, f
     },
     currentSituation: facts.currentSituation,
     monthlyNewCustomers: facts.monthlyNewCustomers,
+    topCustomers: facts.topCustomers,
   };
 }

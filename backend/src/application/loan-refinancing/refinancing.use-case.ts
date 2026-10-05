@@ -4,6 +4,8 @@ import { evaluateRefinancing, money, refinancingAmounts, type RefinancingSnapsho
 import type { RefinancingAmounts, RefinancingOperation, RefinancingStore, RefinancingSearchQuery, RefinancingListQuery, RefinancingChainGraph } from './refinancing.port';
 import { buildRefinancingChains, RefinancingChainIntegrityError } from './refinancing-chain';
 import { paymentPlanDateIssue } from '../../domain/payment/payment-plan-dates';
+import type { RetroactivePeriodGuard } from '../financial-close/retroactive-period.guard';
+import { ClosedFinancialPeriodError } from '../../domain/financial-close/financial-close.errors';
 
 export class RefinancingValidationError extends Error {}
 export class RefinancingConflictError extends Error {
@@ -111,7 +113,7 @@ function assertOperation(operation: RefinancingOperation | undefined, amounts?: 
 }
 
 export class LoanRefinancingUseCase {
-  constructor(private readonly store: RefinancingStore) {}
+  constructor(private readonly store: RefinancingStore, private readonly closedPeriods?: RetroactivePeriodGuard) {}
 
   private buildChains(graph: RefinancingChainGraph) {
     try { return buildRefinancingChains(graph); }
@@ -173,6 +175,8 @@ export class LoanRefinancingUseCase {
         assertOperation(operation);
         return operation;
       }
+      try { await this.closedPeriods?.assertDateAllowed(input.refinancingDate, tx.context); }
+      catch (error) { if (error instanceof ClosedFinancialPeriodError) throw new RefinancingConflictError(error.message, 'CLOSED_FINANCIAL_PERIOD'); throw error; }
       const check = checkedSnapshot(origin);
       if (origin.status === 'ACTIVE' && refinancingBaseline(origin) !== input.baseline) {
         throw new RefinancingConflictError('The loan changed since the preview. Refresh and retry.', 'STALE_DATA');

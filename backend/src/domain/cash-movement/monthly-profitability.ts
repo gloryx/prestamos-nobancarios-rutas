@@ -48,7 +48,7 @@ export type MonthlyProfitabilityResult = {
   gain: { total: string; normal: string; refinancings: string;
     refinancingRegularInterest: string; recoveredCapitalizedYield: string };
   capital: { openingEconomicBalance: string | null; realDisbursedInPeriod: string | null;
-    economicRecoveredInPeriod: string | null; closingEconomicBalance: string | null;
+    economicRecoveredInPeriod: string | null; adjustmentsInPeriod: string | null; closingEconomicBalance: string | null;
     capitalDays: string | null; averageWorkingCapital: string | null };
   indicators: { periodProfitability: string | null; equivalentThirtyDayRate: string | null; capitalRotation: string | null };
   integrity: { status: EconomicCapitalResult['dataStatus']; warnings: string[] };
@@ -127,7 +127,7 @@ export function calculateMonthlyProfitability(period: string, capital: EconomicC
     gain: { total: money(totalGain), normal: money(normal), refinancings: money(refinancingGain),
       refinancingRegularInterest: money(refinancingRegular), recoveredCapitalizedYield: money(capitalizedYield) },
     capital: { openingEconomicBalance: capital.openingEconomicBalance, realDisbursedInPeriod: capital.realCapitalDisbursed,
-      economicRecoveredInPeriod: capital.recoveredCapital, closingEconomicBalance: capital.closingEconomicBalance,
+      economicRecoveredInPeriod: capital.recoveredCapital, adjustmentsInPeriod: capital.periodAdjustments, closingEconomicBalance: capital.closingEconomicBalance,
       capitalDays: capitalDays === null ? null : money(capitalDays), averageWorkingCapital: capital.averageWorkingCapital },
     indicators: { periodProfitability: reliableDenominator ? ratio(totalGain * BigInt(capital.calendarDays), capitalDays!) : null,
       equivalentThirtyDayRate: reliableDenominator ? ratio(totalGain * 30n, capitalDays!) : null,

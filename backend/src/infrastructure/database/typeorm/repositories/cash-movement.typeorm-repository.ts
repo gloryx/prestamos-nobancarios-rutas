@@ -1,5 +1,5 @@
 import { DataSource, EntityManager, Repository } from 'typeorm';
-import type { CashMovementFilters, CashMovementRepository, CreateCashMovement, PeriodSummary } from '../../../../application/cash-movement/cash-movement.repository';
+import type { CashMovementBeforeWrite, CashMovementFilters, CashMovementRepository, CreateCashMovement, PeriodSummary } from '../../../../application/cash-movement/cash-movement.repository';
 import type { CashMovement } from '../../../../domain/cash-movement/cash-movement.types';
 import { CashMovementConflictError } from '../../../../domain/cash-movement/cash-movement.errors';
 import { CashMovementOrmEntity } from '../entities/cash-movement.orm-entity';
@@ -45,7 +45,12 @@ export class CashMovementTypeOrmRepository implements CashMovementRepository {
   async summary(filters: Pick<CashMovementFilters, 'fromDate' | 'toDate' | 'direction' | 'concept' | 'paymentMethodId' | 'search'>): Promise<PeriodSummary> { const q = this.query(filters); const raw = await q.select("CAST(COALESCE(SUM(CASE WHEN m.direction = 'INFLOW' THEN m.amount ELSE 0 END), 0) AS numeric(18,2))::text", 'inflows').addSelect("CAST(COALESCE(SUM(CASE WHEN m.direction = 'OUTFLOW' THEN m.amount ELSE 0 END), 0) AS numeric(18,2))::text", 'outflows').addSelect("CAST(COALESCE(SUM(CASE WHEN m.direction = 'INFLOW' THEN m.amount ELSE -m.amount END), 0) AS numeric(18,2))::text", 'net').getRawOne<{ inflows: string; outflows: string; net: string }>(); const aggregate = { inflows: raw?.inflows ?? '0.00', outflows: raw?.outflows ?? '0.00', net: raw?.net ?? '0.00' }; const opening = await this.dataSource.getRepository(FinancialOpeningOrmEntity).findOne({ where: { singletonKey: 'DEFAULT' } }); if (!opening) return { ...aggregate, currentAvailable: null, openingDate: null }; const rawCurrent = await this.dataSource.getRepository(CashMovementOrmEntity).createQueryBuilder('m').select("(CAST(:initial AS numeric) + COALESCE(SUM(CASE WHEN m.direction = 'INFLOW' THEN m.amount ELSE -m.amount END), 0))::text", 'value').setParameter('initial', opening.initialAvailableAmount).getRawOne<{ value: string }>(); return { ...aggregate, currentAvailable: rawCurrent?.value ?? opening.initialAvailableAmount, openingDate: opening.openingDate }; }
   async findById(id: string) { const e = await this.query({}).andWhere('m.id = :id', { id }).getOne(); return e ? map(e) : null; }
   async findByIdempotencyKey(key: string) { const e = await this.query({}).andWhere('m.idempotency_key = :key', { key }).getOne(); return e ? map(e) : null; }
-  async create(input: CreateCashMovement) { const saved = await this.repository.save(this.repository.create(input)); const e = await this.findById(saved.id); if (!e) throw new Error('No fue posible recuperar el movimiento.'); return e; }
+  async create(input: CreateCashMovement, beforeWrite?: CashMovementBeforeWrite) {
+    return this.dataSource.transaction(async (manager) => {
+      await beforeWrite?.(manager);
+      return this.recordWithManager(manager, input);
+    });
+  }
   async recordWithManager(manager: EntityManager, input: CreateCashMovement) {
     const repo = manager.getRepository(CashMovementOrmEntity);
     const saved = await repo.save(repo.create(input));
@@ -53,5 +58,19 @@ export class CashMovementTypeOrmRepository implements CashMovementRepository {
     if (!entity) throw new Error('No fue posible recuperar el movimiento.');
     return map(entity);
   }
-  async reverse(original: CashMovement, input: CreateCashMovement) { return this.dataSource.transaction(async (manager) => { const existing = await manager.getRepository(CashMovementOrmEntity).findOne({ where: { reversedMovementId: original.id } }); if (existing) throw new CashMovementConflictError('El movimiento ya fue reversado.'); try { const saved = await manager.getRepository(CashMovementOrmEntity).save(manager.getRepository(CashMovementOrmEntity).create(input)); return map(await manager.getRepository(CashMovementOrmEntity).findOneOrFail({ where: { id: saved.id }, relations: { paymentMethod: true, createdBy: true } })); } catch (error) { if ((error as { code?: string }).code === '23505') throw new CashMovementConflictError('El movimiento ya fue reversado.'); throw error; } }); }
+  async reverse(original: CashMovement, input: CreateCashMovement, beforeWrite?: CashMovementBeforeWrite) {
+    return this.dataSource.transaction(async (manager) => {
+      const repository = manager.getRepository(CashMovementOrmEntity);
+      const existing = await repository.findOne({ where: { reversedMovementId: original.id } });
+      if (existing) throw new CashMovementConflictError('El movimiento ya fue reversado.');
+      try {
+        await beforeWrite?.(manager);
+        const saved = await repository.save(repository.create(input));
+        return map(await repository.findOneOrFail({ where: { id: saved.id }, relations: { paymentMethod: true, createdBy: true } }));
+      } catch (error) {
+        if ((error as { code?: string }).code === '23505') throw new CashMovementConflictError('El movimiento ya fue reversado.');
+        throw error;
+      }
+    });
+  }
 }

@@ -15,10 +15,24 @@ import { AnnulLoanUseCase, AnnulLoanConflictError, AnnulLoanIntegrityError, Annu
 import { ListAnnulledLoansUseCase, AnnulledLoansIntegrityError, AnnulledLoansValidationError } from '../../application/loan/annulled-loans.use-case';
 import { PaymentConflictError, PaymentValidationError } from '../../application/payment/payment.errors';
 import { AnnulledLoansQueryDto, AnnulLoanDto, CancelledLoansQueryDto, CreateLoanDto, LoanEditDto, LoanListQueryDto, MarkUncollectibleDto, OverdueLoansQueryDto, ReactivateLoanDto, UncollectibleLoansQueryDto } from './loan.dto';
+import { ActiveLoanExportIntegrityError, ExportActiveLoansUseCase } from '../../application/loan/export-active-loans.use-case';
 @Controller('loans') export class LoanController {
-  constructor(private readonly create: CreateLoanUseCase, private readonly list: ListLoansUseCase, private readonly customers: ListActiveLoanCustomersUseCase, private readonly cancelled: ListCancelledLoansUseCase, private readonly markUncollectible: MarkUncollectibleUseCase, private readonly reactivateLoan: ReactivateLoanUseCase, private readonly overdue?: ListOverdueLoansUseCase, private readonly uncollectible?: ListUncollectibleLoansUseCase, private readonly edit?: EditLoanUseCase, private readonly editContext?: GetLoanEditContextUseCase, @Optional() private readonly annulList?: ListAnnulledLoansUseCase, @Optional() private readonly annul?: AnnulLoanUseCase) {}
+  constructor(private readonly create: CreateLoanUseCase, private readonly list: ListLoansUseCase, private readonly customers: ListActiveLoanCustomersUseCase, private readonly cancelled: ListCancelledLoansUseCase, private readonly markUncollectible: MarkUncollectibleUseCase, private readonly reactivateLoan: ReactivateLoanUseCase, private readonly overdue?: ListOverdueLoansUseCase, private readonly uncollectible?: ListUncollectibleLoansUseCase, private readonly edit?: EditLoanUseCase, private readonly editContext?: GetLoanEditContextUseCase, @Optional() private readonly annulList?: ListAnnulledLoansUseCase, @Optional() private readonly annul?: AnnulLoanUseCase, @Optional() private readonly exportActive?: ExportActiveLoansUseCase) {}
   @Get('customer-options') @RequirePermissions('loans.create') customerOptions(@Query() query: { page?: string; pageSize?: string; search?: string }) { return this.customers.execute({ page: Math.max(1, Number(query.page) || 1), pageSize: Math.min(20, Math.max(10, Number(query.pageSize) || 10)), search: query.search }); }
   @Get() @RequirePermissions('loans.view') listLoans(@Query() query: LoanListQueryDto) { return this.list.execute({ page: Math.max(1, Number(query.page) || 1), pageSize: Math.min(100, Math.max(20, Number(query.pageSize) || 20)), search: query.search, frequencyId: query.frequencyId, fromDate: query.fromDate, toDate: query.toDate, sortBy: query.sortBy, sortOrder: query.sortOrder }); }
+  @Get('summary') @RequirePermissions('loans.view') async activeLoanSummary() {
+    return this.readActivePortfolio(() => this.exportActive!.executeSummary());
+  }
+  @Get('export') @RequirePermissions('loans.export') async exportActiveLoans() {
+    return this.readActivePortfolio(() => this.exportActive!.execute());
+  }
+  private async readActivePortfolio<T>(read: () => Promise<T>) {
+    try { return await read(); }
+    catch (error) {
+      if (error instanceof ActiveLoanExportIntegrityError) throw new InternalServerErrorException('No se pudieron reconciliar los saldos de los préstamos activos.');
+      throw error;
+    }
+  }
   @Get('cancelled') @RequirePermissions('loans.view') async cancelledLoans(@Query() query: CancelledLoansQueryDto) {
     try { return await this.cancelled.execute({ page: query.page ? Number(query.page) : 1, pageSize: query.pageSize ? Number(query.pageSize) : 20,
       search: query.search, startDate: query.startDate, endDate: query.endDate, sortBy: query.sortBy, sortDirection: query.sortDirection }); }

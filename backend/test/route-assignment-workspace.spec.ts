@@ -22,8 +22,8 @@ describe('route assignment workspace', () => {
         { routeId: 'route-3', routeName: 'South', routeActive: true, collectorAssignmentId: null, collectorUserId: null },
       ];
       if (sql.includes('LEFT JOIN customer_route_assignments')) {
-        expect(parameters).toEqual(['maria', 10, 10]);
-        return [{ items: [{ customerId: 'customer-2', name: 'Maria Diaz', identification: '102', phone: '8111' }], total: 1 }];
+        expect(parameters).toEqual(['maria', 10, 10, 503, 50301]);
+        return [{ items: [{ customerId: 'customer-2', name: 'Maria Diaz', identification: '102', phone: '8111', cantonName: 'Santa Cruz', districtName: 'Tamarindo' }], total: 1, totalUnassigned: 8 }];
       }
       if (sql.includes('JOIN customer_route_assignments')) return [
         { customerId: 'customer-1', name: 'Maria Solis', identification: '101', phone: '8000', customerActive: true, customerRouteAssignmentId: 'customer-assignment-1', routeId: 'route-1' },
@@ -31,7 +31,7 @@ describe('route assignment workspace', () => {
       ];
       throw new Error(`Unexpected query: ${sql}`);
     });
-    const result = await repository.readAssignmentWorkspace({ search: 'maria', page: 2, pageSize: 10 });
+    const result = await repository.readAssignmentWorkspace({ search: 'maria', cantonCode: 503, districtCode: 50301, page: 2, pageSize: 10 });
     expect(transaction).toHaveBeenCalledWith('REPEATABLE READ', expect.any(Function));
     expect(manager.query).toHaveBeenCalledTimes(4);
     expect(result.snapshotToken).toMatch(/^[a-f0-9]{64}$/);
@@ -43,7 +43,55 @@ describe('route assignment workspace', () => {
       { routeId: 'route-2', routeName: 'Central', collectorAssignmentId: 'collector-assignment-2', customers: [] },
     ] }]);
     expect(result.unassignedRoutes).toEqual([{ routeId: 'route-3', routeName: 'South', customers: [] }]);
-    expect(result.unassignedCustomers).toEqual({ items: [{ customerId: 'customer-2', name: 'Maria Diaz', identification: '102', phone: '8111' }], total: 1, page: 2, pageSize: 10 });
+    expect(result.unassignedCustomers).toEqual({ items: [{ customerId: 'customer-2', name: 'Maria Diaz', identification: '102', phone: '8111', cantonName: 'Santa Cruz', districtName: 'Tamarindo' }], total: 1, totalUnassigned: 8, page: 2, pageSize: 10 });
+  });
+
+  it.each([
+    ['canton', { cantonCode: 503 }, ['', 20, 0, 503, null]],
+    ['district', { districtCode: 50301 }, ['', 20, 0, null, 50301]],
+    ['combined territorial', { cantonCode: 503, districtCode: 50301 }, ['', 20, 0, 503, 50301]],
+    ['search', { search: 'maria' }, ['maria', 20, 0, null, null]],
+    ['search and canton', { search: 'maria', cantonCode: 503 }, ['maria', 20, 0, 503, null]],
+    ['search and territorial', { search: 'maria', cantonCode: 503, districtCode: 50301 }, ['maria', 20, 0, 503, 50301]],
+    ['filtered pagination', { cantonCode: 503, page: 3 as const, pageSize: 10 as const }, ['', 10, 20, 503, null]],
+    ['unknown territorial IDs', { cantonCode: 999, districtCode: 99999 }, ['', 20, 0, 999, 99999]],
+  ])('passes %s filters to the server-side unassigned query', async (_name, filters, expectedParameters) => {
+    const { repository } = repositoryWith((sql, parameters) => {
+      if (sql.includes('FROM collectors c')) return [];
+      if (sql.includes('FROM routes r')) return [];
+      if (sql.includes('LEFT JOIN customer_route_assignments')) {
+        expect(sql).toContain('LEFT JOIN customer_addresses');
+        expect(sql).toContain('cra.id IS NULL');
+        expect(parameters).toEqual(expectedParameters);
+        return [{ items: [], total: 0, totalUnassigned: 377 }];
+      }
+      if (sql.includes('JOIN customer_route_assignments')) return [];
+      throw new Error(`Unexpected query: ${sql}`);
+    });
+
+    const result = await repository.readAssignmentWorkspace({ page: 1, pageSize: 20, ...filters });
+    expect(result.unassignedCustomers).toMatchObject({ items: [], total: 0, totalUnassigned: 377 });
+  });
+
+  it('returns the first unfiltered page when global and filtered totals are non-zero', async () => {
+    const page = [{ customerId: 'customer-without-location', name: 'Customer', identification: '100', phone: '8000' }];
+    const { repository } = repositoryWith((sql, parameters) => {
+      if (sql.includes('LEFT JOIN customer_route_assignments')) {
+        expect(parameters).toEqual(['', 20, 0, null, null]);
+        expect(sql).toContain('LEFT JOIN customer_addresses');
+        expect(sql).toContain('LEFT JOIN districts');
+        expect(sql).toContain('LEFT JOIN cantons');
+        return [{ items: page, total: 369, totalUnassigned: 369 }];
+      }
+      if (sql.includes('FROM collectors c') || sql.includes('FROM routes r') || sql.includes('JOIN customer_route_assignments')) return [];
+      throw new Error(`Unexpected query: ${sql}`);
+    });
+
+    const result = await repository.readAssignmentWorkspace({ page: 1, pageSize: 20 });
+
+    expect(result.unassignedCustomers).toMatchObject({ total: 369, totalUnassigned: 369, page: 1, pageSize: 20 });
+    expect(result.unassignedCustomers.items).toHaveLength(1);
+    expect(result.unassignedCustomers.items[0]).not.toHaveProperty('cantonName');
   });
 
   it('refuses to hide duplicate active ownership in the workspace', async () => {

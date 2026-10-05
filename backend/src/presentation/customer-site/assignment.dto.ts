@@ -5,6 +5,8 @@ const operationTypes = ['ASSIGN_ROUTE_TO_COLLECTOR', 'MOVE_ROUTE_TO_COLLECTOR', 
 
 export class AssignmentWorkspaceQueryDto {
   @IsOptional() @IsString() search?: string;
+  @IsOptional() @IsInt() @Min(1) @Type(() => Number) cantonCode?: number;
+  @IsOptional() @IsInt() @Min(1) @Type(() => Number) districtCode?: number;
   @IsOptional() @IsInt() @Min(1) @Type(() => Number) page?: number;
   @IsOptional() @IsIn([10, 20, 50]) @Type(() => Number) pageSize?: 10 | 20 | 50;
 }

@@ -10,4 +10,24 @@ describe('cash movement application rules', () => {
   it('returns an identical idempotent movement and rejects a different fingerprint', async () => { const repository = { findByIdempotencyKey: jest.fn().mockResolvedValue(movement('different')), create: jest.fn() } as unknown as CashMovementRepository; const useCase = new RecordManualCashMovementUseCase(repository, { find: async () => ({ openingDate: '2025-01-01' }) }, { findById: async () => ({ isActive: true }) }); await expect(useCase.execute({ concept: 'CAPITAL_CONTRIBUTION', amount: '10', movementDate: '2026-01-01', paymentMethodId: 'pm', idempotencyKey: 'same' }, 'actor')).rejects.toThrow(CashMovementConflictError); });
   it('rejects reversal chains', async () => { const original = { ...movement('fingerprint'), concept: 'REVERSAL' as const }; const repository = { findById: jest.fn().mockResolvedValue(original), reverse: jest.fn() } as unknown as CashMovementRepository; const useCase = new ReverseCashMovementUseCase(repository, { find: async () => ({ openingDate: '2025-01-01' }) }); await expect(useCase.execute(original.id, { movementDate: '2026-01-02', reason: 'Duplicate correction' }, 'actor')).rejects.toThrow(CashMovementValidationError); });
   it('rejects impossible calendar dates for creation and reversal', async () => { const repository = { findById: jest.fn().mockResolvedValue(movement('fingerprint')), create: jest.fn(), reverse: jest.fn() } as unknown as CashMovementRepository; const opening = { find: async () => ({ openingDate: '2025-01-01' }) }; const create = new RecordManualCashMovementUseCase(repository, opening, { findById: async () => ({ isActive: true }) }); await expect(create.execute({ concept: 'CAPITAL_CONTRIBUTION', amount: '10', movementDate: '2026-02-30', paymentMethodId: 'pm' }, 'actor')).rejects.toThrow('La fecha del movimiento no es válida.'); const reverse = new ReverseCashMovementUseCase(repository, opening); await expect(reverse.execute('1', { movementDate: '2026-02-30', reason: 'Correction' }, 'actor')).rejects.toThrow('La fecha del movimiento no es válida.'); });
+  it('holds the closed-period guard transaction context through manual creation', async () => {
+    const context = { transaction: 'create' }; const order: string[] = [];
+    const repository = { findByIdempotencyKey: jest.fn().mockResolvedValue(null), create: jest.fn(async (_input, beforeWrite) => {
+      order.push('transaction'); await beforeWrite(context); order.push('save'); return movement('fingerprint');
+    }) } as unknown as CashMovementRepository;
+    const guard = { assertDateAllowed: jest.fn(async (_date, received) => { expect(received).toBe(context); order.push('guard'); }) };
+    const useCase = new RecordManualCashMovementUseCase(repository, { find: async () => ({ openingDate: '2025-01-01' }) },
+      { findById: async () => ({ isActive: true }) }, guard as never);
+    await useCase.execute({ concept: 'CAPITAL_CONTRIBUTION', amount: '10', movementDate: '2026-01-01', paymentMethodId: 'pm' }, 'actor');
+    expect(order).toEqual(['transaction', 'guard', 'save']);
+  });
+  it('holds the closed-period guard transaction context through manual reversal', async () => {
+    const context = { transaction: 'reverse' }; const order: string[] = [];
+    const repository = { findById: jest.fn().mockResolvedValue(movement('fingerprint')),
+      reverse: jest.fn(async (_original, _input, beforeWrite) => { order.push('transaction'); await beforeWrite(context); order.push('save'); return movement('reversal'); }) } as unknown as CashMovementRepository;
+    const guard = { assertDateAllowed: jest.fn(async (_date, received) => { expect(received).toBe(context); order.push('guard'); }) };
+    const useCase = new ReverseCashMovementUseCase(repository, { find: async () => ({ openingDate: '2025-01-01' }) }, guard as never);
+    await useCase.execute('1', { movementDate: '2026-01-02', reason: 'Correction' }, 'actor');
+    expect(order).toEqual(['transaction', 'guard', 'save']);
+  });
 });

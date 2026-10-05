@@ -46,8 +46,9 @@ export class CustomerSiteUseCases {
     if (!operations.length) throw new CustomerSiteBadRequestError('Debe enviar al menos una operación.');
     if (operations.length > 100) throw new CustomerSiteBadRequestError('El lote no puede superar 100 operaciones.');
     const routeTypes = new Set(['ASSIGN_ROUTE_TO_COLLECTOR', 'MOVE_ROUTE_TO_COLLECTOR', 'UNASSIGN_ROUTE_FROM_COLLECTOR']);
-    const routeOperations = operations.filter((operation) => routeTypes.has(operation.type));
-    const customerOperations = operations.filter((operation) => !routeTypes.has(operation.type));
+    const isRouteOperation = (operation: AssignmentBatchOperation): operation is Extract<AssignmentBatchOperation, { type: 'ASSIGN_ROUTE_TO_COLLECTOR' | 'MOVE_ROUTE_TO_COLLECTOR' | 'UNASSIGN_ROUTE_FROM_COLLECTOR' }> => routeTypes.has(operation.type);
+    const routeOperations = operations.filter(isRouteOperation);
+    const customerOperations = operations.filter((operation) => !isRouteOperation(operation));
     if (routeOperations.length && !can(actor, 'routes.assign.collectors')) throw new CustomerSiteForbiddenError('No tiene permiso para asignar rutas a cobradores.');
     if (customerOperations.length && !can(actor, 'routes.assign.customers')) throw new CustomerSiteForbiddenError('No tiene permiso para asignar clientes a rutas.');
     const resources = new Set<string>();
@@ -57,7 +58,7 @@ export class CustomerSiteUseCases {
       const requiresRoute = operation.type !== 'UNASSIGN_CUSTOMER_FROM_ROUTE';
       const requiresExpected = operation.type.startsWith('MOVE_') || operation.type.startsWith('UNASSIGN_');
       if ((requiresCollector && !('collectorUserId' in operation && operation.collectorUserId)) || (requiresCustomer && !('customerId' in operation && operation.customerId)) || (requiresRoute && !('routeId' in operation && operation.routeId)) || (requiresExpected && !('expectedAssignmentId' in operation && operation.expectedAssignmentId))) throw new CustomerSiteBadRequestError('La operación de asignación está incompleta.');
-      const key = 'customerId' in operation ? `customer:${operation.customerId}` : `route:${operation.routeId}`;
+      const key = isRouteOperation(operation) ? `route:${operation.routeId}` : `customer:${operation.customerId}`;
       if (resources.has(key)) throw new CustomerSiteBadRequestError('El lote contiene operaciones contradictorias para el mismo recurso.');
       resources.add(key);
     }

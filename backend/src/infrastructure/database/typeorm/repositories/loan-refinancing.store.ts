@@ -131,6 +131,7 @@ export class LoanRefinancingTypeormStore implements RefinancingStore {
 
   transaction<T>(work: (tx: RefinancingTransaction) => Promise<T>): Promise<T> {
     return this.source.transaction(async (manager) => work({
+      context: manager,
       findByKey: async (key) => (await manager.query(`SELECT id, idempotency_fingerprint AS fingerprint
         FROM loan_refinancings WHERE idempotency_key = $1`, [key]))[0],
       lockOrigin: async (id) => {

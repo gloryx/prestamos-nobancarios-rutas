@@ -118,4 +118,23 @@ describe('CashMovementTypeOrmRepository', () => {
     const repository = new CashMovementTypeOrmRepository({} as never, { transaction: async (callback: (manager: { getRepository: () => typeof transactionalRepository }) => Promise<unknown>) => callback({ getRepository: () => transactionalRepository }) } as never);
     await expect(repository.reverse({ id: 'original-1' } as never, {} as never)).rejects.toThrow(new CashMovementConflictError('El movimiento ya fue reversado.'));
   });
+
+  it('runs create and reverse callbacks with the EntityManager before saving', async () => {
+    const order: string[] = [];
+    const entity = { ...movement('saved', 'CAPITAL_CONTRIBUTION'), amount: '10.00', movementDate: '2026-01-01',
+      paymentMethodId: 'pm', observations: null, createdByUserId: 'actor', idempotencyKey: null, idempotencyFingerprint: null,
+      createdAt: new Date() };
+    const transactionalRepository = { findOne: jest.fn(async ({ where }: { where: { reversedMovementId?: string; id?: string } }) => {
+      if (where.reversedMovementId) return null; return entity;
+    }), findOneOrFail: jest.fn(async () => entity), create: jest.fn((input) => input),
+    save: jest.fn(async (input) => { order.push('save'); return { ...input, id: 'saved' }; }) };
+    const manager = { id: 'manager', getRepository: () => transactionalRepository };
+    const repository = new CashMovementTypeOrmRepository({} as never, {
+      transaction: async (work: (value: typeof manager) => Promise<unknown>) => work(manager),
+    } as never);
+    await repository.create({} as never, async (context) => { expect(context).toBe(manager); order.push('create-guard'); });
+    await repository.reverse({ id: 'original' } as never, {} as never,
+      async (context) => { expect(context).toBe(manager); order.push('reverse-guard'); });
+    expect(order).toEqual(['create-guard', 'save', 'reverse-guard', 'save']);
+  });
 });

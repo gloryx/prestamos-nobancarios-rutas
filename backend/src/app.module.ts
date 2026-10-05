@@ -3,7 +3,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import * as Joi from 'joi';
 import { HealthController } from './presentation/health/health.controller';
-import { CantonOrmEntity, CollectorOrmEntity, CustomerAddressOrmEntity, CustomerOrmEntity, DistrictOrmEntity, PaymentFrequencyOrmEntity, PaymentMethodOrmEntity, ProvinceOrmEntity, RouteOrmEntity, RoleOrmEntity, PermissionOrmEntity, RolePermissionOrmEntity, UserOrmEntity, UserSessionOrmEntity, CustomerRouteAssignmentOrmEntity, CollectorRouteAssignmentOrmEntity, CustomerSiteUpdateAuthorizationOrmEntity, FinancialOpeningOrmEntity, CashMovementOrmEntity, LoanOrmEntity, LoanDisbursementOrmEntity, PaymentPlanEntryOrmEntity, LoanEditOperationOrmEntity, LoanRefinancingOrmEntity, LoanStatusHistoryOrmEntity, PaymentOrmEntity, PaymentApplicationOrmEntity, PaymentAnnulmentOrmEntity } from './infrastructure/database/typeorm/entities';
+import { CantonOrmEntity, CollectorOrmEntity, CustomerAddressOrmEntity, CustomerOrmEntity, DistrictOrmEntity, PaymentFrequencyOrmEntity, PaymentMethodOrmEntity, ProvinceOrmEntity, RouteOrmEntity, RoleOrmEntity, PermissionOrmEntity, RolePermissionOrmEntity, UserOrmEntity, UserSessionOrmEntity, CustomerRouteAssignmentOrmEntity, CollectorRouteAssignmentOrmEntity, CustomerSiteUpdateAuthorizationOrmEntity, FinancialOpeningOrmEntity, CashMovementOrmEntity, LoanOrmEntity, LoanDisbursementOrmEntity, PaymentPlanEntryOrmEntity, LoanEditOperationOrmEntity, LoanRefinancingOrmEntity, LoanStatusHistoryOrmEntity, PaymentOrmEntity, PaymentApplicationOrmEntity, PaymentAnnulmentOrmEntity, FinancialCloseOrmEntity, FinancialCloseConceptOrmEntity } from './infrastructure/database/typeorm/entities';
 import { TerritorialModule } from './presentation/territorial/territorial.module';
 import { PaymentMethodModule } from './presentation/payment-method/payment-method.module';
 import { PaymentFrequencyModule } from './presentation/payment-frequency/payment-frequency.module';
@@ -17,6 +17,7 @@ import { CashMovementModule } from './presentation/cash-movement/cash-movement.m
 import { LoanModule } from './presentation/loan/loan.module';
 import { PaymentModule } from './presentation/payment/payment.module';
 import { LoanRefinancingModule } from './presentation/loan-refinancing/loan-refinancing.module';
+import { FinancialCloseModule } from './presentation/financial-close/financial-close.module';
 
 @Module({
   imports: [
@@ -46,11 +47,11 @@ import { LoanRefinancingModule } from './presentation/loan-refinancing/loan-refi
         password: config.getOrThrow<string>('DB_PASSWORD'),
         database: config.getOrThrow<string>('DB_DATABASE'),
          autoLoadEntities: true,
-               entities: [ProvinceOrmEntity, CantonOrmEntity, DistrictOrmEntity, PaymentMethodOrmEntity, PaymentFrequencyOrmEntity, RouteOrmEntity, CustomerOrmEntity, CustomerAddressOrmEntity, RoleOrmEntity, PermissionOrmEntity, RolePermissionOrmEntity, UserOrmEntity, UserSessionOrmEntity, CustomerRouteAssignmentOrmEntity, CollectorRouteAssignmentOrmEntity, CustomerSiteUpdateAuthorizationOrmEntity, CollectorOrmEntity, FinancialOpeningOrmEntity, CashMovementOrmEntity, LoanOrmEntity, LoanDisbursementOrmEntity, PaymentPlanEntryOrmEntity, LoanEditOperationOrmEntity, LoanRefinancingOrmEntity, LoanStatusHistoryOrmEntity, PaymentOrmEntity, PaymentApplicationOrmEntity, PaymentAnnulmentOrmEntity],
+               entities: [ProvinceOrmEntity, CantonOrmEntity, DistrictOrmEntity, PaymentMethodOrmEntity, PaymentFrequencyOrmEntity, RouteOrmEntity, CustomerOrmEntity, CustomerAddressOrmEntity, RoleOrmEntity, PermissionOrmEntity, RolePermissionOrmEntity, UserOrmEntity, UserSessionOrmEntity, CustomerRouteAssignmentOrmEntity, CollectorRouteAssignmentOrmEntity, CustomerSiteUpdateAuthorizationOrmEntity, CollectorOrmEntity, FinancialOpeningOrmEntity, CashMovementOrmEntity, LoanOrmEntity, LoanDisbursementOrmEntity, PaymentPlanEntryOrmEntity, LoanEditOperationOrmEntity, LoanRefinancingOrmEntity, LoanStatusHistoryOrmEntity, PaymentOrmEntity, PaymentApplicationOrmEntity, PaymentAnnulmentOrmEntity, FinancialCloseOrmEntity, FinancialCloseConceptOrmEntity],
         synchronize: false,
       }),
     }),
-        TerritorialModule, PaymentMethodModule, PaymentFrequencyModule, RouteModule, CustomerModule, CustomerSiteModule, CollectorModule, SecurityModule, FinancialOpeningModule, CashMovementModule, LoanModule, PaymentModule, LoanRefinancingModule,
+        TerritorialModule, PaymentMethodModule, PaymentFrequencyModule, RouteModule, CustomerModule, CustomerSiteModule, CollectorModule, SecurityModule, FinancialOpeningModule, FinancialCloseModule, CashMovementModule, LoanModule, PaymentModule, LoanRefinancingModule,
   ],
   controllers: [HealthController],
 })

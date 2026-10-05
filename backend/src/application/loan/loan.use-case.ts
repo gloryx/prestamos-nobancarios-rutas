@@ -4,6 +4,8 @@ import type { TransactionalCashMovementRecorder } from '../cash-movement/cash-mo
 import type { ActiveLoanListQuery, CreateLoanInput, LoanSortBy } from '../../domain/loan/loan.types';
 import { ACTIVE_LOAN_OVERDUE_SQL } from './active-loan-condition.sql';
 import { paymentPlanDateIssue } from '../../domain/payment/payment-plan-dates';
+import type { RetroactivePeriodGuard } from '../financial-close/retroactive-period.guard';
+import { ClosedFinancialPeriodError } from '../../domain/financial-close/financial-close.errors';
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const MONEY = /^(?:0|[1-9]\d{0,15})(?:\.\d{1,2})?$/;
@@ -39,7 +41,8 @@ export function loanPlanDatesAreValid(input: CreateLoanInput): boolean {
 function fingerprint(input: CreateLoanInput): string { const request = { ...input }; delete request.idempotencyKey; return createHash('sha256').update(JSON.stringify(request)).digest('hex'); }
 
 export class CreateLoanUseCase {
-  constructor(private readonly dataSource: DataSource, private readonly cashMovements: TransactionalCashMovementRecorder) {}
+  constructor(private readonly dataSource: DataSource, private readonly cashMovements: TransactionalCashMovementRecorder,
+    private readonly closedPeriods?: RetroactivePeriodGuard) {}
 
   async execute(raw: CreateLoanInput, actorId: string) {
     if (!raw || !raw.customerId || !raw.paymentFrequencyId || !raw.preferredPaymentMethodId || !raw.disbursementPaymentMethodId || !raw.startDate || !MONEY.test(raw.principal) || !MONEY.test(raw.interestAmount)) throw new LoanValidationError('Los datos del préstamo no son válidos.');
@@ -57,6 +60,8 @@ export class CreateLoanUseCase {
         const existing = await manager.query('SELECT id, idempotency_fingerprint AS "fingerprint" FROM loans WHERE idempotency_key = $1 FOR SHARE', [input.idempotencyKey]);
         if (existing[0]) { if (existing[0].fingerprint !== fp) throw new LoanConflictError('La clave de idempotencia ya fue utilizada con otros datos.'); return this.detail(manager, existing[0].id); }
       }
+      try { await this.closedPeriods?.assertDateAllowed(input.startDate, manager); }
+      catch (error) { if (error instanceof ClosedFinancialPeriodError) throw new LoanConflictError(error.message); throw error; }
       const opening = await manager.query(`SELECT opening_date AS "openingDate" FROM financial_openings WHERE singleton_key = 'DEFAULT' FOR SHARE`);
       if (!opening[0]) throw new LoanConflictError('Debe realizar la apertura financiera antes de registrar préstamos.');
       if (input.startDate < opening[0].openingDate) throw new LoanValidationError('La fecha de inicio no puede ser anterior a la apertura financiera.');

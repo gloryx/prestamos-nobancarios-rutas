@@ -7,7 +7,7 @@ import type { AuthIdentity } from '../../domain/entities/auth';
 import { AuthContext, type AuthContextValue } from '../hooks/auth-context';
 import { canAccess } from '../hooks/auth-permissions';
 import { TableActions, type TableAction } from '../components/TableActions';
-import { ActiveLoansTable, LoansPage } from './LoansPage';
+import { ActiveLoanSummaryView, ActiveLoansTable, LoansPage } from './LoansPage';
 
 const loan: ActiveLoanListItem = { id: '14870d77-8723-49e5-96b8-e4313943d726', loanNumber: '42', startDate: '2026-01-01', principal: '100.00', interestAmount: '10.00', totalAmount: '110.00', customerName: 'Ana', identification: '101', frequencyName: 'Mensual', pendingTotal: '60.00', isOverdue: false };
 const onSort = vi.fn(), onView = vi.fn(), onEdit = vi.fn(), onDownload = vi.fn();
@@ -17,6 +17,18 @@ const elements = (node: ReactNode): ReactElement[] => Array.isArray(node) ? node
 const user: AuthIdentity = { id: 'user', username: 'u', fullName: 'User', role: { id: 'role', code: 'ROLE', name: 'Role', isSuperAdmin: false }, permissions: ['loans.view'] };
 
 describe('active loan condition presentation', () => {
+  it('renders the five compact all-portfolio indicators with reconciled financial values', () => {
+    const summary = { totalActiveLoans: 209, capitalPlaced: '31000000.00', outstandingPrincipal: '18500000.00',
+      outstandingInterest: '3200000.00', financialBalance: '21700000.00' };
+    const html = renderToStaticMarkup(<ActiveLoanSummaryView summary={summary} loading={false} />);
+    expect(html).toContain('aria-label="Resumen financiero de préstamos activos"');
+    expect([...html.matchAll(/<span>(.*?)<\/span>/g)].map((match) => match[1])).toEqual([
+      'Préstamos activos', 'Capital colocado', 'Capital pendiente', 'Interés pendiente', 'Saldo pendiente']);
+    expect(html).toContain('<strong>209</strong>');
+    for (const value of ['₡31.000.000,00', '₡18.500.000,00', '₡3.200.000,00', '₡21.700.000,00']) expect(html).toContain(value);
+    expect(Number(summary.financialBalance)).toBe(Number(summary.outstandingPrincipal) + Number(summary.outstandingInterest));
+  });
+
   it('keeps all existing columns, currency, and compact actions while adding selector-colored badges between Pend. and Acciones', () => {
     const html = markup();
     expect([...html.matchAll(/<th\b[^>]*>(.*?)<\/th>/g)].map((match) => match[1].replace(/<[^>]*>/g, ''))).toEqual(['N°', 'Cliente', 'Inicio', 'Cap.', 'Int.', 'Total', 'Frec.', 'Pend.', 'Condición', 'Acciones']);
@@ -104,9 +116,16 @@ describe('active loan condition presentation', () => {
     expect(restricted).toContain('>Desde<');
     expect(restricted).toContain('>Hasta<');
     expect(restricted).not.toContain('href="/loans/new"');
+    expect(restricted).not.toContain('Exportar Excel');
     expect(page({ ...user, permissions: [...user.permissions, 'loans.create'] })).toContain('href="/loans/new"');
+    const exporter = page({ ...user, permissions: [...user.permissions, 'loans.create', 'loans.export'] });
+    expect(exporter).toContain('Nuevo préstamo');
+    expect(exporter).toContain('Exportar Excel');
+    expect(exporter.indexOf('Nuevo préstamo')).toBeLessThan(exporter.indexOf('Exportar Excel'));
+    expect(exporter).toContain('loan-list__heading-actions');
     expect(canAccess(user, 'loans.export')).toBe(false);
     expect(canAccess({ ...user, role: { ...user.role, isSuperAdmin: true } }, 'loans.export')).toBe(true);
     expect(page({ ...user, role: { ...user.role, isSuperAdmin: true } })).toContain('href="/loans/new"');
+    expect(page({ ...user, role: { ...user.role, isSuperAdmin: true } })).toContain('Exportar Excel');
   });
 });

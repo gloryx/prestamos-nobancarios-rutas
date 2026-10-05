@@ -83,7 +83,7 @@ describe('PATCH /loans/:id HTTP boundary', () => {
     ] as const;
     const routes = Object.getOwnPropertyNames(LoanController.prototype).filter((name) => name !== 'constructor' &&
       Reflect.hasOwnMetadata(PATH_METADATA, LoanController.prototype[name as keyof LoanController]));
-    expect(routes).toEqual([...existing.slice(0, 5).map(([name]) => name), 'annullableLoans', 'annulledLoansList',
+    expect(routes).toEqual([...existing.slice(0, 2).map(([name]) => name), 'activeLoanSummary', 'exportActiveLoans', ...existing.slice(2, 5).map(([name]) => name), 'annullableLoans', 'annulledLoansList',
       ...existing.slice(5, 8).map(([name]) => name), 'annulLoan', 'detail', 'editLoan', 'getEditContext']);
     for (const [name, permission, method] of existing) {
       expect(Reflect.getMetadata(PERMISSIONS_KEY, LoanController.prototype[name])).toEqual([permission]);

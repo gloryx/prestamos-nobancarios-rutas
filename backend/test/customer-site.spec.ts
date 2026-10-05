@@ -1,7 +1,9 @@
+import { plainToInstance } from 'class-transformer';
 import { CustomerSiteBadRequestError, CustomerSiteConflictError, CustomerSiteForbiddenError } from '../src/domain/customer-site/customer-site.errors';
 import { CustomerSiteUseCases } from '../src/application/customer-site/customer-site.use-cases';
 import { CustomerController } from '../src/presentation/customer/customer.controller';
 import type { CurrentIdentity } from '../src/domain/security/security.types';
+import { AssignmentBatchOperationDto } from '../src/presentation/customer-site/assignment.dto';
 
 const actor = (permissions: string[], id = 'collector-1'): CurrentIdentity => ({ id, username: id, fullName: 'Test User', role: { id: 'role', code: 'COLLECTOR', name: 'Collector', isSuperAdmin: false }, permissions, sessionId: 'session' });
 const site = (photo = false, location = false) => ({ latitude: location ? 9 : null, longitude: location ? -84 : null, hasPropertyPhoto: photo, siteDataUpdatedAt: null, siteDataUpdatedBy: null });
@@ -102,6 +104,18 @@ describe('customer site application security', () => {
     ];
     await expect(useCase.applyAssignmentBatch('a'.repeat(64), operations, actor(['routes.assign.customers']))).rejects.toBeInstanceOf(CustomerSiteBadRequestError);
     expect(repository.applyAssignmentBatch).not.toHaveBeenCalled();
+  });
+
+  it('distinguishes route resources after DTO transformation adds undefined optional fields', async () => {
+    const repository = { applyAssignmentBatch: jest.fn().mockResolvedValue({ applied: 2, snapshotToken: 'b'.repeat(64) }) };
+    const useCase = new CustomerSiteUseCases(repository as never, storage());
+    const operations = plainToInstance(AssignmentBatchOperationDto, [
+      { type: 'ASSIGN_ROUTE_TO_COLLECTOR', routeId: 'route-1', collectorUserId: 'collector-1' },
+      { type: 'ASSIGN_ROUTE_TO_COLLECTOR', routeId: 'route-2', collectorUserId: 'collector-1' },
+    ]);
+
+    await expect(useCase.applyAssignmentBatch('a'.repeat(64), operations as never, actor(['routes.assign.collectors']))).resolves.toMatchObject({ applied: 2 });
+    expect(repository.applyAssignmentBatch).toHaveBeenCalledTimes(1);
   });
 
   it('exposes an active authorization only to its matching scoped collector', async () => {

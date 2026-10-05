@@ -110,13 +110,16 @@ export const navigationEntries: NavigationEntry[] = [
     label: 'Cobradores',
     icon: 'users',
     items: [
-       { id: 'collector.collectors', type: 'link', label: 'Cobradores', path: '/collectors', icon: 'users', requiredPermission: 'collectors.view' },
+       { id: 'collector.collectors', type: 'link', label: 'Cobradores', path: '/collectors', icon: 'users', requiredPermission: 'collectors.view', activeExcludes: ['/collectors/route-assignments', '/collectors/collection-agenda', '/collectors/statistics'] },
+       { id: 'collector.route-assignments', type: 'link', label: 'Rutas y asignaciones', path: '/collectors/route-assignments', icon: 'route', requiredPermission: 'collectors.view' },
+       { id: 'collector.collection-agenda', type: 'link', label: 'Agenda de cobros', path: '/collectors/collection-agenda', icon: 'payment', requiredPermission: 'collection-agenda.view' },
        { id: 'collector.statistics', type: 'link', label: 'Estadísticas', path: '/collectors/statistics', icon: 'dashboard', requiredPermission: 'payments.view' },
      ],
    },
-  { id: 'payments', type: 'group', label: 'PAGOS', icon: 'payment', items: [{ id: 'payments.new', type: 'link', label: 'Registrar pago', path: '/payments/new', icon: 'payment', requiredPermission: 'payments.view' }, { id: 'payments.portfolio-tracking', type: 'link', label: 'Seguimiento de cartera', path: '/payments/portfolio-tracking', icon: 'payment', requiredPermission: 'payments.view' }, { id: 'payments.daily-collections', type: 'link', label: 'Cobros del día', path: '/payments/daily-collections', icon: 'payment', requiredPermission: 'payments.view' }, { id: 'payments.history', type: 'link', label: 'Historial de pagos', path: '/payments/history', icon: 'payment', requiredPermission: 'payments.view' }] },
+  { id: 'payments', type: 'group', label: 'PAGOS', icon: 'payment', items: [{ id: 'payments.new', type: 'link', label: 'Registrar pago', path: '/payments/new', icon: 'payment', requiredPermission: 'payments.view' }, { id: 'payments.portfolio-tracking', type: 'link', label: 'Seguimiento de cartera', path: '/payments/portfolio-tracking', icon: 'payment', requiredPermission: 'payments.view' }, { id: 'payments.daily-collections', type: 'link', label: 'Cobros del día', path: '/payments/daily-collections', icon: 'payment', requiredPermission: 'payments.view' }, { id: 'payments.history', type: 'link', label: 'Historial de pagos', path: '/payments/history', icon: 'payment', requiredPermission: 'payments.view' }, { id: 'payments.collector-report', type: 'link', label: 'Cobros por cobrador', path: '/payments/collector-report', icon: 'dashboard', requiredPermission: 'payments.view' }] },
   { id: 'finance', type: 'group', label: 'Finanzas', icon: 'payment', items: [
     { id: 'finance.cash-movements', type: 'link', label: 'Movimientos de caja', path: '/finance/cash-movements', icon: 'payment', requiredPermission: 'cash-movements.view' },
+    { id: 'finance.financial-closes', type: 'link', label: 'Cierre financiero mensual', path: '/finance/financial-closes', icon: 'payment', requiredPermission: 'financial-closes.view' },
     { id: 'finance.reports', type: 'group', label: 'Reportes', icon: 'payment', requiredPermission: 'cash-movements.view', items: [
       { id: 'finance.reports.profitability', type: 'link', label: 'Rentabilidad integral', path: '/finance/reports/profitability', icon: 'payment', requiredPermission: 'cash-movements.view' },
     ] },

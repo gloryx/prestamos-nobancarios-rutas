@@ -6,10 +6,12 @@ import { LoanFinancialTotalsTypeormReader } from '../../infrastructure/database/
 import { LoanRefinancingTypeormStore } from '../../infrastructure/database/typeorm/repositories/loan-refinancing.store';
 import { CashMovementModule } from '../cash-movement/cash-movement.module';
 import { LoanRefinancingController } from './loan-refinancing.controller';
+import { RetroactivePeriodGuard } from '../../application/financial-close/retroactive-period.guard';
+import { FinancialCloseModule } from '../financial-close/financial-close.module';
 
-@Module({ imports: [CashMovementModule], controllers: [LoanRefinancingController], providers: [
-  { provide: LoanRefinancingUseCase, inject: [DataSource, CASH_MOVEMENT_TRANSACTIONAL_RECORDER],
-    useFactory: (source: DataSource, cash: TransactionalCashMovementRecorder) =>
-      new LoanRefinancingUseCase(new LoanRefinancingTypeormStore(source, new LoanFinancialTotalsTypeormReader(), cash)) },
+@Module({ imports: [CashMovementModule, FinancialCloseModule], controllers: [LoanRefinancingController], providers: [
+  { provide: LoanRefinancingUseCase, inject: [DataSource, CASH_MOVEMENT_TRANSACTIONAL_RECORDER, RetroactivePeriodGuard],
+    useFactory: (source: DataSource, cash: TransactionalCashMovementRecorder, guard: RetroactivePeriodGuard) =>
+      new LoanRefinancingUseCase(new LoanRefinancingTypeormStore(source, new LoanFinancialTotalsTypeormReader(), cash), guard) },
 ] })
 export class LoanRefinancingModule {}

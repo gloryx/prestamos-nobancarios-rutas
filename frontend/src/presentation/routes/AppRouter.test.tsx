@@ -22,6 +22,10 @@ import { FinancialAnalysisPage } from '../pages/FinancialAnalysisPage';
 import { CustomerStatisticsPage } from '../pages/CustomerStatisticsPage';
 import { CollectorStatisticsPage } from '../pages/CollectorStatisticsPage';
 import { PortfolioTrackingPage } from '../pages/PortfolioTrackingPage';
+import { FinancialClosePage } from '../pages/FinancialClosePage';
+import { RouteAssignmentsPage } from '../pages/RouteAssignmentsPage';
+import { PaymentCollectorReportPage } from '../pages/PaymentCollectorReportPage';
+import { CollectionAgendaPage } from '../pages/CollectionAgendaPage';
 import { AppRouter } from './AppRouter';
 
 const elements = (node: ReactNode): ReactElement[] => Children.toArray(node).flatMap((child) =>
@@ -181,6 +185,21 @@ describe('payment history publication', () => {
   });
 });
 
+describe('collector payments report publication', () => {
+  it('guards the direct URL, navigation and superadmin bypass with payments.view', () => {
+    const path = '/payments/collector-report';
+    const routes = elements(AppRouter()).filter((element) => element.type === Route);
+    const entry = routes.find((route) => (route.props as { path?: string }).path === path);
+    expect((entry?.props as { element?: ReactNode }).element).toMatchObject({ type: RouteGuard,
+      props: { permission: 'payments.view', children: { type: PaymentCollectorReportPage } } });
+    const allowed = renderRoute(path, { ...identity, permissions: ['payments.view'] });
+    expect(allowed).toContain('Cobros por cobrador');
+    expect(allowed).toContain('nav-link--active" href="/payments/collector-report"');
+    expect(renderRoute(path, { ...identity, permissions: [] })).toContain('No tienes permiso');
+    expect(renderRoute(path, { ...identity, role: { ...identity.role, isSuperAdmin: true } })).toContain('Cobros por cobrador');
+  });
+});
+
 describe('integral profitability publication', () => {
   const path = '/finance/reports/profitability';
   it('guards the direct report and nested navigation with cash-movements.view', () => {
@@ -194,6 +213,19 @@ describe('integral profitability publication', () => {
     expect(allowed).toContain(`href="${path}"`);
     expect(renderRoute(path, { ...identity, permissions: [] })).toContain('No tienes permiso');
     expect(renderRoute(path, { ...identity, role: { ...identity.role, isSuperAdmin: true } })).toContain('Rentabilidad integral');
+  });
+});
+
+describe('monthly financial close publication', () => {
+  const path = '/finance/financial-closes';
+  it('guards the route and navigation with financial-closes.view, including superadmin bypass', () => {
+    const routes = elements(AppRouter()).filter((element) => element.type === Route);
+    const entry = routes.find((route) => (route.props as { path?: string }).path === path);
+    expect((entry?.props as { element?: ReactNode }).element).toMatchObject({ type: RouteGuard,
+      props: { permission: 'financial-closes.view', children: { type: FinancialClosePage } } });
+    expect(renderRoute(path, { ...identity, permissions: ['financial-closes.view'] })).toContain('Cierre financiero mensual');
+    expect(renderRoute(path, identity)).toContain('No tienes permiso');
+    expect(renderRoute(path, { ...identity, role: { ...identity.role, isSuperAdmin: true } })).toContain('Cierre financiero mensual');
   });
 });
 
@@ -255,6 +287,49 @@ describe('collector statistics publication', () => {
   it('does not publish collector statistics inside the main dashboard', () => {
     const dashboard = renderRoute('/dashboard', { ...identity, permissions: ['payments.view'] });
     expect(dashboard).not.toContain('class="page-section collector-statistics"');
+  });
+});
+
+describe('route assignments publication', () => {
+  const path = '/collectors/route-assignments';
+  it('publishes the workspace inside Collectors with collectors.view and keeps it out of Dashboard', () => {
+    const routes = elements(AppRouter()).filter((element) => element.type === Route);
+    const entry = routes.find((route) => (route.props as { path?: string }).path === path);
+    expect((entry?.props as { element?: ReactNode }).element).toMatchObject({ type: RouteGuard,
+      props: { permission: 'collectors.view', children: { type: RouteAssignmentsPage } } });
+    const allowed = renderRoute(path, { ...identity, permissions: ['collectors.view'] });
+    expect(allowed).toContain('Rutas y asignaciones');
+    expect(allowed).toContain('Cargando asignaciones');
+    expect(allowed).toContain(`href="${path}"`);
+    expect(renderRoute(path, identity)).toContain('No tienes permiso');
+    expect(renderRoute('/dashboard', { ...identity, permissions: ['collectors.view'] })).not.toContain('class="route-assignments-page"');
+  });
+});
+
+describe('collection agenda publication', () => {
+  const path = '/collectors/collection-agenda';
+  it('uses only collection-agenda.view and preserves the central superadmin bypass', () => {
+    const routes = elements(AppRouter()).filter((element) => element.type === Route);
+    const entry = routes.find((route) => (route.props as { path?: string }).path === path);
+    expect((entry?.props as { element?: ReactNode }).element).toMatchObject({ type: RouteGuard,
+      props: { permission: 'collection-agenda.view', children: { type: CollectionAgendaPage } } });
+    expect(renderRoute(path, { ...identity, permissions: ['collection-agenda.view'] })).toContain('Agenda de cobros');
+    expect(renderRoute(path, { ...identity, permissions: ['collectors.view', 'payments.view'] })).toContain('No tienes permiso');
+    expect(renderRoute(path, { ...identity, role: { ...identity.role, isSuperAdmin: true } })).toContain('Agenda de cobros');
+  });
+});
+
+describe('route settings scope', () => {
+  it('keeps route administration and excludes the duplicated inline assignment operation', () => {
+    const settings = renderRoute('/settings/routes', { ...identity, permissions: ['routes.view', 'routes.create', 'routes.update', 'routes.status.change', 'routes.export', 'routes.assign.customers', 'routes.assign.collectors'] });
+    expect(settings).toContain('Administra las rutas utilizadas para la gestión de cobros.');
+    expect(settings).toContain('Nueva ruta');
+    expect(settings).toContain('Reporte PDF');
+    for (const removed of ['OPERACIÓN', 'Asignaciones', 'Asigna clientes y cobradores a rutas activas.', 'Ruta activa', 'Cliente activo', 'Asignar cliente', 'Cobrador activo', 'Asignar cobrador']) expect(settings).not.toContain(removed);
+
+    const workspace = renderRoute('/collectors/route-assignments', { ...identity, permissions: ['collectors.view', 'routes.assign.customers', 'routes.assign.collectors'] });
+    expect(workspace).toContain('Rutas y asignaciones');
+    expect(workspace).toContain('Cargando asignaciones');
   });
 });
 

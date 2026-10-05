@@ -77,6 +77,7 @@ export type NewRefinancing = RefinancingAmounts & {
 };
 
 export interface RefinancingTransaction {
+  readonly context?: unknown;
   findByKey(key: string): Promise<{ id: string; fingerprint: string } | undefined>;
   lockOrigin(id: string): Promise<RefinancingSnapshot | undefined>;
   readSnapshot(id: string): Promise<RefinancingSnapshot | undefined>;

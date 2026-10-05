@@ -86,12 +86,14 @@ describe('security guards and permission metadata', () => {
        'customers.view', 'customers.create', 'customers.update', 'customers.status.change', 'customers.summary.view', 'customers.analysis.view', 'customers.files.view', 'customers.export', 'customers.assigned.view', 'customers.site.view', 'customers.site.capture', 'customers.site.replace', 'customers.site.replace.authorize',
        'users.view', 'users.create', 'users.update', 'users.status.change', 'users.password.reset', 'users.role.assign', 'roles.view', 'roles.permissions.update',
        'collectors.view', 'collectors.create', 'collectors.update', 'collectors.status.change', 'collectors.user.assign', 'collectors.photo.view',
-            'financial-opening.view', 'financial-opening.perform', 'cash-movements.view', 'cash-movements.create', 'cash-movements.reverse', 'cash-movements.export', 'loans.view', 'loans.create', 'loans.update', 'loans.export', 'loans.status.annul', 'loans.status.uncollectible', 'loans.status.reactivate', 'loans.refinance.view', 'loans.refinance.create', 'payments.view', 'payments.create', 'payments.annul', 'payments.plan.customize',
+             'financial-opening.view', 'financial-opening.perform', 'cash-movements.view', 'cash-movements.create', 'cash-movements.reverse', 'cash-movements.export', 'financial-closes.view', 'financial-closes.confirm', 'loans.view', 'loans.create', 'loans.update', 'loans.export', 'loans.status.annul', 'loans.status.uncollectible', 'loans.status.reactivate', 'loans.refinance.view', 'loans.refinance.create', 'payments.view', 'payments.create', 'payments.annul', 'payments.plan.customize', 'collection-agenda.view',
     ]));
     expect(Reflect.getMetadata(PERMISSIONS_KEY, CustomerController.prototype.list)).toEqual(['customers.view']);
     expect(Reflect.getMetadata(PERMISSIONS_KEY, CustomerController.prototype.summary)).toEqual(['customers.summary.view']);
     expect(Reflect.getMetadata(PERMISSIONS_KEY, CustomerController.prototype.getStatistics)).toEqual(['customers.summary.view']);
     expect(Reflect.getMetadata(PERMISSIONS_KEY, CustomerController.prototype.exportAll)).toEqual(['customers.export']);
+    expect(Reflect.getMetadata(PERMISSIONS_KEY, LoanController.prototype.exportActiveLoans)).toEqual(['loans.export']);
+    expect(Reflect.getMetadata(PERMISSIONS_KEY, LoanController.prototype.activeLoanSummary)).toEqual(['loans.view']);
     expect(Reflect.getMetadata(PERMISSIONS_KEY, CustomerController.prototype.getFinancialAnalysis)).toEqual(['customers.analysis.view']);
     expect(Reflect.getMetadata(PERMISSIONS_KEY, CustomerController.prototype.file)).toEqual(['customers.files.view']);
     expect(Reflect.getMetadata(PERMISSIONS_KEY, CustomerController.prototype.create)).toEqual(['customers.create']);
@@ -102,6 +104,13 @@ describe('security guards and permission metadata', () => {
     expect(Reflect.getMetadata(PERMISSIONS_KEY, RouteController.prototype.createOne)).toEqual(['routes.create']);
     expect(COLLECTION_MANAGER_DEFAULTS).not.toContain('customers.analysis.view');
     expect(COLLECTOR_DEFAULTS).not.toContain('customers.analysis.view');
+    expect(COLLECTOR_DEFAULTS).toEqual([
+      'customers.assigned.view',
+      'customers.site.view',
+      'customers.site.capture',
+      'customers.site.replace',
+      'collection-agenda.view',
+    ]);
   });
 
   it('protects the loan edit route with the existing dynamic loans.update permission', () => {

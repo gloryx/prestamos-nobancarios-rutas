@@ -10,8 +10,8 @@ type ActiveCollectorAssignment = { id: string; routeId: string; collectorUserId:
 type WorkspaceCollectorRow = { collectorId: string; collectorUserId: string; name: string };
 type WorkspaceRouteRow = { routeId: string; routeName: string; routeActive: boolean; collectorAssignmentId: string | null; collectorUserId: string | null };
 type WorkspaceCustomerRow = { customerId: string; name: string; identification: string; phone: string; customerActive: boolean; customerRouteAssignmentId: string; routeId: string };
-type WorkspaceUnassignedCustomer = Omit<WorkspaceCustomerRow, 'customerRouteAssignmentId' | 'routeId'>;
-type WorkspaceUnassignedCustomerResult = { items: WorkspaceUnassignedCustomer[]; total: number };
+type WorkspaceUnassignedCustomer = Omit<WorkspaceCustomerRow, 'customerRouteAssignmentId' | 'routeId'> & { cantonName?: string; districtName?: string };
+type WorkspaceUnassignedCustomerResult = { items: WorkspaceUnassignedCustomer[]; total: number; totalUnassigned: number };
 
 export const assignmentSnapshotToken = (customers: ActiveCustomerAssignment[], collectors: ActiveCollectorAssignment[]): string => createHash('sha256')
   .update([...customers.map((row) => `C:${row.id}:${row.customerId}:${row.routeId}`), ...collectors.map((row) => `R:${row.id}:${row.routeId}:${row.collectorUserId}`)].sort().join('|'))
@@ -75,15 +75,26 @@ export class CustomerSiteTypeOrmRepository implements CustomerSiteRepository {
         c.identification, c.primary_phone AS phone, c.is_active AS "customerActive", cra.id AS "customerRouteAssignmentId", cra.route_id AS "routeId"
         FROM customers c JOIN customer_route_assignments cra ON cra.customer_id = c.id AND cra.ended_at IS NULL
         ORDER BY c.first_name, c.first_last_name, c.id`) as WorkspaceCustomerRow[];
-      const [unassignedCustomers] = await manager.query(`WITH eligible AS MATERIALIZED (
+       const [unassignedCustomers] = await manager.query(`WITH unassigned AS MATERIALIZED (
           SELECT c.id AS "customerId", CONCAT_WS(' ', c.first_name, c.middle_name, c.first_last_name, c.second_last_name) AS name,
-            c.identification, c.primary_phone AS phone, c.first_name, c.first_last_name
+            c.identification, c.primary_phone AS phone, c.secondary_phone AS "secondaryPhone", c.first_name, c.first_last_name,
+            canton.code AS "cantonCode", canton.name AS "cantonName", district.code AS "districtCode", district.name AS "districtName"
           FROM customers c LEFT JOIN customer_route_assignments cra ON cra.customer_id = c.id AND cra.ended_at IS NULL
-          WHERE c.is_active = true AND cra.id IS NULL AND ($1 = '' OR CONCAT_WS(' ', c.first_name, c.middle_name, c.first_last_name, c.second_last_name) ILIKE '%' || $1 || '%' OR c.identification ILIKE '%' || $1 || '%' OR c.primary_phone ILIKE '%' || $1 || '%' OR COALESCE(c.secondary_phone, '') ILIKE '%' || $1 || '%')
+          LEFT JOIN customer_addresses address ON address.customer_id = c.id
+          LEFT JOIN districts district ON district.code = address.district_code
+          LEFT JOIN cantons canton ON canton.code = district.canton_code
+          WHERE c.is_active = true AND cra.id IS NULL
+        ), eligible AS MATERIALIZED (
+          SELECT * FROM unassigned WHERE
+            ($1 = '' OR name ILIKE '%' || $1 || '%' OR identification ILIKE '%' || $1 || '%' OR phone ILIKE '%' || $1 || '%' OR COALESCE("secondaryPhone", '') ILIKE '%' || $1 || '%')
+            AND ($4::int IS NULL OR "cantonCode" = $4)
+            AND ($5::int IS NULL OR "districtCode" = $5)
         ), page AS (SELECT * FROM eligible ORDER BY first_name, first_last_name, "customerId" LIMIT $2 OFFSET $3)
-        SELECT COALESCE(JSONB_AGG(JSONB_BUILD_OBJECT('customerId', "customerId", 'name', name, 'identification', identification, 'phone', phone)
+        SELECT COALESCE(JSONB_AGG(JSONB_BUILD_OBJECT('customerId', "customerId", 'name', name, 'identification', identification, 'phone', phone,
+          'cantonName', "cantonName", 'districtName', "districtName")
           ORDER BY first_name, first_last_name, "customerId"), '[]'::jsonb) AS items,
-          (SELECT COUNT(*)::int FROM eligible) AS total FROM page`, [search, query.pageSize, offset]) as WorkspaceUnassignedCustomerResult[];
+          (SELECT COUNT(*)::int FROM eligible) AS total,
+          (SELECT COUNT(*)::int FROM unassigned) AS "totalUnassigned" FROM page`, [search, query.pageSize, offset, query.cantonCode ?? null, query.districtCode ?? null]) as WorkspaceUnassignedCustomerResult[];
 
       const collectorMap = new Map(collectors.map((row) => [row.collectorUserId, { ...row, active: true as const, routes: [] as AssignmentWorkspace['unassignedRoutes'] }]));
       const routeMap = new Map<string, AssignmentWorkspace['unassignedRoutes'][number]>();
@@ -119,7 +130,7 @@ export class CustomerSiteTypeOrmRepository implements CustomerSiteRepository {
         snapshotToken: assignmentSnapshotToken(activeCustomerAssignments, activeCollectorAssignments),
         collectors: [...collectorMap.values()],
         unassignedRoutes,
-        unassignedCustomers: { items: unassignedCustomers.items, total: Number(unassignedCustomers.total), page: query.page, pageSize: query.pageSize },
+        unassignedCustomers: { items: unassignedCustomers.items, total: Number(unassignedCustomers.total), totalUnassigned: Number(unassignedCustomers.totalUnassigned), page: query.page, pageSize: query.pageSize },
       };
     });
   }
@@ -134,9 +145,9 @@ export class CustomerSiteTypeOrmRepository implements CustomerSiteRepository {
           FROM collector_route_assignments WHERE ended_at IS NULL ORDER BY route_id, id FOR UPDATE`) as ActiveCollectorAssignment[];
         if (assignmentSnapshotToken(customerRows, collectorRows) !== input.snapshotToken) throw new CustomerSiteConflictError(conflictMessage);
 
-        const routeIds = [...new Set(input.operations.flatMap((operation) => 'routeId' in operation ? [operation.routeId] : []))];
-        const customerIds = [...new Set(input.operations.flatMap((operation) => 'customerId' in operation ? [operation.customerId] : []))];
-        const collectorUserIds = [...new Set(input.operations.flatMap((operation) => 'collectorUserId' in operation ? [operation.collectorUserId] : []))];
+        const routeIds = [...new Set(input.operations.flatMap((operation) => operation.type === 'UNASSIGN_CUSTOMER_FROM_ROUTE' ? [] : [operation.routeId]))];
+        const customerIds = [...new Set(input.operations.flatMap((operation) => operation.type === 'ASSIGN_CUSTOMER_TO_ROUTE' || operation.type === 'MOVE_CUSTOMER_TO_ROUTE' || operation.type === 'UNASSIGN_CUSTOMER_FROM_ROUTE' ? [operation.customerId] : []))];
+        const collectorUserIds = [...new Set(input.operations.flatMap((operation) => operation.type === 'ASSIGN_ROUTE_TO_COLLECTOR' || operation.type === 'MOVE_ROUTE_TO_COLLECTOR' ? [operation.collectorUserId] : []))];
         const activeRoutes = routeIds.length ? await manager.query('SELECT id FROM routes WHERE id = ANY($1::uuid[]) AND is_active = true FOR SHARE', [routeIds]) as Array<{ id: string }> : [];
         const activeCustomers = customerIds.length ? await manager.query('SELECT id FROM customers WHERE id = ANY($1::uuid[]) AND is_active = true FOR SHARE', [customerIds]) as Array<{ id: string }> : [];
         const eligibleCollectors = collectorUserIds.length ? await manager.query(`SELECT u.id FROM collectors c

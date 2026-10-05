@@ -2,6 +2,22 @@ import { describe, expect, it, vi } from 'vitest';
 import { loanApi } from './loan.api';
 
 describe('loan list sorting', () => {
+  it('requests only the complete active-portfolio summary without pagination or filters', async () => {
+    const payload = { totalActiveLoans: 209, capitalPlaced: '31000000.00', outstandingPrincipal: '18500000.00', outstandingInterest: '3200000.00', financialBalance: '21700000.00' };
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true, status: 200, json: async () => payload } as Response);
+    try {
+      await expect(loanApi.summary()).resolves.toEqual(payload);
+      expect(fetchMock).toHaveBeenCalledWith('http://localhost:3000/loans/summary', expect.objectContaining({ credentials: 'include', cache: 'no-store' }));
+    } finally { fetchMock.mockRestore(); }
+  });
+  it('requests the dedicated unpaginated active-loan export without list filters', async () => {
+    const payload = { items: [], summary: { totalActiveLoans: 0, capitalPlaced: '0.00', outstandingPrincipal: '0.00', outstandingInterest: '0.00', financialBalance: '0.00' } };
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true, status: 200, json: async () => payload } as Response);
+    try {
+      await expect(loanApi.exportActive()).resolves.toEqual(payload);
+      expect(fetchMock).toHaveBeenCalledWith('http://localhost:3000/loans/export', expect.objectContaining({ credentials: 'include', cache: 'no-store' }));
+    } finally { fetchMock.mockRestore(); }
+  });
   it('reads the operational receipt through the existing loans route without a payments request', async () => {
     const detail = { loanNumber: '42', financialBalance: '25.00', validPayments: [] };
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true, status: 200, json: async () => detail } as Response);

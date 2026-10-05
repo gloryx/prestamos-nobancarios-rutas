@@ -1,6 +1,8 @@
+import { plainToInstance } from 'class-transformer';
 import type { AssignmentBatchOperation } from '../src/application/customer-site/customer-site.repository';
 import { CustomerSiteConflictError, CustomerSiteNotFoundError } from '../src/domain/customer-site/customer-site.errors';
 import { assignmentSnapshotToken, CustomerSiteTypeOrmRepository } from '../src/infrastructure/database/typeorm/repositories/customer-site.typeorm-repository';
+import { AssignmentBatchOperationDto } from '../src/presentation/customer-site/assignment.dto';
 
 type CustomerAssignment = { id: string; customerId: string; routeId: string; endedAt?: Date };
 type CollectorAssignment = { id: string; routeId: string; collectorUserId: string; endedAt?: Date };
@@ -60,11 +62,47 @@ const token = (state: State): string => assignmentSnapshotToken(
   state.collectors.filter((row) => !row.endedAt).map((row) => ({ id: row.id, routeId: row.routeId, collectorUserId: row.collectorUserId })),
 );
 
+const runtimeOperation = (operation: AssignmentBatchOperation): AssignmentBatchOperation =>
+  plainToInstance(AssignmentBatchOperationDto, operation) as AssignmentBatchOperation;
+
 describe('transactional route assignment batch', () => {
   const base = (): State => ({
     customers: [{ id: 'ca-1', customerId: 'customer-1', routeId: 'route-1' }, { id: 'ca-2', customerId: 'customer-2', routeId: 'route-2' }],
     collectors: [{ id: 'ra-1', routeId: 'route-1', collectorUserId: 'collector-1' }, { id: 'ra-2', routeId: 'route-2', collectorUserId: 'collector-2' }, { id: 'ra-4', routeId: 'route-4', collectorUserId: 'collector-3' }],
     validRoutes: ['route-1', 'route-2', 'route-3', 'route-4'], validCustomers: ['customer-1', 'customer-2', 'customer-3'], eligibleCollectors: ['collector-1', 'collector-2', 'collector-3'],
+  });
+
+  it('validates a mixed route and active-customer batch using only IDs for each operation type', async () => {
+    const initial = base();
+    const { repository, query } = batchRepository(initial);
+    const operations = [
+      runtimeOperation({ type: 'MOVE_ROUTE_TO_COLLECTOR', routeId: 'route-1', collectorUserId: 'collector-2', expectedAssignmentId: 'ra-1' }),
+      runtimeOperation({ type: 'MOVE_CUSTOMER_TO_ROUTE', customerId: 'customer-1', routeId: 'route-2', expectedAssignmentId: 'ca-1' }),
+    ];
+
+    await expect(repository.applyAssignmentBatch({ snapshotToken: token(initial), operations, actorId: 'admin-1' })).resolves.toMatchObject({ applied: 2 });
+    expect(query.mock.calls.find(([sql]) => String(sql).startsWith('SELECT id FROM customers'))?.[1]).toEqual([['customer-1']]);
+    expect(query.mock.calls.find(([sql]) => String(sql).includes('SELECT u.id FROM collectors'))?.[1]).toEqual([['collector-2']]);
+  });
+
+  it('validates an active-customer-only batch without running collector validation', async () => {
+    const initial = base();
+    const { repository, query } = batchRepository(initial);
+    const operations = [runtimeOperation({ type: 'MOVE_CUSTOMER_TO_ROUTE', customerId: 'customer-1', routeId: 'route-2', expectedAssignmentId: 'ca-1' })];
+
+    await expect(repository.applyAssignmentBatch({ snapshotToken: token(initial), operations, actorId: 'admin-1' })).resolves.toMatchObject({ applied: 1 });
+    expect(query.mock.calls.find(([sql]) => String(sql).startsWith('SELECT id FROM customers'))?.[1]).toEqual([['customer-1']]);
+    expect(query.mock.calls.some(([sql]) => String(sql).includes('SELECT u.id FROM collectors'))).toBe(false);
+  });
+
+  it('validates a route-only batch without running customer validation', async () => {
+    const initial = base();
+    const { repository, query } = batchRepository(initial);
+    const operations = [runtimeOperation({ type: 'MOVE_ROUTE_TO_COLLECTOR', routeId: 'route-1', collectorUserId: 'collector-2', expectedAssignmentId: 'ra-1' })];
+
+    await expect(repository.applyAssignmentBatch({ snapshotToken: token(initial), operations, actorId: 'admin-1' })).resolves.toMatchObject({ applied: 1 });
+    expect(query.mock.calls.some(([sql]) => String(sql).startsWith('SELECT id FROM customers'))).toBe(false);
+    expect(query.mock.calls.find(([sql]) => String(sql).includes('SELECT u.id FROM collectors'))?.[1]).toEqual([['collector-2']]);
   });
 
   it('applies all six operation types atomically while preserving ended history', async () => {

@@ -22,3 +22,4 @@ export * from './loan-refinancing.orm-entity';
 export * from './loan-edit-operation.orm-entity';
 export * from './loan-status-history.orm-entity';
 export * from './payment.orm-entities';
+export * from './financial-close.orm-entities';

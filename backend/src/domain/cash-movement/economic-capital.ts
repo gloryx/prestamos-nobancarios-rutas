@@ -82,8 +82,13 @@ function ratio(numerator: bigint, closingSum: bigint, days: number): string | nu
   return `${scaled / 10_000n}.${(scaled % 10_000n).toString().padStart(4, '0')}`;
 }
 
-export function calculateEconomicCapital(period: string, facts: EconomicCapitalFacts, currentDate = costaRicaDate()): EconomicCapitalResult {
-  const range = economicCapitalPeriod(period);
+export function calculateEconomicCapital(period: string, facts: EconomicCapitalFacts, currentDate = costaRicaDate(), effectiveFromDate?: string): EconomicCapitalResult {
+  const calendarRange = economicCapitalPeriod(period);
+  if (effectiveFromDate && (!validDate(effectiveFromDate) || effectiveFromDate < calendarRange.fromDate || effectiveFromDate > calendarRange.toDate))
+    throw new EconomicCapitalValidationError('La fecha inicial efectiva debe pertenecer al período solicitado.');
+  const fromDate = effectiveFromDate ?? calendarRange.fromDate;
+  const calendarDays = Math.round((date(calendarRange.toDate).getTime() - date(fromDate).getTime()) / 86_400_000) + 1;
+  const range = { fromDate, toDate: calendarRange.toDate, calendarDays };
   const unavailable = (warning: string): EconomicCapitalResult => ({ period, ...range, openingEconomicBalance: null,
     realCapitalDisbursed: null, recoveredCapital: null, periodAdjustments: null, averageWorkingCapital: null, capitalRotation: null,
     closingEconomicBalance: null, dataStatus: 'UNAVAILABLE', warnings: [...facts.warnings, warning], daily: [] });

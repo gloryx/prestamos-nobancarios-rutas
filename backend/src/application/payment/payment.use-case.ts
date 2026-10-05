@@ -12,6 +12,8 @@ import { getNextLoanStatusEventSequence, LoanStatusHistorySequenceError } from '
 import { ACTIVE_LOAN_OVERDUE_SQL } from '../loan/active-loan-condition.sql';
 import { PaymentConflictError, PaymentNotFoundError, PaymentValidationError } from './payment.errors';
 import { applyPaymentPlanDraft } from './payment-plan-draft';
+import type { RetroactivePeriodGuard } from '../financial-close/retroactive-period.guard';
+import { ClosedFinancialPeriodError } from '../../domain/financial-close/financial-close.errors';
 
 export { PaymentConflictError, PaymentNotFoundError, PaymentValidationError } from './payment.errors';
 
@@ -46,7 +48,8 @@ function assertFinancialIntegrity(loan: LoanFinancialAmounts, totals: ValidPayme
 }
 
 export class RegisterPaymentUseCase {
-  constructor(private readonly dataSource: DataSource, private readonly totalsReader: LoanFinancialTotalsReader) {}
+  constructor(private readonly dataSource: DataSource, private readonly totalsReader: LoanFinancialTotalsReader,
+    private readonly closedPeriods?: RetroactivePeriodGuard) {}
 
   private async replay(manager: Pick<EntityManager, 'query'>, existing: { id: string; fingerprint: string }, fingerprint: string) {
     if (existing.fingerprint !== fingerprint) throw new PaymentConflictError('The idempotency key was used with different data.');
@@ -67,6 +70,8 @@ export class RegisterPaymentUseCase {
       if (!loan[0]) throw new PaymentNotFoundError('The loan does not exist.');
       const raced = await manager.query('SELECT id, idempotency_fingerprint AS "fingerprint" FROM payments WHERE idempotency_key = $1 FOR SHARE', [input.idempotencyKey]);
       if (raced[0]) return this.replay(manager, raced[0], fp);
+      try { await this.closedPeriods?.assertDateAllowed(input.paymentDate, manager); }
+      catch (error) { if (error instanceof ClosedFinancialPeriodError) throw new PaymentConflictError(error.message); throw error; }
       if (loan[0].status !== 'ACTIVE') throw new PaymentValidationError('Only active loans accept payments.');
       const opening = await manager.query(`SELECT opening_date::text AS "openingDate" FROM financial_openings WHERE singleton_key = 'DEFAULT' FOR SHARE`);
       if (!opening[0]) throw new PaymentValidationError('The financial opening is required.');
@@ -148,6 +153,8 @@ export class RegisterPaymentUseCase {
           || !MONEY.test(reversal.amount) || cents(reversal.amount) !== cents(payment.amount)) throw new PaymentConflictError('The annulment cash reversal does not reconcile.');
         return this.detail(manager, paymentId);
       }
+      try { await this.closedPeriods?.assertDateAllowed(today(), manager); }
+      catch (error) { if (error instanceof ClosedFinancialPeriodError) throw new PaymentConflictError(error.message); throw error; }
       if (loan.status === 'REFINANCED') throw new PaymentConflictError('Payments on a refinanced loan cannot be annulled independently.');
       if (payment.status !== 'VALID' || reversal) throw new PaymentConflictError('Only a valid payment without a prior reversal can be annulled.');
       if (latestValid?.id !== paymentId) throw new PaymentConflictError('Solo se puede anular el último pago válido.');

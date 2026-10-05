@@ -79,14 +79,16 @@ describe('sidebar navigation configuration', () => {
       items: [{ type: 'link', label: 'Registrar pago', path: '/payments/new', icon: 'payment', requiredPermission: 'payments.view' },
         { type: 'link', label: 'Seguimiento de cartera', path: '/payments/portfolio-tracking', icon: 'payment', requiredPermission: 'payments.view' },
         { type: 'link', label: 'Cobros del día', path: '/payments/daily-collections', icon: 'payment', requiredPermission: 'payments.view' },
-        { type: 'link', label: 'Historial de pagos', path: '/payments/history', icon: 'payment', requiredPermission: 'payments.view' }],
+        { type: 'link', label: 'Historial de pagos', path: '/payments/history', icon: 'payment', requiredPermission: 'payments.view' },
+        { type: 'link', label: 'Cobros por cobrador', path: '/payments/collector-report', icon: 'dashboard', requiredPermission: 'payments.view' }],
     });
     if (payments?.type !== 'group') return;
-    expect(payments.items).toHaveLength(4);
+    expect(payments.items).toHaveLength(5);
     expect(getActiveGroupIds(navigationEntries, '/payments/new')).toEqual(['payments']);
     expect(getActiveGroupIds(navigationEntries, '/payments/portfolio-tracking')).toEqual(['payments']);
     expect(getActiveGroupIds(navigationEntries, '/payments/daily-collections')).toEqual(['payments']);
     expect(getActiveGroupIds(navigationEntries, '/payments/history')).toEqual(['payments']);
+    expect(getActiveGroupIds(navigationEntries, '/payments/collector-report')).toEqual(['payments']);
   });
 
   it('filters registration by payments.view using the existing navigation helper', () => {
@@ -99,7 +101,8 @@ describe('sidebar navigation configuration', () => {
       items: [{ label: 'Registrar pago', path: '/payments/new', requiredPermission: 'payments.view' },
         { label: 'Seguimiento de cartera', path: '/payments/portfolio-tracking', requiredPermission: 'payments.view' },
         { label: 'Cobros del día', path: '/payments/daily-collections', requiredPermission: 'payments.view' },
-        { label: 'Historial de pagos', path: '/payments/history', requiredPermission: 'payments.view' }],
+        { label: 'Historial de pagos', path: '/payments/history', requiredPermission: 'payments.view' },
+        { label: 'Cobros por cobrador', path: '/payments/collector-report', requiredPermission: 'payments.view' }],
     });
   });
   it('publishes profitability under Finanzas and nested Reportes with the existing cash permission', () => {
@@ -108,7 +111,7 @@ describe('sidebar navigation configuration', () => {
     if (finance?.type !== 'group') return;
     expect(finance.items[0]).toMatchObject({ type: 'link', label: 'Movimientos de caja',
       path: '/finance/cash-movements', requiredPermission: 'cash-movements.view' });
-    expect(finance.items[1]).toMatchObject({ type: 'group', label: 'Reportes', requiredPermission: 'cash-movements.view',
+    expect(finance.items[2]).toMatchObject({ type: 'group', label: 'Reportes', requiredPermission: 'cash-movements.view',
       items: [{ type: 'link', label: 'Rentabilidad integral', path: '/finance/reports/profitability',
         requiredPermission: 'cash-movements.view' }] });
     expect(getActiveGroupIds(navigationEntries, '/finance/reports/profitability'))
@@ -118,6 +121,13 @@ describe('sidebar navigation configuration', () => {
       .find((entry) => entry.label === 'Finanzas')).toMatchObject({ type: 'group', items: [
         { label: 'Movimientos de caja' }, { label: 'Reportes', items: [{ label: 'Rentabilidad integral' }] },
       ] });
+  });
+  it('publishes monthly close independently with its dedicated view permission', () => {
+    const allowed = filterNavigationEntries(navigationEntries, (permission) => permission === 'financial-closes.view');
+    expect(allowed.find((entry) => entry.label === 'Finanzas')).toMatchObject({ type: 'group', items: [
+      { label: 'Cierre financiero mensual', path: '/finance/financial-closes', requiredPermission: 'financial-closes.view' },
+    ] });
+    expect(getActiveGroupIds(navigationEntries, '/finance/financial-closes')).toEqual(['finance']);
   });
   it('publishes customer financial analysis only with its dedicated permission', () => {
     const allowed = filterNavigationEntries(navigationEntries, (permission) => permission === 'customers.analysis.view');
@@ -144,12 +154,24 @@ describe('sidebar navigation configuration', () => {
     if (collectors?.type !== 'group') return;
     expect(collectors.items).toMatchObject([
       { label: 'Cobradores', path: '/collectors', requiredPermission: 'collectors.view' },
+      { label: 'Rutas y asignaciones', path: '/collectors/route-assignments', requiredPermission: 'collectors.view' },
+      { label: 'Agenda de cobros', path: '/collectors/collection-agenda', requiredPermission: 'collection-agenda.view' },
       { label: 'Estadísticas', path: '/collectors/statistics', requiredPermission: 'payments.view' },
     ]);
     expect(getActiveGroupIds(navigationEntries, '/collectors/statistics')).toEqual(['collector']);
     const statisticsOnly = filterNavigationEntries(navigationEntries, (permission) => permission === 'payments.view');
     expect(statisticsOnly.find((entry) => entry.label === 'Cobradores')).toMatchObject({ type: 'group', items: [
       { label: 'Estadísticas', path: '/collectors/statistics' },
+    ] });
+    const managementOnly = filterNavigationEntries(navigationEntries, (permission) => permission === 'collectors.view');
+    expect(managementOnly.find((entry) => entry.label === 'Cobradores')).toMatchObject({ type: 'group', items: [
+      { label: 'Cobradores' }, { label: 'Rutas y asignaciones', path: '/collectors/route-assignments' },
+    ] });
+    expect(getActiveGroupIds(navigationEntries, '/collectors/route-assignments')).toEqual(['collector']);
+    expect(getActiveGroupIds(navigationEntries, '/collectors/collection-agenda')).toEqual(['collector']);
+    const agendaOnly = filterNavigationEntries(navigationEntries, (permission) => permission === 'collection-agenda.view');
+    expect(agendaOnly.find((entry) => entry.label === 'Cobradores')).toMatchObject({ type: 'group', items: [
+      { label: 'Agenda de cobros', path: '/collectors/collection-agenda' },
     ] });
   });
   it('places new loan second without changing the remaining loan entries', () => {

@@ -3,7 +3,7 @@ import { Link as RouterLink, useNavigate } from 'react-router-dom';
 import { loanApi } from '../../infrastructure/api/loan.api';
 import { PaymentFrequencyApi } from '../../infrastructure/api/payment-frequency.api';
 import type { PaymentFrequency } from '../../domain/entities/payment-frequency';
-import type { ActiveLoanListItem, LoanListItem } from '../../domain/entities/loan';
+import type { ActiveLoanListItem, ActiveLoanSummary, LoanListItem } from '../../domain/entities/loan';
 import { formatCRC } from '../../shared/utils/money';
 import { formatDateOnlyForDisplay } from '../../shared/utils/date';
 import { TableActions } from '../components/TableActions';
@@ -12,11 +12,41 @@ import { Icon } from '../components/layout/Icon';
 import { useAuth } from '../hooks/auth-context';
 import { generateLoanPaymentPlanReport } from '../../infrastructure/reports/loan-payment-plan-report.service';
 import type { LoanSortBy, LoanSortOrder } from '../../infrastructure/api/loan.api';
+import { FileSpreadsheet } from 'lucide-react';
+import { generateActiveLoansExcel } from '../../infrastructure/reports/active-loans-excel.service';
 
 const NewLoanLink = (props: ComponentProps<typeof RouterLink>) => {
   const { can } = useAuth();
   return can('loans.create') ? <RouterLink {...props} /> : null;
 };
+
+export function ActiveLoanSummaryView({ summary, loading, error }: { summary?: ActiveLoanSummary; loading: boolean; error?: string }): ReactElement {
+  const metrics = [
+    ['Préstamos activos', summary ? String(summary.totalActiveLoans) : '—'],
+    ['Capital colocado', summary ? formatCRC(summary.capitalPlaced) : '—'],
+    ['Capital pendiente', summary ? formatCRC(summary.outstandingPrincipal) : '—'],
+    ['Interés pendiente', summary ? formatCRC(summary.outstandingInterest) : '—'],
+    ['Saldo pendiente', summary ? formatCRC(summary.financialBalance) : '—'],
+  ];
+  return <section className="active-loan-summary" aria-label="Resumen financiero de préstamos activos" aria-busy={loading}>
+    {metrics.map(([label, value]) => <div key={label}><span>{label}</span><strong>{value}</strong></div>)}
+    {error && <p role="alert">{error}</p>}
+  </section>;
+}
+
+function ActiveLoansSummary(): ReactElement {
+  const [summary, setSummary] = useState<ActiveLoanSummary>();
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    let active = true;
+    void loanApi.summary().then((value) => { if (active) { setSummary(value); setError(''); } })
+      .catch((cause: unknown) => { if (active) setError(cause instanceof Error ? cause.message : 'No se pudo cargar el resumen financiero.'); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, []);
+  return <ActiveLoanSummaryView summary={summary} loading={loading} error={error} />;
+}
 
 export function LoansPage(): ReactElement {
   const navigate = useNavigate();
@@ -34,7 +64,9 @@ export function LoansPage(): ReactElement {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
   const listRequest = useRef(0);
+  const exportInFlight = useRef(false);
   const closeEdit = useCallback(() => setEditingId(null), []);
 
   useEffect(() => {
@@ -76,6 +108,15 @@ export function LoansPage(): ReactElement {
     }
   };
 
+  const exportActiveLoans = async () => {
+    if (exportInFlight.current || !can('loans.export')) return;
+    exportInFlight.current = true;
+    setExporting(true); setError('');
+    try { await generateActiveLoansExcel(await loanApi.exportActive()); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : 'No se pudo exportar los préstamos activos.'); }
+    finally { exportInFlight.current = false; setExporting(false); }
+  };
+
   const hasFilters = Boolean(search || frequencyId || fromDate || toDate);
   const totalPages = Math.ceil(total / 20);
   const clearFilters = () => {
@@ -89,8 +130,9 @@ export function LoansPage(): ReactElement {
   return <section className="page-section loan-list" aria-labelledby="loan-list-title">
     <div className="loan-list__heading">
        <div><span className="eyebrow">PRÉSTAMOS ACTIVOS</span><h1 id="loan-list-title" tabIndex={-1}>Préstamos</h1><p>Consulta y descarga los planes de pago de los préstamos activos.</p></div>
-      <NewLoanLink className="button button--primary" to="/loans/new">Nuevo préstamo</NewLoanLink>
+      <div className="loan-list__heading-actions"><NewLoanLink className="button button--primary" to="/loans/new">Nuevo préstamo</NewLoanLink>{can('loans.export') && <button className="button button--secondary" type="button" disabled={exporting} aria-busy={exporting} onClick={() => void exportActiveLoans()}><FileSpreadsheet aria-hidden="true" size={18} />{exporting ? 'Exportando…' : 'Exportar Excel'}</button>}</div>
     </div>
+    <ActiveLoansSummary />
 
     <div className="loan-list__surface">
       <div className="loan-list__toolbar" aria-label="Filtros de préstamos">

@@ -8,3 +8,9 @@ export const dailyCollectionsApi = {
   due: (query: DailyCollectionsQuery) => apiClient.request<DailyCollectionsPage<DailyDueItem>>(`/payments/daily-collections/due?${params(query)}`, { cache: 'no-store' }),
   received: (query: DailyCollectionsQuery) => apiClient.request<DailyCollectionsPage<DailyReceivedItem>>(`/payments/daily-collections/received?${params(query)}`, { cache: 'no-store' }),
 };
+
+export const assignedDailyCollectionsApi = {
+  summary: (date: string) => apiClient.request<DailyCollectionsSummary>(`/payments/daily-collections/assigned/summary?${new URLSearchParams({ date })}`, { cache: 'no-store' }),
+  due: (query: DailyCollectionsQuery) => apiClient.request<DailyCollectionsPage<DailyDueItem>>(`/payments/daily-collections/assigned/due?${params(query)}`, { cache: 'no-store' }),
+  received: (query: DailyCollectionsQuery) => apiClient.request<DailyCollectionsPage<DailyReceivedItem>>(`/payments/daily-collections/assigned/received?${params(query)}`, { cache: 'no-store' }),
+};

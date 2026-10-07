@@ -8,3 +8,4 @@ export class ChangeCollectorStatus { constructor(private readonly repository: Co
 export class LinkCollectorUser { constructor(private readonly repository: CollectorRepository) {} execute(id: string, userId: string | null) { return this.repository.linkUser(id, userId); } }
 export class ListEligibleCollectorUsers { constructor(private readonly repository: CollectorRepository) {} execute() { return this.repository.eligibleUsers(); } }
 export class GetCollectorPhoto { constructor(private readonly repository: CollectorRepository) {} execute(id: string) { return this.repository.photo(id); } }
+export class GetCollectorFinancialSummary { constructor(private readonly repository: CollectorRepository) {} execute() { return this.repository.financialSummary(); } }

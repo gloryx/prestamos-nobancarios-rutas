@@ -60,8 +60,8 @@ describe('refinancing operations listing', () => {
     const html = view();
     for (const text of ['02/10/2026', '01/10/2026', 'Ana Solís', '12345', '#100', '#101', '#102',
       'Capital trasladado', 'Interés capitalizado', 'Dinero nuevo', 'Principal nuevo', 'Interés nuevo', 'Total nuevo',
-      '₡120.000,00', '₡30.000,00', '₡50.000,00', '₡200.000,00', '₡40.000,00', '₡240.000,00',
-      '₡160.000,00', '₡10.000,00', '₡210.000,00', '₡0,00']) expect(html).toContain(text);
+      '₡120.000', '₡30.000', '₡50.000', '₡200.000', '₡40.000', '₡240.000',
+      '₡160.000', '₡10.000', '₡210.000', '₡0']) expect(html).toContain(text);
     expect(html).toContain('href="/loan-refinancings/ref-1"');
     expect(html).toContain('href="/loan-refinancings/ref-2"');
     expect(html).not.toMatch(/Días ganados|Rentabilidad/);
@@ -76,10 +76,10 @@ describe('refinancing operations listing', () => {
     const html = view();
     expect(html).toContain('₡123,45');
     expect(html).toContain('₡999,99');
-    expect(html).toContain('₡120.000,00');
-    expect(html).toContain('₡30.000,00');
-    expect(html).toContain('₡50.000,00');
-    expect(html).not.toContain('₡200.000,00');
+    expect(html).toContain('₡120.000');
+    expect(html).toContain('₡30.000');
+    expect(html).toContain('₡50.000');
+    expect(html).not.toContain('₡200.000');
   });
 
   it('uses compact links ordered detail/chain/origin/new and keeps chain available without loans.view', async () => {
@@ -130,16 +130,16 @@ describe('refinancing operations listing', () => {
     const { controller, repository, view } = setup(); await controller.load();
     controller.setFilter('search', 'new');
     expect(view()).toContain('Cargando refinanciamientos…');
-    expect(view()).not.toContain('₡120.000,00');
+    expect(view()).not.toContain('₡120.000');
     vi.mocked(repository.list).mockRejectedValueOnce(new HttpApiError(500, 'private SQL details'));
     await controller.load();
     const error = view();
     expect(error).toContain('No se pudieron cargar los refinanciamientos.');
     expect(error).toContain('Reintentar');
     expect(error).not.toContain('private SQL details');
-    expect(error).not.toContain('₡120.000,00');
+    expect(error).not.toContain('₡120.000');
     await controller.load();
-    expect(view()).toContain('₡120.000,00');
+    expect(view()).toContain('₡120.000');
   });
 
   it('handles invalid date ranges in presentation without showing stale rows', async () => {
@@ -147,7 +147,7 @@ describe('refinancing operations listing', () => {
     controller.setFilter('dateFrom', '2026-10-03');
     controller.setFilter('dateTo', '2026-10-02');
     expect(view()).toContain('La fecha desde no puede ser posterior a la fecha hasta.');
-    expect(view()).not.toContain('₡120.000,00');
+    expect(view()).not.toContain('₡120.000');
   });
 
   it('selects an inactive historical customer via the existing paged lookup and clears the filter', async () => {
@@ -174,7 +174,7 @@ describe('refinancing operations listing', () => {
     const html = view({ canSelectCustomer: false, canViewLoans: false });
     expect(html).toContain('Se requiere permiso para consultar clientes.');
     expect(html).toContain('disabled="">Seleccionar cliente');
-    expect(html).toContain('₡120.000,00');
+    expect(html).toContain('₡120.000');
     expect(html).not.toContain('href="/loans/origin-1"');
   });
 

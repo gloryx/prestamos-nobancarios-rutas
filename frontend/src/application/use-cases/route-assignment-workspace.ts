@@ -3,7 +3,7 @@ import { RouteAssignmentRepositoryError } from '../ports/route-assignment.reposi
 
 export const cloneAssignmentWorkspace = (workspace: AssignmentWorkspace): AssignmentWorkspace => structuredClone(workspace);
 
-export function updateAssignmentWorkspaceFilters(current: AssignmentWorkspaceQuery, patch: Partial<Pick<AssignmentWorkspaceQuery, 'search' | 'cantonCode' | 'districtCode'>>): AssignmentWorkspaceQuery {
+export function updateAssignmentWorkspaceFilters(current: AssignmentWorkspaceQuery, patch: Partial<Pick<AssignmentWorkspaceQuery, 'search' | 'cantonCode' | 'districtCode' | 'activeLoanFilter'>>): AssignmentWorkspaceQuery {
   const next = { ...current, ...patch, page: 1 };
   if (Object.hasOwn(patch, 'cantonCode') && patch.cantonCode !== current.cantonCode) next.districtCode = undefined;
   return next;

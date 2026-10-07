@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Controller, ForbiddenException, Get, NotFoundException, Param, ParseUUIDPipe, Patch, Post, Query, Res, UploadedFile, UseInterceptors, Body } from '@nestjs/common';
+import { BadRequestException, ConflictException, Controller, ForbiddenException, Get, InternalServerErrorException, NotFoundException, Param, ParseUUIDPipe, Patch, Post, Query, Res, UploadedFile, UseInterceptors, Body } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import type { Response } from 'express';
@@ -9,13 +9,22 @@ import type { UploadFile } from '../../application/customer/file-storage';
 import type { CurrentIdentity } from '../../domain/security/security.types';
 import { CurrentUser, RequirePermissions } from '../security/security.decorators';
 import { CollectorListQueryDto, CollectorStatisticsQueryDto, CollectorStatusDto, CollectorUserDto, CreateCollectorDto, UpdateCollectorDto } from './collector.dto';
+import { CollectorFinancialSummaryForbiddenError, CollectorFinancialSummaryIntegrityError, CollectorFinancialSummaryUseCase } from '../../application/collector/collector-financial-summary.use-case';
 
 const mapError = (error: unknown): never => { if (error instanceof CollectorNotFoundError || error instanceof CollectorPhotoNotFoundError) throw new NotFoundException(error.message); if (error instanceof CollectorIdentificationAlreadyExistsError || error instanceof CollectorUserAlreadyLinkedError) throw new ConflictException(error.message); if (error instanceof CollectorUnauthorizedAssociationError) throw new ForbiddenException(error.message); if (error instanceof CollectorUserNotEligibleError || error instanceof CollectorValidationError) throw new BadRequestException(error.message); throw error; };
 @Controller('collectors')
 export class CollectorController {
-  constructor(private readonly useCases: CollectorUseCases, private readonly statistics: CollectorStatisticsUseCase) {}
+  constructor(private readonly useCases: CollectorUseCases, private readonly statistics: CollectorStatisticsUseCase, private readonly financialSummary: CollectorFinancialSummaryUseCase) {}
   @Get('eligible-users') @RequirePermissions('collectors.user.assign') eligibleUsers() { return this.useCases.eligibleUsers(); }
   @Get('statistics') @RequirePermissions('payments.view') async getStatistics(@Query() query: CollectorStatisticsQueryDto) { try { return await this.statistics.execute(query.year, query.month); } catch (error) { return mapError(error); } }
+  @Get('me/financial-summary') @RequirePermissions('collectors.financial-summary.view') async getFinancialSummary(@CurrentUser() actor: CurrentIdentity) {
+    try { return await this.financialSummary.execute(actor); }
+    catch (error) {
+      if (error instanceof CollectorFinancialSummaryForbiddenError) throw new ForbiddenException(error.message);
+      if (error instanceof CollectorFinancialSummaryIntegrityError) throw new InternalServerErrorException('No se pudo reconciliar la cartera activa asignada.');
+      throw error;
+    }
+  }
   @Get() @RequirePermissions('collectors.view') list(@Query() query: CollectorListQueryDto) { return this.useCases.list({ search: query.search, status: query.status ?? 'ACTIVE', page: query.page ?? 1, pageSize: query.pageSize ?? 10 }); }
   @Get(':id/photo') @RequirePermissions('collectors.photo.view') async photo(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string, @Res() response: Response) { try { const file = await this.useCases.photo(id); return response.type(file.mimetype).send(file.buffer); } catch (error) { return mapError(error); } }
   @Get(':id') @RequirePermissions('collectors.view') async detail(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string) { try { return await this.useCases.detail(id); } catch (error) { return mapError(error); } }

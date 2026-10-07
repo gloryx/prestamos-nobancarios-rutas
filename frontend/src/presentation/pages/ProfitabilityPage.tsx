@@ -12,7 +12,7 @@ import { formatLoanStatus } from '../helpers/loan';
 
 const money = (value: string | null): string => {
   if (value === null) return 'No disponible';
-  return value.startsWith('-') ? `-${formatCRCAggregate(value.slice(1))}` : formatCRCAggregate(value);
+  return formatCRCAggregate(value);
 };
 
 function formatRatio(value: string | null, multiplier: bigint, suffix: string): string {

@@ -20,7 +20,7 @@ export type LoanAnnulmentState = Readonly<{
 }>;
 
 export class LoanAnnulmentController {
-  private state: LoanAnnulmentState = { activeTab: 'CANDIDATES', search: '', startDate: '', endDate: '', page: 1, pageSize: 20,
+  private state: LoanAnnulmentState = { activeTab: 'ANNULLED', search: '', startDate: '', endDate: '', page: 1, pageSize: 20,
     sorts: { CANDIDATES: { sortBy: 'loanNumber', sortDir: 'desc' }, ANNULLED: { sortBy: 'annulledDate', sortDir: 'desc' } },
     items: [], total: 0, summary: null, dataTab: null, dataPage: null, loading: false, refreshing: false, error: null,
     attempt: null, feedback: null };

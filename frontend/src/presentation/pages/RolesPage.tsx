@@ -11,6 +11,7 @@ import {
   shouldConfirmRoleSwitch,
   toggleModule,
   togglePermission,
+  type PermissionGroup,
 } from '../helpers/permission-matrix';
 
 const UNSAVED_ROLE_SWITCH_MESSAGE = 'Hay cambios de permisos sin guardar.\n\n¿Deseas descartarlos?';
@@ -187,15 +188,8 @@ export function RolesPage(): ReactElement {
                             <button type="button" className="button button--secondary" disabled={!authorized || permissionLoading} onClick={() => setDraftCodes((current) => setModulePermissions(current, group, true))}>Seleccionar todos</button>
                             <button type="button" className="button button--secondary" disabled={!authorized || permissionLoading} onClick={() => setDraftCodes((current) => setModulePermissions(current, group, false))}>Quitar todos</button>
                           </div>
-                          <fieldset className="permission-options">
-                            <legend className="sr-only">Permisos de {group.label}</legend>
-                            {group.permissions.map((permission) => (
-                              <label key={permission.code}>
-                                <input type="checkbox" checked={draftCodes.includes(permission.code)} disabled={!authorized || permissionLoading} onChange={() => setDraftCodes((current) => togglePermission(current, permission.code))} />
-                                <span>{permission.name || permission.code}<small>{permission.code}</small></span>
-                              </label>
-                            ))}
-                          </fieldset>
+                          <PermissionOptions group={group} selectedCodes={draftCodes} disabled={!authorized || permissionLoading}
+                            onToggle={(code) => setDraftCodes((current) => togglePermission(current, code))} />
                         </div>}
                       </section>
                     );
@@ -214,4 +208,16 @@ export function RolesPage(): ReactElement {
       </div>
     </section>
   );
+}
+
+export function PermissionOptions({ group, selectedCodes, disabled, onToggle }: {
+  group: PermissionGroup; selectedCodes: string[]; disabled: boolean; onToggle: (code: string) => void;
+}): ReactElement {
+  return <fieldset className="permission-options">
+    <legend className="sr-only">Permisos de {group.label}</legend>
+    {group.permissions.map((permission) => <label key={permission.code}>
+      <input type="checkbox" checked={selectedCodes.includes(permission.code)} disabled={disabled} onChange={() => onToggle(permission.code)} />
+      <span>{permission.name || permission.code}<small>{permission.code}</small></span>
+    </label>)}
+  </fieldset>;
 }

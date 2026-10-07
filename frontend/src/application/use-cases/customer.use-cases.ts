@@ -3,11 +3,12 @@ import type { CustomerRepository } from '../ports/customer.repository';
 export class RegisterCustomer { constructor(private readonly repository: CustomerRepository) {} execute(input: CustomerForm): Promise<CustomerCreated> { return this.repository.create(input); } }
 export class ListCustomers { constructor(private readonly repository: CustomerRepository) {} execute(query: Parameters<CustomerRepository['list']>[0]) { return this.repository.list(query); } }
 export class ExportCustomers { constructor(private readonly repository: CustomerRepository) {} execute() { return this.repository.exportAll(); } }
-export class ListAssignedCustomers { constructor(private readonly repository: CustomerRepository) {} execute() { return this.repository.assigned(); } }
+export class ListAssignedCustomers { constructor(private readonly repository: CustomerRepository) {} execute(query: Parameters<CustomerRepository['assigned']>[0]) { return this.repository.assigned(query); } }
 export class GetCustomer { constructor(private readonly repository: CustomerRepository) {} execute(id: string): Promise<CustomerDetail> { return this.repository.detail(id); } }
 export class GetCustomerFinancialAnalysis { constructor(private readonly repository: CustomerRepository) {} execute(id: string, asOf: string) { return this.repository.financialAnalysis(id, asOf); } }
 export class GetCustomerSummary { constructor(private readonly repository: CustomerRepository) {} execute(query: Parameters<CustomerRepository['summary']>[0]) { return this.repository.summary(query); } }
 export class GetCustomerSite { constructor(private readonly repository: CustomerRepository) {} execute(id: string) { return this.repository.site(id); } }
+export class GetCustomerSitePhoto { constructor(private readonly repository: CustomerRepository) {} execute(id: string) { return this.repository.sitePhoto(id); } }
 export class ListAssignedCollectors { constructor(private readonly repository: CustomerRepository) {} execute(id: string) { return this.repository.assignedCollectors(id); } }
 export class UpdateCustomerSite { constructor(private readonly repository: CustomerRepository) {} execute(id: string, input: Parameters<CustomerRepository['updateSite']>[1]) { return this.repository.updateSite(id, input); } }
 export class ListSiteAuthorizations { constructor(private readonly repository: CustomerRepository) {} execute(id: string) { return this.repository.listAuthorizations(id); } }

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactElement, type RefObject } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { createRefinancingConfirmation, createRefinancingConditions, createRefinancingStepOne } from '../../app/loan-refinancing';
 import { RefinancingStepOneController, type RefinancingStepOneState } from '../../application/use-cases/refinancing-step-one-controller';
 import { RefinancingConditionsController, type RefinancingConditionsState } from '../../application/use-cases/refinancing-conditions-controller';
@@ -14,6 +14,7 @@ import { RefinancingConditionsView } from './RefinancingConditionsView';
 import { RefinancingConfirmationView } from './RefinancingConfirmationView';
 import { refinancingFailureMessage } from '../helpers/refinancing-errors';
 import { RefinancingResultView } from './RefinancingResultView';
+import { loanIdFromSearch } from '../helpers/loan-id-query';
 
 function lookupError(error: unknown, kind: 'list' | 'preview'): string {
   if (error instanceof HttpApiError) {
@@ -43,6 +44,8 @@ export function NewRefinancingPage({ controller: supplied, conditionsController:
   confirmationController?: RefinancingConfirmationController;
 } = {}): ReactElement {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const { id: linkedLoanId, error: linkedLoanError } = loanIdFromSearch(searchParams.toString());
   const [controller] = useState(() => supplied ?? createRefinancingStepOne());
   const [conditionsController] = useState(() => suppliedConditions ?? createRefinancingConditions());
   const [confirmationController] = useState(() => suppliedConfirmation ?? createRefinancingConfirmation());
@@ -55,9 +58,13 @@ export function NewRefinancingPage({ controller: supplied, conditionsController:
   const [notice, setNotice] = useState('');
 
   useEffect(() => {
+    if (linkedLoanId) {
+      if (state.originLoanId !== linkedLoanId) void controller.select(linkedLoanId);
+      return;
+    }
     const timer = window.setTimeout(() => { void controller.load(); }, state.search.trim() ? 250 : 0);
     return () => window.clearTimeout(timer);
-  }, [controller, state.search, state.page, state.pageSize]);
+  }, [controller, linkedLoanId, state.originLoanId, state.search, state.page, state.pageSize]);
   useEffect(() => () => { if (!supplied) controller.dispose(); }, [controller, supplied]);
   useEffect(() => () => { if (!suppliedConditions) conditionsController.dispose(); }, [conditionsController, suppliedConditions]);
   useEffect(() => () => { if (!suppliedConfirmation) confirmationController.dispose(); }, [confirmationController, suppliedConfirmation]);
@@ -116,11 +123,17 @@ export function NewRefinancingPage({ controller: supplied, conditionsController:
     void controller.load();
   };
   if (confirmationState.result) return <RefinancingResultView result={confirmationState.result} headingRef={resultHeadingRef} onNew={startNew} />;
+  const clearSelection = () => {
+    const next = new URLSearchParams(searchParams);
+    next.delete('loanId');
+    setSearchParams(next, { replace: true });
+    controller.clearSelection();
+  };
   return <RefinancingStepOneView state={state} controller={controller} searchRef={searchRef} onContinue={continueToConditions}
     onBack={() => controller.goToOrigin()} conditionState={conditionState} conditionsController={conditionsController}
     onContinueToConfirmation={continueToConfirmation} confirmationState={confirmationState}
     onBackToConditions={() => { if (!confirmationController.getSnapshot().submitting) { confirmationController.clearFailure(); controller.backToConditions(); } }}
-    onConfirm={(allowed) => { void confirm(allowed); }} notice={notice} />;
+    onConfirm={(allowed) => { void confirm(allowed); }} onClearSelection={clearSelection} notice={notice || linkedLoanError || ''} />;
 }
 
 function FinancialGroup({ title, values }: { title: string; values: Array<{ label: string; amount: string }> }): ReactElement {
@@ -173,12 +186,12 @@ function OriginPreview({ preview }: { preview: RefinancingPreview }): ReactEleme
 }
 
 export function RefinancingStepOneView({ state, controller, searchRef, onContinue, onBack, conditionState, conditionsController,
-  onContinueToConfirmation, confirmationState, onBackToConditions, onConfirm, notice }: {
+  onContinueToConfirmation, confirmationState, onBackToConditions, onConfirm, onClearSelection, notice }: {
   state: RefinancingStepOneState; controller: RefinancingStepOneController; searchRef?: RefObject<HTMLInputElement | null>;
   onContinue?: () => void; onBack?: () => void;
   conditionState?: RefinancingConditionsState; conditionsController?: RefinancingConditionsController;
   onContinueToConfirmation?: () => void; confirmationState?: RefinancingConfirmationState;
-  onBackToConditions?: () => void; onConfirm?: (allowed: boolean) => void; notice?: string;
+  onBackToConditions?: () => void; onConfirm?: (allowed: boolean) => void; onClearSelection?: () => void; notice?: string;
 }): ReactElement {
   const selected = state.originLoanId !== null;
   const totalPages = Math.max(1, Math.ceil((state.list?.total ?? 0) / state.pageSize));
@@ -260,7 +273,7 @@ export function RefinancingStepOneView({ state, controller, searchRef, onContinu
       </>}
 
       {state.step === 'ORIGIN' && <footer className="refinancing-origin__footer">
-        {selected && <button className="button button--secondary" type="button" onClick={() => controller.clearSelection()}>Cambiar préstamo</button>}
+        {selected && <button className="button button--secondary" type="button" onClick={onClearSelection ?? (() => controller.clearSelection())}>Cambiar préstamo</button>}
         <button className="button button--primary" type="button" disabled={!controller.canContinue() || !onContinue}
           onClick={onContinue} aria-label="Continuar a nuevas condiciones">Continuar</button>
       </footer>}

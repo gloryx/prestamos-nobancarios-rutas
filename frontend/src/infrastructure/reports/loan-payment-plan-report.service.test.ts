@@ -40,9 +40,9 @@ describe('existing shared loan payment-plan receipt', () => {
       { number: 4, date: '02/04/2026', state: 'PENDIENTE' },
     ]);
     expect(page).not.toContain('5.  01/03/2026');
-    expect(page).not.toContain('900,00');
-    expect(page).toContain('700,00');
-    expect(page).toContain('500,00');
+    expect(page).not.toContain('(¢900)');
+    expect(page).toContain('(¢700)');
+    expect(page).toContain('(¢500)');
     expect(page).not.toContain('private-loan-uuid');
     expect(page).toContain('02/04/2026 14:05');
     expect(page).toContain('1/1');
@@ -58,11 +58,11 @@ describe('existing shared loan payment-plan receipt', () => {
     document.setFontSize(7.5);
     expect(Number(paid![3]) - Number(paid![1])).toBeCloseTo(document.getTextWidth('1.  01/02/2026  ') * document.internal.scaleFactor, 4);
     expect(paid![4]).toBe(paid![2]);
-    const amount = page.match(/\(PAGADO\) Tj\nET\nBT\n\/F1 7\.5 Tf\n8\.625 TL\n0\. g\n0\. Tc\n([\d.]+) ([\d.]+) Td\n\(¢400,00\) Tj/);
+    const amount = page.match(/\(PAGADO\) Tj\nET\nBT\n\/F1 7\.5 Tf\n8\.625 TL\n0\. g\n0\. Tc\n([\d.]+) ([\d.]+) Td\n\(¢400\) Tj/);
     expect(amount?.[2]).toBe(paid![4]);
-    expect(page).toMatch(/0\.569 0\.176 0\.176 rg[\s\S]*?\(PENDIENTE\) Tj\nET\nBT[\s\S]*?0\. g[\s\S]*?\(¢400,00\) Tj/);
+    expect(page).toMatch(/0\.569 0\.176 0\.176 rg[\s\S]*?\(PENDIENTE\) Tj\nET\nBT[\s\S]*?0\. g[\s\S]*?\(¢400\) Tj/);
     expect(page).toMatch(/\/F2 7\.5 Tf\n8\.625 TL\n0\. g\n0\. Tc\n[\d.]+ [\d.]+ Td\n\(VENCIDO\) Tj/);
-    expect(page).toMatch(/0\. g\n0\. Tc\n[\d.]+ [\d.]+ Td\n\(¢400,00\) Tj/);
+    expect(page).toMatch(/0\. g\n0\. Tc\n[\d.]+ [\d.]+ Td\n\(¢400\) Tj/);
   });
 
   it.each([['50.00', '1150.00'], ['350.00', '850.00']])('shows the full %s payment rather than the scheduled installment', async (amount, balance) => {
@@ -75,17 +75,26 @@ describe('existing shared loan payment-plan receipt', () => {
     expect(page).toContain(getPdfMoneyText(balance));
   });
 
-  it('keeps the real positive balance even when a loan is marked cancelled', async () => {
-    const [page] = pages(await createLoanPaymentPlanDocument({ ...loan, status: 'CANCELLED', financialBalance: '700.00' }, now));
+  it('renders the larger green cancelled watermark behind a readable real balance', async () => {
+    const document = await createLoanPaymentPlanDocument({ ...loan, status: 'CANCELLED', financialBalance: '700.00' }, now);
+    const [page] = pages(document);
     expect(page).toContain('CANCELADO');
-    expect(page).toContain('¢700,00');
+    expect(page).toContain('¢700');
+    expect(page).toMatch(/\/F2 30 Tf[\s\S]*?0\.137 0\.42 0\.271 rg[\s\S]*?\(CANCELADO\) Tj/);
+    expect(page.indexOf('(CANCELADO) Tj')).toBeLessThan(page.indexOf('(Plan de pago) Tj'));
+    const pdf = new TextDecoder('latin1').decode(new Uint8Array(document.output('arraybuffer')));
+    expect(pdf).toContain('/ca 0.2');
+    document.setFont('helvetica', 'bold');
+    document.setFontSize(30);
+    expect(document.getTextWidth('CANCELADO')).toBeGreaterThan(60);
+    expect(document.getTextWidth('CANCELADO')).toBeLessThanOrEqual(72);
   });
 
   it('keeps an empty timeline readable without fabricating paid installments', async () => {
     const [page] = pages(await createLoanPaymentPlanDocument({ ...loan, plan: [], validPayments: [] }, now));
     expect(page).toContain('Sin pagos');
     expect(page).not.toContain('PAGADO');
-    expect(page).toContain('¢0,00');
+    expect(page).toContain('¢0');
   });
 
   it('wraps long customer and identification values inside the 80mm page', async () => {
@@ -129,12 +138,13 @@ describe('existing shared loan payment-plan receipt', () => {
   ])('renders %s with real balance and the appropriate watermark', async (status, label, balance, watermarked) => {
     const [page] = pages(await createLoanPaymentPlanDocument({ ...loan, status, financialBalance: balance }, now));
     expect(page).toContain(label);
-    expect(page).toContain(balance === '0.00' ? '0,00' : balance === '95.00' ? '95,00' : '700,00');
+    expect(page).toContain(balance === '0.00' ? '(¢0)' : balance === '95.00' ? '(¢95)' : '(¢700)');
     expect(/\/GS\d+ gs/.test(page)).toBe(watermarked);
+    expect(page.includes('(CANCELADO) Tj')).toBe(status === 'CANCELLED');
   });
 
   it('repeats heading, watermark and page numbers without splitting payment rows on narrow pages', async () => {
-    const many = { ...loan, status: 'REFINANCED', validPayments: [], plan: Array.from({ length: 52 }, (_, i) => ({
+    const many = { ...loan, status: 'CANCELLED', validPayments: [], plan: Array.from({ length: 52 }, (_, i) => ({
       id: `entry-${i}`, sequence: i + 3, dueDate: `2026-05-${String(i % 28 + 1).padStart(2, '0')}`, pendingAmount: '1.00',
     })), principal: '52.00', interestAmount: '0.00', totalAmount: '52.00', pendingTotal: '52.00', financialBalance: '52.00' };
     const document = await createLoanPaymentPlanDocument(many, now);
@@ -145,13 +155,14 @@ describe('existing shared loan payment-plan receipt', () => {
     expect(sheets.length).toBeLessThan(7);
     sheets.forEach((sheet, index) => {
       expect(sheet).toContain('Plan de pago');
-      expect(sheet).toContain('REFINANCIADO');
+      expect(sheet).toContain('CANCELADO');
+      expect(sheet).toMatch(/\/F2 30 Tf[\s\S]*?0\.137 0\.42 0\.271 rg/);
       expect(sheet).toContain(`${index + 1}/${sheets.length}`);
       expect(sheet).toContain('Generado:');
     });
     const all = sheets.join('\n');
     for (let number = 1; number <= 52; number += 1) {
-      const row = new RegExp(`\\(${number}\\. {2}\\d{2}/\\d{2}/2026 {2}\\) Tj[\\s\\S]*?\\(PENDIENTE\\) Tj[\\s\\S]*?\\(¢1,00\\) Tj`);
+      const row = new RegExp(`\\(${number}\\. {2}\\d{2}/\\d{2}/2026 {2}\\) Tj[\\s\\S]*?\\(PENDIENTE\\) Tj[\\s\\S]*?\\(¢1\\) Tj`);
       expect(sheets.filter((sheet) => row.test(sheet))).toHaveLength(1);
     }
     expect(all).not.toContain('private-loan-uuid');

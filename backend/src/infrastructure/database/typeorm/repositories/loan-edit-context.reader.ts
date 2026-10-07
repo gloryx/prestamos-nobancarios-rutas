@@ -1,5 +1,5 @@
 import type { DataSource } from 'typeorm';
-import type { LoanEditContextReader, LoanEditContextSnapshot, LoanEditContextLoan, LoanEditOption } from '../../../../application/loan/loan-edit-context.use-case';
+import type { LoanEditContextReader, LoanEditContextSnapshot, LoanEditContextLoan, LoanEditFrequencyOption, LoanEditOption } from '../../../../application/loan/loan-edit-context.use-case';
 import type { LoanFinancialTotalsReader } from '../../../../application/loan/loan-financial-totals.reader';
 import type { LoanEditCurrentSnapshot } from '../../../../application/loan/loan-edit.command';
 
@@ -28,11 +28,20 @@ export class LoanEditContextTypeormReader implements LoanEditContextReader {
         pending_amount::text AS "pendingAmount" FROM payment_plan_entries WHERE loan_id = $1
         ORDER BY due_date, sequence, id`, [id]);
       const totals = await this.totalsReader.readValidTotals(manager, id);
-      const paymentFrequencyOptions: LoanEditOption[] = await manager.query(`SELECT id, name, is_active AS active
+      const paymentFrequencyOptions: LoanEditFrequencyOption[] = await manager.query(`SELECT id, name, is_active AS active,
+        interval_unit AS "intervalUnit", interval_value AS "intervalValue"
         FROM payment_frequencies WHERE is_active = true OR id = $1 ORDER BY display_order, name, id`, [loan.paymentFrequencyId]);
       const preferredPaymentMethodOptions: LoanEditOption[] = await manager.query(`SELECT id, name, is_active AS active
         FROM payment_methods WHERE is_active = true OR id = $1 ORDER BY display_order, name, id`, [loan.preferredPaymentMethodId]);
-      return { loan, plan, totals, paymentFrequencyOptions, preferredPaymentMethodOptions };
+      const protectedRows: Array<{ id: string }> = await manager.query(`SELECT DISTINCT protected.id FROM (
+        SELECT pa.payment_plan_entry_id AS id FROM payment_applications pa JOIN payments p ON p.id = pa.payment_id
+          JOIN payment_plan_entries pe ON pe.id = pa.payment_plan_entry_id WHERE p.status = 'VALID' AND pe.loan_id = $1 AND pe.pending_amount > 0
+        UNION
+        SELECT pa.carried_to_plan_entry_id AS id FROM payment_applications pa JOIN payments p ON p.id = pa.payment_id
+          JOIN payment_plan_entries pe ON pe.id = pa.carried_to_plan_entry_id WHERE p.status = 'VALID' AND pe.loan_id = $1 AND pe.pending_amount > 0
+      ) protected WHERE protected.id IS NOT NULL ORDER BY protected.id`, [id]);
+      return { loan, plan, totals, paymentFrequencyOptions, preferredPaymentMethodOptions,
+        protectedPlanEntryIds: protectedRows.map(({ id: entryId }) => entryId) };
     });
   }
 }

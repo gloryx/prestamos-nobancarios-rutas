@@ -8,6 +8,7 @@ import { CollectorUseCases } from '../src/application/collector/collector.use-ca
 import { SecurityUnauthorizedError } from '../src/application/security/security.errors';
 import { SecurityService } from '../src/application/security/security.service';
 import { CollectorController } from '../src/presentation/collector/collector.controller';
+import { CollectorFinancialSummaryUseCase } from '../src/application/collector/collector-financial-summary.use-case';
 import { AuthenticationGuard } from '../src/presentation/security/auth.guard';
 import { PermissionGuard } from '../src/presentation/security/permission.guard';
 import { SESSION_COOKIE } from '../src/shared/constants/security';
@@ -31,6 +32,7 @@ describe('collector statistics HTTP boundary', () => {
     const module = await Test.createTestingModule({ controllers: [CollectorController], providers: [
       { provide: CollectorStatisticsUseCase, useValue: { execute } },
       { provide: CollectorUseCases, useValue: {} },
+      { provide: CollectorFinancialSummaryUseCase, useValue: {} },
       { provide: SecurityService, useValue: { authenticate } },
       { provide: APP_GUARD, useClass: AuthenticationGuard }, { provide: APP_GUARD, useClass: PermissionGuard },
     ] }).compile();

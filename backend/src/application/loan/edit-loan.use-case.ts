@@ -94,6 +94,14 @@ export class EditLoanUseCase {
         if (interestChanged) {
           const newInterest = command.changes.interestAmount!;
           const newTotal = cents(loan.principal) + newInterest;
+          const validPaidInterest = cents(totals.paidInterest);
+          const validPaidAmount = cents(totals.paidAmount);
+          if (newInterest < validPaidInterest) {
+            throw new LoanEditValidationError(`El interés propuesto no puede ser menor que el interés ya aplicado. Ingrese un interés de al menos ${money(validPaidInterest)}.`);
+          }
+          if (newTotal < validPaidAmount) {
+            throw new LoanEditValidationError(`El nuevo total contractual no puede ser menor que el monto ya pagado. Ajuste el interés para que el total sea de al menos ${money(validPaidAmount)}.`);
+          }
           const newBalance = newTotal - cents(totals.paidAmount);
           const proposed = evaluateLoanFinancialIntegrity({ principal: loan.principal,
             interestAmount: money(newInterest), totalAmount: money(newTotal) }, totals, newBalance);

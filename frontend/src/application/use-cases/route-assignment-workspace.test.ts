@@ -53,11 +53,12 @@ describe('route assignment working workspace', () => {
   });
 
   it('combines territorial filters, resets pagination and clears a stale district when canton changes', () => {
-    const initial = { search: 'Maria', cantonCode: 503, districtCode: 50301, page: 4, pageSize: 20 as const };
+    const initial = { search: 'Maria', cantonCode: 503, districtCode: 50301, activeLoanFilter: 'ALL' as const, page: 4, pageSize: 20 as const };
     expect(updateAssignmentWorkspaceFilters(initial, { search: 'Ana' })).toEqual({ ...initial, search: 'Ana', page: 1 });
     expect(updateAssignmentWorkspaceFilters(initial, { cantonCode: 505 })).toEqual({ ...initial, cantonCode: 505, districtCode: undefined, page: 1 });
     expect(updateAssignmentWorkspaceFilters(initial, { districtCode: 50302 })).toEqual({ ...initial, districtCode: 50302, page: 1 });
-    expect(updateAssignmentWorkspaceFilters(initial, { search: '', cantonCode: undefined, districtCode: undefined })).toEqual({ search: '', cantonCode: undefined, districtCode: undefined, page: 1, pageSize: 20 });
+    expect(updateAssignmentWorkspaceFilters(initial, { activeLoanFilter: 'WITH_ACTIVE' })).toEqual({ ...initial, activeLoanFilter: 'WITH_ACTIVE', page: 1 });
+    expect(updateAssignmentWorkspaceFilters(initial, { search: '', cantonCode: undefined, districtCode: undefined, activeLoanFilter: 'ALL' })).toEqual({ search: '', cantonCode: undefined, districtCode: undefined, activeLoanFilter: 'ALL', page: 1, pageSize: 20 });
   });
 
   it('moves, assigns and unassigns routes using the original collector assignment id', () => {

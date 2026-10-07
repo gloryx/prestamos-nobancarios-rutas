@@ -17,6 +17,7 @@ export class RouteAssignmentApi implements RouteAssignmentRepository {
     if (query.search?.trim()) params.set('search', query.search.trim());
     if (query.cantonCode !== undefined) params.set('cantonCode', String(query.cantonCode));
     if (query.districtCode !== undefined) params.set('districtCode', String(query.districtCode));
+    if (query.activeLoanFilter && query.activeLoanFilter !== 'ALL') params.set('activeLoanFilter', query.activeLoanFilter);
     return apiClient.request<AssignmentWorkspace>(`/route-assignments/workspace?${params}`).catch(mapError);
   }
   batch(request: AssignmentBatchRequest): Promise<AssignmentBatchResult> {

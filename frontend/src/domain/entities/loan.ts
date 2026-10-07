@@ -2,7 +2,9 @@ import type { CustomerCreated } from './customer';
 
 export type LoanPlanEntry = { sequence: number; dueDate: string; pendingAmount: string };
 export type LoanListItem = { id: string; loanNumber: string; startDate: string; principal: string; interestAmount: string; totalAmount: string; customerName: string; identification: string; frequencyName: string; pendingTotal: string };
-export type ActiveLoanListItem = LoanListItem & { isOverdue: boolean };
+export type ActiveLoanListItem = LoanListItem & { isOverdue: boolean; primaryPhone?: string; nextDueDate?: string | null; nextDueAmount?: string | null };
+export type AssignedLoanStatus = 'ACTIVE' | 'CANCELLED' | 'REFINANCED' | 'UNCOLLECTIBLE' | 'ANNULLED';
+export type AssignedLoanListItem = ActiveLoanListItem & { status: AssignedLoanStatus; primaryPhone: string; nextDueDate: string | null; nextDueAmount: string | null };
 export type ActiveLoanExportItem = {
   loanNumber: string; identification: string; customerName: string; phone: string; startDate: string;
   principal: string; interestAmount: string; totalAmount: string; outstandingPrincipal: string;
@@ -17,8 +19,9 @@ export type LoanEditBaseline = { interestAmount: string; paymentFrequencyId: str
 export type LoanEditContext = {
   loan: { id: string; loanNumber: string; customer: { id: string; identification: string; fullName: string }; status: string; principal: string; interestAmount: string; totalAmount: string; startDate: string; paymentFrequencyId: string; paymentFrequencyName: string; preferredPaymentMethodId: string; preferredPaymentMethodName: string; observations: string | null };
   baseline: LoanEditBaseline;
-  paymentFrequencyOptions: Array<{ id: string; name: string; active: boolean }>;
+  paymentFrequencyOptions: Array<{ id: string; name: string; active: boolean; intervalUnit: 'DAY' | 'WEEK' | 'DAY/15' | 'MONTH'; intervalValue: number }>;
   preferredPaymentMethodOptions: Array<{ id: string; name: string; active: boolean }>;
+  protectedPlanEntryIds: string[];
 };
 export type LoanEditChanges = { interestAmount?: string; paymentFrequencyId?: string; preferredPaymentMethodId?: string; observations?: string | null };
 export type LoanEditBody = { idempotencyKey: string; baseline: LoanEditBaseline; changes: LoanEditChanges; plan?: Array<{ id: string | null; dueDate: string; pendingAmount: string }> };

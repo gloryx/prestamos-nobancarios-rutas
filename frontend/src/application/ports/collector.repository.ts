@@ -1,4 +1,4 @@
-import type { Collector, CollectorPage, CollectorStatus, EligibleCollectorUser } from '../../domain/entities/collector';
+import type { Collector, CollectorFinancialSummary, CollectorPage, CollectorStatus, EligibleCollectorUser } from '../../domain/entities/collector';
 
 export type CollectorInput = Omit<Collector, 'id' | 'isActive' | 'photoFileKey' | 'userId' | 'user'> & { userId?: string | null; photo?: File };
 export type CollectorUpdateInput = Partial<Omit<CollectorInput, 'userId'>> & { photo?: File };
@@ -13,4 +13,5 @@ export interface CollectorRepository {
   linkUser(id: string, userId: string | null): Promise<Collector>;
   eligibleUsers(): Promise<EligibleCollectorUser[]>;
   photo(id: string): Promise<Blob>;
+  financialSummary(): Promise<CollectorFinancialSummary>;
 }

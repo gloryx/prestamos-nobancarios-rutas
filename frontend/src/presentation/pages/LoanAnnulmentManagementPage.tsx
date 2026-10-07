@@ -84,14 +84,14 @@ export function LoanAnnulmentManagementView({ state, controller, canAnnul = fals
       <div className="loan-management__tabs" role="tablist" aria-label="Estado de anulación" onKeyDown={(event) => {
         if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
         event.preventDefault();
-        const next = event.key === 'Home' ? 'CANDIDATES' : event.key === 'End' ? 'ANNULLED' : candidates ? 'ANNULLED' : 'CANDIDATES';
+        const next = event.key === 'Home' ? 'ANNULLED' : event.key === 'End' ? 'CANDIDATES' : candidates ? 'ANNULLED' : 'CANDIDATES';
         controller.setActiveTab(next);
         (next === 'CANDIDATES' ? candidateTabRef : annulledTabRef)?.current?.focus();
       }}>
-        <button ref={candidateTabRef} role="tab" id="loan-annulment-candidates-tab" aria-controls="loan-annulment-panel" aria-selected={candidates}
-          tabIndex={candidates ? 0 : -1} type="button" onClick={() => controller.setActiveTab('CANDIDATES')}>Candidatos</button>
         <button ref={annulledTabRef} role="tab" id="loan-annulment-annulled-tab" aria-controls="loan-annulment-panel" aria-selected={!candidates}
           tabIndex={candidates ? -1 : 0} type="button" onClick={() => controller.setActiveTab('ANNULLED')}>Anulados</button>
+        <button ref={candidateTabRef} role="tab" id="loan-annulment-candidates-tab" aria-controls="loan-annulment-panel" aria-selected={candidates}
+          tabIndex={candidates ? 0 : -1} type="button" onClick={() => controller.setActiveTab('CANDIDATES')}>Candidatos</button>
       </div>
       <div className="loan-list__toolbar" aria-label="Filtros de anulaciones">
         <label htmlFor="loan-annulment-search">Buscar<input id="loan-annulment-search" value={state.search} placeholder="Préstamo, cliente o identificación"

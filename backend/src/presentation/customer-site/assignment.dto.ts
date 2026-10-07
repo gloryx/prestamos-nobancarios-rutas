@@ -7,6 +7,7 @@ export class AssignmentWorkspaceQueryDto {
   @IsOptional() @IsString() search?: string;
   @IsOptional() @IsInt() @Min(1) @Type(() => Number) cantonCode?: number;
   @IsOptional() @IsInt() @Min(1) @Type(() => Number) districtCode?: number;
+  @IsOptional() @IsIn(['ALL', 'WITH_ACTIVE', 'WITHOUT_ACTIVE']) activeLoanFilter?: 'ALL' | 'WITH_ACTIVE' | 'WITHOUT_ACTIVE';
   @IsOptional() @IsInt() @Min(1) @Type(() => Number) page?: number;
   @IsOptional() @IsIn([10, 20, 50]) @Type(() => Number) pageSize?: 10 | 20 | 50;
 }

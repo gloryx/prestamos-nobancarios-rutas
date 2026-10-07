@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LoanEditContext } from '../../domain/entities/loan';
 import { HttpApiError } from '../../infrastructure/api/api-client';
 import { editContext } from '../helpers/loan-edit.fixture';
+import { adaptPendingPlanToBalance, reviewPlanDraft, type PlanDraftEntry } from '../helpers/payment-plan';
 import { MoneyInput } from './MoneyInput';
 import { PaymentPlanDraftFields } from './PaymentPlanDraftFields';
 import { LoanEditDialog } from './LoanEditDialog';
@@ -45,7 +46,7 @@ describe('Loan Edit dialog flow', () => {
     expect(api.editContext).toHaveBeenCalledExactlyOnceWith('loan-1');
     expect(text(tree)).toContain('Capital (solo lectura)'); expect(text(tree)).toContain('Inicio (solo lectura)');
     expect(text(tree)).toContain('Total actual (solo lectura)'); expect(text(tree)).toContain('Saldo financiero actual (solo lectura)');
-    expect(text(tree)).toContain('₡120,00'); expect(text(tree)).toContain('₡60,00');
+    expect(text(tree)).toContain('₡120'); expect(text(tree)).toContain('₡60');
     const selects = nodes(tree).filter((item) => item.type === 'select');
     expect(selects.map((item) => (item.props as { value: string }).value)).toEqual(['frequency-old', 'method-old']);
     expect(text(selects)).toContain('Antigua (inactivo)'); expect(text(selects)).toContain('Anterior (inactivo)');
@@ -56,6 +57,8 @@ describe('Loan Edit dialog flow', () => {
 
   it('submits metadata only, including active frequency/method and nullable observations, then refetches before toast and close', async () => {
     await open(); let tree = render();
+    (nodes(tree).find((item) => item.type === MoneyInput)!.props as { onChange: (value: string) => void }).onChange('20.00');
+    tree = render();
     const selects = nodes(tree).filter((item) => item.type === 'select');
     (selects[0].props as { onChange: (event: { target: { value: string } }) => void }).onChange({ target: { value: 'frequency-new' } });
     tree = render(); (nodes(tree).filter((item) => item.type === 'select')[1].props as { onChange: (event: { target: { value: string } }) => void }).onChange({ target: { value: 'method-new' } });
@@ -65,31 +68,105 @@ describe('Loan Edit dialog flow', () => {
     const body = api.edit.mock.calls[0][1];
     expect(body).toEqual({ idempotencyKey: expect.any(String), baseline: editContext.baseline,
       changes: { paymentFrequencyId: 'frequency-new', preferredPaymentMethodId: 'method-new', observations: null } });
-    expect(body).not.toHaveProperty('plan'); expect(body).not.toHaveProperty('actorId'); expect(body).not.toHaveProperty('principal');
+    expect(body).not.toHaveProperty('plan'); expect(body.changes).not.toHaveProperty('interestAmount');
+    expect(body).not.toHaveProperty('actorId'); expect(body).not.toHaveProperty('principal');
     expect(api.editContext).toHaveBeenCalledTimes(2); expect(onSaved).toHaveBeenCalledOnce();
     expect(api.edit.mock.invocationCallOrder[0]).toBeLessThan(onSaved.mock.invocationCallOrder[0]);
     expect(hooks.toast).toHaveBeenCalledWith('Préstamo actualizado correctamente.');
   });
 
-  it('requires exact-cent plan adjustment, preserves IDs, allows new null IDs and Previous retains the draft', async () => {
+  it('automatically reconciles a partial-payment plan to the exact-cent balance and Previous retains the draft', async () => {
     await open(); let tree = render();
     (nodes(tree).find((item) => item.type === MoneyInput)!.props as { onChange: (value: string) => void }).onChange('20.01');
     tree = render(); expect(text(tree)).toContain('₡120,01'); expect(text(tree)).toContain('₡60,01');
     submit(tree); tree = render();
     const plan = nodes(tree).find((item) => item.type === PaymentPlanDraftFields)!;
     expect((plan.props as { balance: string }).balance).toBe('60.01');
-    expect((plan.props as { draft: Array<{ id: string | null }> }).draft[0].id).toBe('plan-a');
-    expect((button(tree, 'Guardar cambios').props as { disabled: boolean }).disabled).toBe(true);
-    const add = (plan.props as { onAdd: () => void }).onAdd; add();
-    tree = render(); const withNew = nodes(tree).find((item) => item.type === PaymentPlanDraftFields)!;
-    const entries = (withNew.props as { draft: Array<{ key: string; id: string | null; dueDate: string; pendingAmount: string }> }).draft;
-    expect(entries[1].id).toBeNull();
-    (withNew.props as { onChange: (value: typeof entries) => void }).onChange([{ ...entries[0] }, { ...entries[1], dueDate: '2026-03-02', pendingAmount: '0.01' }]);
+    expect((plan.props as { draft: Array<{ id: string | null; pendingAmount: string }> }).draft).toEqual([
+      expect.objectContaining({ id: 'plan-a', pendingAmount: '60.01' }),
+    ]);
+    expect((button(tree, 'Guardar cambios').props as { disabled: boolean }).disabled).toBe(false);
     press(button(render(), 'Anterior')); expect(text(render())).toContain('₡60,01');
     submit(render()); submit(render());
     await vi.waitFor(() => expect(api.edit).toHaveBeenCalledOnce());
-    expect(api.edit.mock.calls[0][1].plan).toEqual([{ id: 'plan-a', dueDate: '2026-02-02', pendingAmount: '60.00' }, { id: null, dueDate: '2026-03-02', pendingAmount: '0.01' }]);
+    expect(api.edit.mock.calls[0][1].plan).toEqual([{ id: 'plan-a', dueDate: '2026-02-02', pendingAmount: '60.01' }]);
     expect(editContext.baseline.plan).toEqual([{ id: 'plan-a', dueDate: '2026-02-02', pendingAmount: '60.00' }]);
+  });
+
+  it('reproduces #4376 and automatically reduces the tail while normalizing its duplicate date', async () => {
+    const case4376: LoanEditContext = {
+      ...editContext,
+      loan: { ...editContext.loan, loanNumber: '4376', principal: '150000.00', interestAmount: '30000.00', totalAmount: '180000.00' },
+      baseline: { ...editContext.baseline, interestAmount: '30000.00', financialBalance: '180000.00', plan: [
+        { id: 'z-plan-first', dueDate: '2026-08-31', pendingAmount: '15000.00' },
+        { id: 'a-plan-tail', dueDate: '2026-08-31', pendingAmount: '165000.00' },
+      ] },
+    };
+    api.editContext.mockResolvedValue(case4376);
+    render(); hooks.effects[0](); await vi.waitFor(() => expect(hooks.states[0]).toEqual(case4376));
+    const initial = render();
+    (nodes(initial).find((item) => item.type === MoneyInput)!.props as { onChange: (value: string) => void }).onChange('20000.00');
+    expect(text(render())).toContain('₡170.000');
+    submit(render());
+    const adapted = nodes(render()).find((item) => item.type === PaymentPlanDraftFields)!;
+    expect((adapted.props as { draft: PlanDraftEntry[] }).draft).toEqual([
+      expect.objectContaining({ id: 'z-plan-first', dueDate: '2026-08-31', pendingAmount: '15000.00' }),
+      expect.objectContaining({ id: 'a-plan-tail', dueDate: '2026-09-01', pendingAmount: '155000.00' }),
+    ]);
+    submit(render()); await vi.waitFor(() => expect(api.edit).toHaveBeenCalledOnce());
+    expect(api.edit.mock.calls[0][1]).toMatchObject({ baseline: case4376.baseline, changes: { interestAmount: '20000.00' }, plan: [
+      { id: 'z-plan-first', dueDate: '2026-08-31', pendingAmount: '15000.00' },
+      { id: 'a-plan-tail', dueDate: '2026-09-01', pendingAmount: '155000.00' },
+    ] });
+    expect(api.edit.mock.calls[0][1].changes).not.toHaveProperty('paymentFrequencyId');
+  });
+
+  it('increases the mutable tail without replacing retained IDs', () => {
+    const result = adaptPendingPlanToBalance([
+      { key: 'first', id: 'first', dueDate: '2026-09-01', pendingAmount: '10.00' },
+      { key: 'tail', id: 'tail', dueDate: '2026-09-08', pendingAmount: '20.00' },
+    ], '40.00', { intervalUnit: 'WEEK', intervalValue: 1 });
+    expect(result).toEqual({ adaptable: true, entries: [
+      { key: 'first', id: 'first', dueDate: '2026-09-01', pendingAmount: '10.00' },
+      { key: 'tail', id: 'tail', dueDate: '2026-09-08', pendingAmount: '30.00' },
+    ] });
+  });
+
+  it('omits exhausted mutable rows and preserves protected rows byte-for-byte', () => {
+    const draft: PlanDraftEntry[] = [
+      { key: 'first', id: 'first', dueDate: '2026-09-01', pendingAmount: '10.00' },
+      { key: 'tail', id: 'tail', dueDate: '2026-09-08', pendingAmount: '20.00' },
+      { key: 'protected', id: 'protected', dueDate: '2026-09-15', pendingAmount: '15' },
+    ];
+    const result = adaptPendingPlanToBalance(draft, '20.00', { intervalUnit: 'WEEK', intervalValue: 1 }, ['protected']);
+    expect(result).toEqual({ adaptable: true, entries: [
+      { key: 'first', id: 'first', dueDate: '2026-09-01', pendingAmount: '5.00' },
+      draft[2],
+    ] });
+    if (result.adaptable) expect(reviewPlanDraft('20.00', result.entries, { protectedEntryIds: ['protected'] }).entries[1].pendingAmount).toBe('15');
+  });
+
+  it('rejects protected totals and protected dates that cannot be adapted', () => {
+    const protectedTotal = adaptPendingPlanToBalance([
+      { key: 'protected', id: 'protected', dueDate: '2026-09-01', pendingAmount: '15.00' },
+    ], '14.99', { intervalUnit: 'WEEK', intervalValue: 1 }, ['protected']);
+    expect(protectedTotal).toMatchObject({ adaptable: false, reason: 'protected-total' });
+
+    const protectedDate = adaptPendingPlanToBalance([
+      { key: 'first', id: 'first', dueDate: '2026-09-01', pendingAmount: '5.00' },
+      { key: 'protected', id: 'protected', dueDate: '2026-09-01', pendingAmount: '15.00' },
+    ], '20.00', { intervalUnit: 'WEEK', intervalValue: 1 }, ['protected']);
+    expect(protectedDate).toMatchObject({ adaptable: false, reason: 'protected-date' });
+  });
+
+  it('adds a null-ID obligation with the selected frequency when only protected rows exist', () => {
+    const result = adaptPendingPlanToBalance([
+      { key: 'protected', id: 'protected', dueDate: '2026-09-01', pendingAmount: '15.00' },
+    ], '20.00', { intervalUnit: 'WEEK', intervalValue: 1 }, ['protected'], () => 'new');
+    expect(result).toEqual({ adaptable: true, entries: [
+      { key: 'protected', id: 'protected', dueDate: '2026-09-01', pendingAmount: '15.00' },
+      { key: 'new', id: null, dueDate: '2026-09-08', pendingAmount: '5.00' },
+    ] });
   });
 
   it('allows an empty plan only when the interest edit reduces the proposed balance to zero', async () => {

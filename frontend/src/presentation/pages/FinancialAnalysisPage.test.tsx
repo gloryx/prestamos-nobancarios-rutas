@@ -30,24 +30,49 @@ describe('FinancialAnalysisView', () => {
   it('renders customer identity, authoritative summary, gain breakdown and cutoff', () => {
     const html = render(data());
     expect(html).toContain('Ana Perez'); expect(html).toContain('1-2345-6789');
-    expect(html).toContain('DINERO REAL ENTREGADO'); expect(html).toContain('₡152.000,00');
-    expect(html).toContain('TOTAL RECIBIDO DEL CLIENTE'); expect(html).toContain('₡192.000,00');
-    expect(html).toContain('GANANCIA COBRADA'); expect(html).toContain('₡30.000,00');
-    expect(html).toContain('Interés cobrado ₡20.000,00');
-    expect(html).toContain('Ganancia anterior recuperada ₡10.000,00');
+    expect(html).toContain('DINERO REAL ENTREGADO'); expect(html).toContain('₡152.000');
+    expect(html).toContain('TOTAL RECIBIDO DEL CLIENTE'); expect(html).toContain('₡192.000');
+    expect(html).toContain('GANANCIA COBRADA'); expect(html).toContain('₡30.000');
+    expect(html).toContain('Interés cobrado ₡20.000');
+    expect(html).toContain('Ganancia anterior recuperada ₡10.000');
     expect(html).toContain('value="2026-09-30"'); expect(html).toContain(`max="${costaRicaDateOnly()}"`);
   });
 
   it('shows economic and contractual exposure, uncollectible history and backend rates without rotation', () => {
     const html = render(data());
-    expect(html).toContain('Capital real pendiente de recuperar'); expect(html).toContain('₡30.000,00');
-    expect(html).toContain('Ganancia anterior pendiente de recuperar'); expect(html).toContain('₡10.000,00');
-    expect(html).toContain('Saldo contractual pendiente'); expect(html).toContain('₡45.000,00');
-    expect(html).toContain('Incobrables'); expect(html).toContain('RETORNO ACUMULADO'); expect(html).toContain('26,32 %');
+    expect(html).toContain('Capital real pendiente de recuperar'); expect(html).toContain('₡30.000');
+    expect(html).toContain('Ganancia anterior pendiente de recuperar'); expect(html).toContain('₡10.000');
+    expect(html).toContain('Saldo contractual pendiente'); expect(html).toContain('₡45.000');
+    expect(html).toContain('Incobrables'); expect(html).toContain('RETORNO HISTÓRICO'); expect(html).toContain('26,32 %');
     expect(html).toContain('RENTABILIDAD EQUIVALENTE A 30 DÍAS'); expect(html).toContain('42,43 %');
-    expect(html).toContain('Rendimiento sobre capital promedio del período'); expect(html).toContain('388,97 %');
+    expect(html).toContain('Ganancia acumulada / capital promedio'); expect(html).toContain('388,97 %');
     expect(html).not.toContain('Rentabilidad histórica');
     expect(html).not.toContain('ROTACIÓN'); expect(html).not.toContain('2,10x');
+  });
+
+  it('explains received profitability values before a closed native calculation detail', () => {
+    const html = render(data());
+    expect(html).toContain('Por cada ₡100 entregados a este cliente a lo largo de la relación, se han generado ₡26,32 de ganancia realizada.');
+    expect(html).toContain('Rendimiento equivalente por cada 30 días, considerando cuánto capital estuvo realmente invertido y durante cuánto tiempo.');
+    expect(html).toContain('¿Cómo leer estos resultados?');
+    expect(html).toContain('Este cliente ha generado un retorno acumulado de 26,32 % sobre el dinero real desembolsado. Considerando el capital invertido y el tiempo que permaneció colocado, su rendimiento equivale a 42,43 % cada 30 días.');
+    expect(html).toMatch(/<details class="customer-financial-analysis__profitability-details"><summary>Ver detalles del cálculo<\/summary>/);
+    expect(html).not.toMatch(/<details[^>]*\sopen(?:="")?/);
+    expect(html).toContain('Capital económico que, en promedio, permaneció colocado en este cliente durante el período analizado.');
+    expect(html).toContain('Indicador técnico acumulado. No representa una tasa de interés ni una rentabilidad mensual.');
+    expect(html).toContain('Medida técnica de exposición que combina el capital pendiente con los días que permaneció colocado.');
+  });
+
+  it('preserves very high backend percentages and large CRC values as presentation-only details', () => {
+    const high = data();
+    high.indicadores.rentabilidadHistorica = '9.9213';
+    high.capitalEconomico.capitalPromedioTrabajando = '320018.46';
+    high.capitalEconomico.capitalDays = '606755000.00';
+    const html = render(high);
+    expect(html).toContain('992,13 %');
+    expect(html).toContain('₡320.018,46');
+    expect(html).toContain('₡606.755.000');
+    expect(html).not.toContain('₡992,13');
   });
 
   it('shows every supported loan status count, first operation and the honest detail limitation', () => {
@@ -76,6 +101,10 @@ describe('FinancialAnalysisView', () => {
     unavailable.profitability.cumulativeReturnRate = null;
     const html = render(unavailable);
     expect((html.match(/No disponible/g) ?? []).length).toBeGreaterThanOrEqual(7);
+    expect(html).toContain('No hay información suficiente para interpretar este indicador.');
+    expect(html).toContain('No hay datos suficientes para interpretar conjuntamente estos indicadores.');
+    expect(html).not.toContain('Por cada ₡100 entregados');
+    expect(html).not.toContain('Este cliente ha generado un retorno acumulado de');
     expect(html).not.toMatch(/NaN|Infinity/);
   });
 
@@ -85,7 +114,7 @@ describe('FinancialAnalysisView', () => {
     const html = render(malformed);
     expect(html).toContain('DINERO REAL ENTREGADO');
     expect(html).toContain('No disponible');
-    expect(html).not.toContain('₡0,00');
+    expect(html).not.toContain('₡0');
   });
 
   it('renders retry and change-client affordances in responsive page sections', () => {
@@ -93,7 +122,7 @@ describe('FinancialAnalysisView', () => {
     expect(html).toContain('Reintentar'); expect(html).toContain('Cambiar cliente');
     expect(html).toContain('customer-financial-analysis__header');
     expect(html).not.toContain('href="/customers"');
-    expect(html).not.toContain('₡152.000,00');
+    expect(html).not.toContain('₡152.000');
   });
 
   it('keeps change-client visible but disabled when customer listing permission is missing', () => {

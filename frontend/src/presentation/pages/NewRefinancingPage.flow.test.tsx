@@ -9,18 +9,18 @@ import { classifyRefinancingFailure } from '../../infrastructure/api/loan-refina
 import { NewRefinancingPage } from './NewRefinancingPage';
 import { RefinancingResultView } from './RefinancingResultView';
 
-const hooks = vi.hoisted(() => ({ values: [] as unknown[], refs: [] as Array<{ current: unknown }>, stateIndex: 0, refIndex: 0,
-  navigate: vi.fn() }));
+const hooks = vi.hoisted(() => ({ values: [] as unknown[], refs: [] as Array<{ current: unknown }>, effects: [] as Array<() => void | (() => void)>,
+  stateIndex: 0, refIndex: 0, navigate: vi.fn(), setSearchParams: vi.fn(), search: '' }));
 vi.mock('react', async (original) => ({ ...await original<typeof import('react')>(),
   useState: (initial: unknown) => { const index = hooks.stateIndex++;
     if (!(index in hooks.values)) hooks.values[index] = typeof initial === 'function' ? (initial as () => unknown)() : initial;
     return [hooks.values[index], (value: unknown) => { hooks.values[index] = typeof value === 'function' ?
       (value as (previous: unknown) => unknown)(hooks.values[index]) : value; }]; },
   useRef: (initial: unknown) => { const index = hooks.refIndex++; return hooks.refs[index] ?? (hooks.refs[index] = { current: initial }); },
-  useEffect: () => {}, useSyncExternalStore: (_subscribe: unknown, getSnapshot: () => unknown) => getSnapshot(),
+  useEffect: (effect: () => void | (() => void)) => { hooks.effects.push(effect); }, useSyncExternalStore: (_subscribe: unknown, getSnapshot: () => unknown) => getSnapshot(),
 }));
 vi.mock('react-router-dom', async (original) => ({ ...await original<typeof import('react-router-dom')>(),
-  useNavigate: () => hooks.navigate,
+  useNavigate: () => hooks.navigate, useSearchParams: () => [new URLSearchParams(hooks.search), hooks.setSearchParams],
 }));
 
 const preview: RefinancingPreview = {
@@ -60,11 +60,11 @@ function setup() {
   })) });
   const keys = vi.fn().mockReturnValueOnce('key-1').mockReturnValueOnce('key-2').mockReturnValueOnce('key-3');
   const confirmation = new RefinancingConfirmationController(operations, keys, classifyRefinancingFailure);
-  const page = () => { hooks.stateIndex = 0; hooks.refIndex = 0;
+  const page = () => { hooks.stateIndex = 0; hooks.refIndex = 0; hooks.effects = [];
     return NewRefinancingPage({ controller: origin, conditionsController: conditions, confirmationController: confirmation }); };
   const wizard = () => page().props as Parameters<typeof NewRefinancingPage>[0] & {
     onContinue: () => void; onContinueToConfirmation: () => void; onBackToConditions: () => void;
-    onConfirm: (allowed: boolean) => void; notice: string;
+    onConfirm: (allowed: boolean) => void; onClearSelection: () => void; notice: string;
   };
   const prepare = async () => {
     await origin.select(preview.loanId);
@@ -80,7 +80,20 @@ function setup() {
 }
 
 describe('refinancing wizard Step 3 transitions', () => {
-  beforeEach(() => { hooks.values = []; hooks.refs = []; hooks.navigate.mockReset(); });
+  beforeEach(() => { hooks.values = []; hooks.refs = []; hooks.effects = []; hooks.search = ''; hooks.navigate.mockReset(); hooks.setSearchParams.mockReset(); });
+
+  it('preloads the linked origin through the existing preview selection flow without searching', async () => {
+    const flow = setup();
+    hooks.search = `loanId=${preview.loanId.toUpperCase()}`;
+    flow.page();
+    hooks.effects[0]();
+    await vi.waitFor(() => expect(flow.origin.getSnapshot().originPreview).toEqual(preview));
+    expect(flow.lookup.preview).toHaveBeenCalledExactlyOnceWith(preview.loanId);
+    expect(flow.lookup.search).not.toHaveBeenCalled();
+    flow.wizard().onClearSelection();
+    expect(hooks.setSearchParams).toHaveBeenCalledWith(new URLSearchParams(), { replace: true });
+    expect(flow.origin.getSnapshot().originLoanId).toBeNull();
+  });
 
   it('enters confirmation only after valid Step 2, without POST; back retains data and payload changes rotate the key', async () => {
     const flow = setup(); const { origin, conditions, confirmation, operations, wizard } = flow;

@@ -1,4 +1,4 @@
-import type { Collector, CollectorPage, EligibleCollectorUser } from '../../domain/entities/collector';
+import type { Collector, CollectorFinancialSummary, CollectorPage, EligibleCollectorUser } from '../../domain/entities/collector';
 import type { CollectorInput, CollectorListQuery, CollectorRepository, CollectorUpdateInput } from '../../application/ports/collector.repository';
 import { apiClient } from './api-client';
 
@@ -18,4 +18,5 @@ export class CollectorApi implements CollectorRepository {
   linkUser(id: string, userId: string | null): Promise<Collector> { return apiClient.request(`/collectors/${id}/user`, { method: 'PATCH', body: JSON.stringify({ userId }) }); }
   eligibleUsers() { return apiClient.request<EligibleCollectorUser[]>('/collectors/eligible-users'); }
   photo(id: string): Promise<Blob> { return apiClient.blob(`/collectors/${id}/photo`); }
+  financialSummary(): Promise<CollectorFinancialSummary> { return apiClient.request('/collectors/me/financial-summary', { cache: 'no-store' }); }
 }

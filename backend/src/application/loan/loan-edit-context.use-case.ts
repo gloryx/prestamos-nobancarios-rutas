@@ -3,6 +3,9 @@ import type { LoanEditBaseline } from '../../domain/loan/loan-edit.types';
 import { LoanEditInputError, normalizeLoanEditSnapshot, type LoanEditCurrentSnapshot } from './loan-edit.command';
 
 export type LoanEditOption = Readonly<{ id: string; name: string; active: boolean }>;
+export type LoanEditFrequencyOption = LoanEditOption & Readonly<{
+  intervalUnit: 'DAY' | 'WEEK' | 'DAY/15' | 'MONTH'; intervalValue: number;
+}>;
 export type LoanEditContextLoan = LoanFinancialAmounts & Readonly<{
   id: string; loanNumber: string; status: string; startDate: string;
   customer: Readonly<{ id: string; identification: string; fullName: string }>;
@@ -13,8 +16,9 @@ export type LoanEditContextSnapshot = Readonly<{
   loan: LoanEditContextLoan;
   plan: LoanEditCurrentSnapshot['plan'];
   totals: ValidPaymentTotals | undefined;
-  paymentFrequencyOptions: readonly LoanEditOption[];
+  paymentFrequencyOptions: readonly LoanEditFrequencyOption[];
   preferredPaymentMethodOptions: readonly LoanEditOption[];
+  protectedPlanEntryIds: readonly string[];
 }>;
 export interface LoanEditContextReader { read(id: string): Promise<LoanEditContextSnapshot | undefined> }
 export const LOAN_EDIT_CONTEXT_READER = Symbol('LOAN_EDIT_CONTEXT_READER');
@@ -29,10 +33,11 @@ export class GetLoanEditContextUseCase {
   constructor(private readonly reader: LoanEditContextReader) {}
 
   async execute(id: string): Promise<{ loan: LoanEditContextLoan; baseline: LoanEditBaseline;
-    paymentFrequencyOptions: readonly LoanEditOption[]; preferredPaymentMethodOptions: readonly LoanEditOption[] }> {
+    paymentFrequencyOptions: readonly LoanEditFrequencyOption[]; preferredPaymentMethodOptions: readonly LoanEditOption[];
+    protectedPlanEntryIds: readonly string[] }> {
     const snapshot = await this.reader.read(id);
     if (!snapshot) throw new LoanEditContextNotFoundError('The loan does not exist.');
-    const { loan, plan, totals, paymentFrequencyOptions, preferredPaymentMethodOptions } = snapshot;
+    const { loan, plan, totals, paymentFrequencyOptions, preferredPaymentMethodOptions, protectedPlanEntryIds } = snapshot;
     if (loan.status !== 'ACTIVE') throw new LoanEditContextConflictError('Only active loans can be edited.');
     if (!Array.isArray(plan) || !totals || ![loan.principal, loan.interestAmount, loan.totalAmount,
       totals.paidAmount, totals.paidPrincipal, totals.paidInterest].every(isMoney) ||
@@ -54,7 +59,7 @@ export class GetLoanEditContextUseCase {
           preferredPaymentMethodId: normalized.preferredPaymentMethodId, observations: normalized.observations,
           financialBalance: money(integrity.financialBalance),
           plan: normalized.plan.map((row) => ({ id: row.id, dueDate: row.dueDate, pendingAmount: money(row.pendingAmount) })) },
-        paymentFrequencyOptions, preferredPaymentMethodOptions,
+        paymentFrequencyOptions, preferredPaymentMethodOptions, protectedPlanEntryIds,
       };
     } catch (error) {
       if (error instanceof LoanEditInputError || error instanceof RangeError || error instanceof SyntaxError) throw corrupt();

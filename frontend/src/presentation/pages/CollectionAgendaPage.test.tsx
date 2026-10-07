@@ -24,12 +24,19 @@ const render = (state: CollectionAgendaState) => renderToStaticMarkup(<Collectio
 describe('CollectionAgendaView', () => {
   it('renders authoritative summaries, hierarchy and independent obligations by status', () => {
     const html = render({ filters, data, collectors: [{ id: 'collector-1', name: 'Gloriana Peña Ramírez' }], routes: [{ id: 'route-1', name: 'Santa-Cruz 01', collectorId: 'collector-1' }], loading: false, error: '' });
-    for (const text of ['Agenda de cobros', 'VENCIDOS', '12 obligaciones', '₡120.000,00 pendiente', 'PARA HOY', 'PRÓXIMOS', 'Gloriana Peña Ramírez', 'Santa-Cruz 01', 'Ana Mora', 'Vencido', 'Hoy', 'Próximo', 'Préstamo #101', 'Préstamo #245', 'Préstamo #300', 'Frente al parque', 'Ubicación disponible', 'Fotografía disponible']) expect(html).toContain(text);
+    for (const text of ['Agenda de cobros', 'VENCIDOS', '12 obligaciones', '₡120.000 pendiente', 'PARA HOY', 'PRÓXIMOS', 'Gloriana Peña Ramírez', 'Santa-Cruz 01', 'Ana Mora', 'Vencido', 'Hoy', 'Próximo', 'Préstamo #101', 'Préstamo #245', 'Préstamo #300', 'Frente al parque', 'Ubicación disponible', 'Fotografía disponible']) expect(html).toContain(text);
     expect(html).toContain('Página 1 de 3 · 41 obligaciones');
     expect(html).not.toContain('Registrar pago');
     expect(html).not.toContain('/payments/new');
     expect(html).not.toContain('latitude');
     expect(html).not.toContain('/protected');
+  });
+
+  it('uses the personal title only in the collector view', () => {
+    const state = { filters, data, collectors: [], routes: [], loading: false, error: '' };
+    expect(renderToStaticMarkup(<CollectionAgendaView state={state} controller={controller} collectorView />)).toContain('Mi agenda de cobros');
+    expect(render(state)).toContain('Agenda de cobros');
+    expect(render(state)).not.toContain('Mi agenda de cobros');
   });
 
   it('renders presets, server filter controls and custom date inputs', () => {

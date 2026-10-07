@@ -2,7 +2,7 @@ import { BadRequestException, ConflictException, Controller, ForbiddenException,
 import { CurrentUser, RequirePermissions } from '../security/security.decorators';
 import type { CurrentIdentity } from '../../domain/security/security.types';
 import { CustomizePaymentPlanUseCase, PaymentConflictError, PaymentContextUseCase, PaymentNotFoundError, PaymentValidationError, RegisterPaymentUseCase } from '../../application/payment/payment.use-case';
-import { DailyCollectionsUseCase, DailyCollectionsValidationError } from '../../application/payment/daily-collections.use-case';
+import { DailyCollectionsForbiddenError, DailyCollectionsUseCase, DailyCollectionsValidationError } from '../../application/payment/daily-collections.use-case';
 import { PaymentHistoryUseCase, PaymentHistoryValidationError } from '../../application/payment/payment-history.use-case';
 import { AnnulPaymentDto, CreatePaymentDto, CustomizePaymentPlanDto, DailyCollectionDateDto, DailyCollectionsQueryDto, PaymentHistoryQueryDto, PortfolioTrackingQueryDto } from './payment.dto';
 import { PortfolioTrackingUseCase } from '../../application/payment/portfolio-tracking.use-case';
@@ -40,10 +40,22 @@ export class PaymentController {
     try { return await this.daily!.received(this.dailyFilters(query)); }
     catch (error) { return this.mapDaily(error); }
   }
+  @Get('daily-collections/assigned/summary') @RequirePermissions('daily-collections.assigned.view') async assignedDailySummary(@Query() query: DailyCollectionDateDto, @CurrentUser() actor: CurrentIdentity) {
+    try { return await this.daily!.assignedSummary(query.date, actor); }
+    catch (error) { return this.mapDaily(error); }
+  }
+  @Get('daily-collections/assigned/due') @RequirePermissions('daily-collections.assigned.view') async assignedDailyDue(@Query() query: DailyCollectionsQueryDto, @CurrentUser() actor: CurrentIdentity) {
+    try { return await this.daily!.assignedDue(this.dailyFilters(query), actor); }
+    catch (error) { return this.mapDaily(error); }
+  }
+  @Get('daily-collections/assigned/received') @RequirePermissions('daily-collections.assigned.view') async assignedDailyReceived(@Query() query: DailyCollectionsQueryDto, @CurrentUser() actor: CurrentIdentity) {
+    try { return await this.daily!.assignedReceived(this.dailyFilters(query), actor); }
+    catch (error) { return this.mapDaily(error); }
+  }
   private dailyFilters(query: DailyCollectionsQueryDto) { return { ...query,
     page: query.page === undefined ? undefined : Number(query.page),
     pageSize: query.pageSize === undefined ? undefined : Number(query.pageSize) }; }
-  private mapDaily(error: unknown): never { if (error instanceof DailyCollectionsValidationError) throw new BadRequestException(error.message); throw error; }
+  private mapDaily(error: unknown): never { if (error instanceof DailyCollectionsValidationError) throw new BadRequestException(error.message); if (error instanceof DailyCollectionsForbiddenError) throw new ForbiddenException(error.message); throw error; }
   @Get('collection-agenda') @RequirePermissions('collection-agenda.view') async agenda(@Query() query: CollectionAgendaQueryDto, @CurrentUser() actor: CurrentIdentity) {
     try { return await this.collectionAgenda!.execute({ ...query,
       page: query.page === undefined ? undefined : Number(query.page),

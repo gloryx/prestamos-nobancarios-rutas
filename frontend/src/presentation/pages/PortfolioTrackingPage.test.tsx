@@ -13,10 +13,11 @@ const data: PortfolioTrackingResult = {
     balances: { outstandingPrincipal: '40.00', outstandingInterest: '20.00', financialBalance: '60.00' },
     combinedPlan: [{ id: 'entry-0', sequence: 1, dueDate: '2000-01-01', pendingAmount: '10.00' },
       { id: 'entry-1', sequence: 2, dueDate: '2099-12-20', pendingAmount: '50.00' }],
+    protectedPlanEntryIds: [],
     validPayments: [{ id: 'payment-1', paymentDate: '2026-01-20', amount: '40.00', status: 'VALID' }],
     firstOperationalRow: { id: 'entry-1', sequence: 2, dueDate: '2099-12-20', pendingAmount: '60.00' },
     lastValidPayment: { id: 'payment-1', paymentDate: '2026-01-20', amount: '40.00', status: 'VALID' }, refinanceEligibility: true,
-    preferredMethod: { id: null, activeMethods: [], collectors: [] } } },
+    preferredMethod: { id: null, activeMethods: [], collectors: [] }, paymentFrequency: { intervalUnit: 'WEEK', intervalValue: 1 } } },
 };
 const state = (changes: Partial<PortfolioTrackingState> = {}): PortfolioTrackingState => ({
   filters: { search: '', status: 'ALL', collectionStatus: 'ALL' }, position: 3, data, loading: false, error: null, ...changes,
@@ -44,11 +45,11 @@ describe('PortfolioTrackingView', () => {
     expect(html).toContain('Ana Mora');
     expect(html).toContain('Préstamo #9');
     expect(html).toContain('Con cuota vencida');
-    expect(html).toContain('₡70,00');
-    expect(html).toContain('₡30,00');
-    expect(html).toContain('₡40,00');
-    expect(html).toContain('₡20,00');
-    expect(html).toContain('₡60,00');
+    expect(html).toContain('₡70');
+    expect(html).toContain('₡30');
+    expect(html).toContain('₡40');
+    expect(html).toContain('₡20');
+    expect(html).toContain('₡60');
     expect(html).toContain('Fecha límite contractual');
     expect(html).toContain('Plan de pagos');
     expect(html).toContain('PAGADA');

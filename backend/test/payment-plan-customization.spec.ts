@@ -35,6 +35,7 @@ function store(options: { postPending?: string; postPaid?: string; failInsert?: 
     const query = async (sql: string, params: unknown[] = []): Promise<unknown[]> => {
       calls.push({ sql, params });
       if (sql.includes('FROM loans WHERE id = $1 FOR UPDATE')) return [{ status: options.status ?? 'ACTIVE', startDate: '2026-01-01', principal: options.totalAmount ?? '800.00', interestAmount: options.totalAmount ? '0.00' : '200.00', totalAmount: options.totalAmount ?? '1000.00', idempotencyKey: draft.key, fingerprint: draft.fingerprint }];
+      if (sql.startsWith('SELECT DISTINCT e.id')) return [];
       if (sql.includes('FROM payment_plan_entries') && !sql.includes('SUM(pending_amount)')) {
         return draft.rows.filter((item) => item.loanId === params[0] && (!sql.includes('pending_amount > 0') || cents(item.pendingAmount) > 0n))
           .sort((a, b) => a.dueDate.localeCompare(b.dueDate) || a.sequence - b.sequence || a.id.localeCompare(b.id)).map((item) => ({ ...item }));
@@ -82,7 +83,7 @@ describe('payment plan customization by stable obligation identity', () => {
     expect(testStore.calls.filter(({ sql }) => sql.startsWith('UPDATE payment_plan_entries SET due_date'))).toHaveLength(2);
     expect(writes(testStore.calls).every(({ sql }) => !sql.startsWith('DELETE') && !sql.includes('sequence ='))).toBe(true);
     expect(writes(testStore.calls).some(({ sql }) => sql.startsWith('INSERT INTO loan_status_history'))).toBe(false);
-    const context = buildPaymentContext({ summary: {}, balances: {}, combinedPlan: result, validPayments: [], lastValidPayment: null, refinanceEligibility: false, preferredMethod: null });
+    const context = buildPaymentContext({ summary: {}, balances: {}, combinedPlan: result, validPayments: [], lastValidPayment: null, refinanceEligibility: false, preferredMethod: null, paymentFrequency: { intervalUnit: 'WEEK', intervalValue: 1 } });
     expect(context.firstOperationalRow?.id).toBe(A);
   });
 

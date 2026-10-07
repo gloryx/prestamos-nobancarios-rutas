@@ -60,6 +60,22 @@ describe('customer registration', () => {
     expect(saved).toHaveLength(0);
   });
 
+  it('does not touch identification storage when an update omits the photo and the stored reference is null', async () => {
+    const aggregate = { customer: { id: 'id', identificationType: 'NATIONAL', identification: '701310975', firstName: 'ANA', firstLastName: 'PEREZ', gender: 'FEMALE', birthDate: '1990-01-01', primaryPhone: '8888', nationality: 'COSTA_RICAN', identificationFrontFileKey: null, isActive: true, createdAt: new Date(), updatedAt: new Date() }, address: { id: 'address', customerId: 'id', districtCode: 10101, exactAddress: 'CASA', createdAt: new Date(), updatedAt: new Date() }, district: { code: 10101, name: 'DISTRITO', canton: { code: 101, name: 'CANTON', province: { code: 1, name: 'PROVINCIA' } } } } as never;
+    const updateWithAddress = jest.fn(async () => ({ aggregate }));
+    const save = jest.fn(async () => undefined);
+    const replace = jest.fn(async () => undefined);
+    const remove = jest.fn(async () => undefined);
+    const useCase = new CustomerManagementUseCase({ findAggregateById: async () => aggregate, updateWithAddress } as never, { save, read: async () => ({ buffer: Buffer.alloc(0), mimetype: 'image/jpeg' }), replace, delete: remove }, async () => true);
+
+    await useCase.update('id', { firstName: ' maria ' });
+
+    expect(updateWithAddress).toHaveBeenCalledWith('id', { firstName: 'MARIA' }, {});
+    expect(save).not.toHaveBeenCalled();
+    expect(replace).not.toHaveBeenCalled();
+    expect(remove).not.toHaveBeenCalled();
+  });
+
   it('cleans replacement files when persistence fails', async () => {
     const deleted: string[] = [];
     const aggregate = { customer: { id: 'id', identificationType: 'NATIONAL', identification: '112345678', firstName: 'ANA', firstLastName: 'PEREZ', gender: 'FEMALE', birthDate: '1990-01-01', primaryPhone: '8888', nationality: 'COSTA_RICAN', identificationFrontFileKey: 'old.jpg', isActive: true, createdAt: new Date(), updatedAt: new Date() }, address: { id: 'address', customerId: 'id', districtCode: 10101, exactAddress: 'CASA', createdAt: new Date(), updatedAt: new Date() }, district: { code: 10101, name: 'DISTRITO', canton: { code: 101, name: 'CANTON', province: { code: 1, name: 'PROVINCIA' } } } } as never;

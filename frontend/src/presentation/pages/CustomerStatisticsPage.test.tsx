@@ -65,7 +65,7 @@ describe('CustomerStatisticsView', () => {
   it('replaces historical metrics with one selectable ranking and a configurable default limit', () => {
     const html = render({ year: 2026, limit: 10, statistics: report(), loading: false, error: '' });
     for (const fragment of ['Top de clientes', 'Mayor capital prestado', 'Más préstamos', 'Mayor ganancia',
-      'Mayor capital recuperado', 'Mayor saldo actual', 'Ana Mora', '₡1.500.000,00']) expect(html).toContain(fragment);
+      'Mayor capital recuperado', 'Mayor saldo actual', 'Ana Mora', '₡1.500.000']) expect(html).toContain(fragment);
     for (const removed of ['Relación histórica', 'CON PRÉSTAMOS CANCELADOS', 'HAN REFINANCIADO',
       'CON PRÉSTAMOS ANULADOS', 'CON MÚLTIPLES PRÉSTAMOS', 'PROMEDIO DE PRÉSTAMOS POR CLIENTE']) expect(html).not.toContain(removed);
     expect((html.match(/role="tab"/g) ?? []).length).toBe(5);
@@ -80,7 +80,7 @@ describe('CustomerStatisticsView', () => {
     expect(countHtml).toContain('Bea Solís'); expect(countHtml).toContain('>7<'); expect(countHtml).not.toContain('₡7');
     expect(countHtml).toContain('TOP 25');
     const gainHtml = renderToStaticMarkup(<TopCustomersRanking rankings={report().topCustomers} criterion="realizedGain" limit={25} />);
-    expect(gainHtml).toContain('Carlos Ruiz'); expect(gainHtml).toContain('₡250.000,00');
+    expect(gainHtml).toContain('Carlos Ruiz'); expect(gainHtml).toContain('₡250.000');
   });
 
   it('renders loading and retryable error without stale report values', () => {

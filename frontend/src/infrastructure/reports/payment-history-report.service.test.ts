@@ -25,8 +25,8 @@ describe('payment history PDF', () => {
     expect(pdf.text.mock.calls[1][0][0]).toContain('Cobrador: Bea Solís');
     const { head, body } = pdf.autoTable.mock.calls[0][1];
     expect(head[0]).toEqual(['Fecha', 'Cliente', 'Préstamo', 'Cuota', 'Monto', 'Capital', 'Interés', 'Estado', 'Forma', 'Cobrador']);
-    expect(body[0]).toEqual(['02/10/2026', 'Ana Pérez', '#4548', '1, 2', '¢50.000,00', '¢42.000,00',
-      '¢8.000,00', 'ANULADO', 'Transferencia', '—']);
+    expect(body[0]).toEqual(['02/10/2026', 'Ana Pérez', '#4548', '1, 2', '¢50.000', '¢42.000',
+      '¢8.000', 'ANULADO', 'Transferencia', '—']);
     expect(JSON.stringify(body)).not.toContain('hidden-uuid');
     expect(pdf.save).toHaveBeenCalledWith('historial-pagos-2026-10-02.pdf');
   });

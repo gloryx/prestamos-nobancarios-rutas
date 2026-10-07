@@ -55,17 +55,17 @@ describe('cash movement PDF', () => {
       { ...items[1], amount: '160000.00' },
       { ...items[0], id: 'internal-id-3', amount: '1320000.00', loanNumber: undefined },
     ];
-    const reportSummary: CashMovementSummary = { ...summary, inflows: '1390000.00', outflows: '160000.00', net: '1230000.00' };
+    const reportSummary: CashMovementSummary = { ...summary, inflows: '1390000.00', outflows: '160000.00', net: '-1230000.00' };
 
     await generateCashMovementReport(reportItems, reportSummary, '2026-09-01', '2026-09-30');
 
     expect(pdf.autoTable).toHaveBeenCalledTimes(1);
     const { body, startY } = pdf.autoTable.mock.calls[0][1];
     expect(startY).toBe(28);
-    expect(body.map((row: string[]) => row[4])).toEqual(['+¢70.000,00', '-¢160.000,00', '+¢1.320.000,00']);
+    expect(body.map((row: string[]) => row[4])).toEqual(['+¢70.000', '-¢160.000', '+¢1.320.000']);
     expect(body[0][2]).toBe('Desembolso de préstamo · Préstamo #42');
     expect(body[2][2]).toBe('Desembolso de préstamo');
-    expect(pdf.text).toHaveBeenCalledWith('Entradas: ¢1.390.000,00   Salidas: ¢160.000,00   Neto: ¢1.230.000,00', 10, 65);
+    expect(pdf.text).toHaveBeenCalledWith('Entradas: ¢1.390.000   Salidas: ¢160.000   Neto: -¢1.230.000', 10, 65);
     expect(JSON.stringify([body, pdf.text.mock.calls])).not.toContain('₡');
     expect(pdf.save).toHaveBeenCalledWith(`movimientos-caja-${new Date().toISOString().slice(0, 10)}.pdf`);
   });

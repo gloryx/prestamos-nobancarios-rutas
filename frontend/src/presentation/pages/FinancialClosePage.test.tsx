@@ -27,6 +27,7 @@ describe('monthly financial close page', () => {
     const html = render(state());
     for (const text of ['Cierre financiero mensual', 'Liquidez', 'Cartera contractual', 'Capital económico',
       'Refinanciaciones', 'Rentabilidad', 'Conciliaciones', 'Advertencias para revisar', 'Revisar diferencia menor.',
+      '₡1.000', '₡800', '₡700', 'Cadenas</dt><dd>2', 'Coincide</dt><dd>Sí',
       'Historial de cierres', 'Ver cierre inmutable de 2026-09']) expect(html).toContain(text);
   });
 

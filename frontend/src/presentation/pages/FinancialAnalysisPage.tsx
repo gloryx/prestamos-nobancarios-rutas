@@ -12,11 +12,11 @@ import { useAuth } from '../hooks/auth-context';
 
 const money = (value: string | null): string => {
   if (value === null || !/^-?(?:0|[1-9]\d*)(?:\.\d{1,2})?$/.test(value)) return 'No disponible';
-  return value.startsWith('-') ? `-${formatCRCAggregate(value.slice(1))}` : formatCRCAggregate(value);
+  return formatCRCAggregate(value);
 };
 
-const percent = (value: string | null): string => {
-  if (value === null || !/^-?\d+(?:\.\d+)?$/.test(value)) return 'No disponible';
+const percent = (value: string | null): string | null => {
+  if (value === null || !/^-?\d+(?:\.\d+)?$/.test(value)) return null;
   const negative = value.startsWith('-');
   const [whole, fraction = ''] = (negative ? value.slice(1) : value).split('.');
   const denominator = 10n ** BigInt(fraction.length);
@@ -133,6 +133,9 @@ export function FinancialAnalysisView({ state, controller, canChangeCustomer, on
   onAsOfChange?: (value: string) => void;
 }): ReactElement {
   const analysis = state.analysis;
+  const cumulativeReturn = analysis ? percent(analysis.profitability.cumulativeReturnRate) : null;
+  const equivalent30Days = analysis ? percent(analysis.indicadores.tasaEquivalente30Dias) : null;
+  const returnPerHundred = cumulativeReturn ? `₡${cumulativeReturn.replace(' %', '')}` : null;
   return <section className="page-section customer-financial-analysis" aria-labelledby="customer-financial-title">
     <header className="customer-financial-analysis__header">
       <div><span className="eyebrow">CLIENTES · ANÁLISIS</span><h1 id="customer-financial-title">Análisis financiero del cliente</h1>
@@ -176,17 +179,30 @@ export function FinancialAnalysisView({ state, controller, canChangeCustomer, on
         <section className="loan-list__surface customer-financial-analysis__panel" aria-labelledby="customer-financial-profitability">
           <span className="eyebrow">DESEMPEÑO HISTÓRICO</span><h2 id="customer-financial-profitability">Rentabilidad del cliente</h2>
           <div className="customer-financial-analysis__returns">
-            <Metric label="RETORNO ACUMULADO" value={percent(analysis.profitability.cumulativeReturnRate)}
-              detail="Ganancia cobrada respecto a todo el dinero real entregado al cliente." />
-            <Metric label="RENTABILIDAD EQUIVALENTE A 30 DÍAS" value={percent(analysis.indicadores.tasaEquivalente30Dias)}
-              detail="Rendimiento considerando cuánto capital estuvo invertido y durante cuánto tiempo, expresado sobre una base de 30 días calendario." />
+            <Metric label="RETORNO HISTÓRICO" value={cumulativeReturn ?? 'No disponible'}
+              detail={returnPerHundred
+                ? `Por cada ₡100 entregados a este cliente a lo largo de la relación, se han generado ${returnPerHundred} de ganancia realizada.`
+                : 'No hay información suficiente para interpretar este indicador.'} />
+            <Metric label="RENTABILIDAD EQUIVALENTE A 30 DÍAS" value={equivalent30Days ?? 'No disponible'}
+              detail="Rendimiento equivalente por cada 30 días, considerando cuánto capital estuvo realmente invertido y durante cuánto tiempo." />
           </div>
-          <dl className="customer-financial-analysis__profitability-secondary">
-            <Definition label="Capital promedio invertido" value={money(analysis.capitalEconomico.capitalPromedioTrabajando)} />
-            <Definition label="Rendimiento sobre capital promedio del período" value={percent(analysis.indicadores.rentabilidadHistorica)}
-              help="Relaciona la ganancia realizada con el capital económico promedio mantenido durante el período analizado. No representa el retorno acumulado sobre todo el dinero entregado." />
-            <Definition label="Capital × días" value={money(analysis.capitalEconomico.capitalDays)} />
-          </dl>
+          <aside className="customer-financial-analysis__profitability-interpretation" aria-labelledby="customer-financial-profitability-reading">
+            <h3 id="customer-financial-profitability-reading">¿Cómo leer estos resultados?</h3>
+            <p>{cumulativeReturn && equivalent30Days
+              ? `Este cliente ha generado un retorno acumulado de ${cumulativeReturn} sobre el dinero real desembolsado. Considerando el capital invertido y el tiempo que permaneció colocado, su rendimiento equivale a ${equivalent30Days} cada 30 días.`
+              : 'No hay datos suficientes para interpretar conjuntamente estos indicadores.'}</p>
+          </aside>
+          <details className="customer-financial-analysis__profitability-details">
+            <summary>Ver detalles del cálculo</summary>
+            <dl className="customer-financial-analysis__profitability-secondary">
+              <Definition label="Capital promedio invertido" value={money(analysis.capitalEconomico.capitalPromedioTrabajando)}
+                help="Capital económico que, en promedio, permaneció colocado en este cliente durante el período analizado." />
+              <Definition label="Ganancia acumulada / capital promedio" value={percent(analysis.indicadores.rentabilidadHistorica) ?? 'No disponible'}
+                help="Indicador técnico acumulado. No representa una tasa de interés ni una rentabilidad mensual. Compara la ganancia realizada durante toda la relación con el capital económico promedio mantenido." />
+              <Definition label="Capital × días" value={money(analysis.capitalEconomico.capitalDays)}
+                help="Medida técnica de exposición que combina el capital pendiente con los días que permaneció colocado. Se utiliza para calcular indicadores de rentabilidad ajustados por tiempo." />
+            </dl>
+          </details>
         </section>
       </div>
       <section className="loan-list__surface customer-financial-analysis__history" aria-labelledby="customer-financial-history">

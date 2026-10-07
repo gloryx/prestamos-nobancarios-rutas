@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
-import { useLocation, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useSearchParams } from 'react-router-dom';
+import { RefreshCw } from 'lucide-react';
 import { loanApi } from '../../infrastructure/api/loan.api';
 import { paymentApi, type PaymentContext, type PaymentLoan, type PendingPaymentEntry, type PlanBaseline, type ValidPayment } from '../../infrastructure/api/payment.api';
 import { generateLoanPaymentPlanReport } from '../../infrastructure/reports/loan-payment-plan-report.service';
@@ -11,7 +12,7 @@ import { TableActions } from '../components/TableActions';
 import { Icon } from '../components/layout/Icon';
 import { PAGE_SIZE, refreshPaymentLoanPage, reusePendingLoanPage, type LoanList } from '../helpers/payment-loan-selector';
 import { loadActivePaymentContext, paymentLoanIdFromSearch, paymentSearchWithLoan, selectPaymentLoanFromDialog } from '../helpers/payment-loan-link';
-import { localDateOnly, paymentTimeline, persistPlanAndRefresh, planBaselineFromContext, planDraftFromEntries, planSaveAttempt, PlanRefreshError, reviewPlanDraft, type PlanDraftEntry } from '../helpers/payment-plan';
+import { appendAutomaticPlanObligation, localDateOnly, paymentTimeline, persistPlanAndRefresh, planBaselineFromContext, planDraftFromEntries, planSaveAttempt, PlanRefreshError, reviewPlanDraft, type PlanDraftEntry } from '../helpers/payment-plan';
 import { useAuth } from '../hooks/auth-context';
 
 const errorMessage = (cause: unknown) => cause instanceof Error ? cause.message : 'No se pudo completar la solicitud.';
@@ -93,7 +94,7 @@ export function PaymentSelector({ loans, total, page, loading, error, search, on
     {loading && <p role="status">Cargando préstamos…</p>}
     {!loading && !error && (loans.length ? <div className="loan-list__table-wrap"><table className="loan-list__table">
       <thead><tr><th>N°</th><th>Identificación</th><th>Cliente</th><th>Saldo pendiente</th><th>Condición</th><th>Acciones</th></tr></thead>
-      <tbody>{loans.map((loan) => <tr key={loan.id}><td>{loan.loanNumber}</td><td>{loan.identification}</td><td>{loan.customerName}</td><td>{loan.financialBalance}</td><td>{loan.isOverdue ? 'Con atraso' : 'Al día'}</td><td className="loan-list__actions"><TableActions ariaLabel={`Acciones del préstamo ${loan.loanNumber}`} actions={[{ key: 'view', icon: 'view', label: 'Seleccionar', title: 'Seleccionar préstamo', ariaLabel: `Seleccionar préstamo ${loan.loanNumber}`, onClick: () => onSelect(loan.id) }]} /></td></tr>)}</tbody>
+      <tbody>{loans.map((loan) => <tr key={loan.id}><td>{loan.loanNumber}</td><td>{loan.identification}</td><td>{loan.customerName}</td><td>{formatCRC(loan.financialBalance)}</td><td>{loan.isOverdue ? 'Con atraso' : 'Al día'}</td><td className="loan-list__actions"><TableActions ariaLabel={`Acciones del préstamo ${loan.loanNumber}`} actions={[{ key: 'view', icon: 'view', label: 'Seleccionar', title: 'Seleccionar préstamo', ariaLabel: `Seleccionar préstamo ${loan.loanNumber}`, onClick: () => onSelect(loan.id) }]} /></td></tr>)}</tbody>
     </table></div> : <p>No se encontraron préstamos activos.</p>)}
     {!loading && !error && <nav aria-label="Páginas de préstamos"><button type="button" disabled={page <= 1} onClick={() => onPage(page - 1)}>Anterior</button><span>Página {page} de {pages} · {total} préstamos</span><button type="button" disabled={page >= pages} onClick={() => onPage(page + 1)}>Siguiente</button></nav>}
   </section>;
@@ -133,12 +134,12 @@ export function PaymentDetails({ context, canCreate, amount, methodId, collector
   ].sort((left, right) => left.date.localeCompare(right.date) || left.kind.localeCompare(right.kind) || left.id.localeCompare(right.id));
   return <section aria-label="Contexto de pago"><h2>Préstamo {context.summary.loanNumber}</h2>
     <p>Cliente: {context.summary.customerName} · Identificación: {context.summary.identification}</p>
-    <p>Saldo financiero: {context.balances.financialBalance}</p>
-    <p>Capital pendiente (valor actual): {context.balances.outstandingPrincipal}</p>
-    <p>Interés pendiente: {context.balances.outstandingInterest}</p>
-    <p>Primera cuota pendiente: {context.firstOperationalRow ? `${formatDateOnlyForDisplay(context.firstOperationalRow.dueDate)} · ${context.firstOperationalRow.pendingAmount}` : 'Ninguna'}</p>
+    <p>Saldo financiero: {formatCRC(context.balances.financialBalance)}</p>
+    <p>Capital pendiente (valor actual): {formatCRC(context.balances.outstandingPrincipal)}</p>
+    <p>Interés pendiente: {formatCRC(context.balances.outstandingInterest)}</p>
+    <p>Primera cuota pendiente: {context.firstOperationalRow ? `${formatDateOnlyForDisplay(context.firstOperationalRow.dueDate)} · ${formatCRC(context.firstOperationalRow.pendingAmount)}` : 'Ninguna'}</p>
     <p>Elegible para refinanciar: {context.refinanceEligibility ? 'Sí' : 'No'}</p>
-    <p>Último pago válido: {context.lastValidPayment ? `${formatDateOnlyForDisplay(context.lastValidPayment.paymentDate)} · ${context.lastValidPayment.amount}` : 'Ninguno'}</p>
+    <p>Último pago válido: {context.lastValidPayment ? `${formatDateOnlyForDisplay(context.lastValidPayment.paymentDate)} · ${formatCRC(context.lastValidPayment.amount)}` : 'Ninguno'}</p>
     {canCreate && <form onSubmit={(event) => { event.preventDefault(); onSubmit(); }}>
       <label>Monto<input inputMode="decimal" value={amount} onChange={(event) => onAmount(event.target.value)} required /></label>
       <label>Método de pago<select value={methodId} onChange={(event) => onMethod(event.target.value)} required><option value="">Seleccionar método</option>{context.preferredMethod.activeMethods.map((method) => <option key={method.id} value={method.id}>{method.name}</option>)}</select></label>
@@ -147,7 +148,7 @@ export function PaymentDetails({ context, canCreate, amount, methodId, collector
       <button type="submit" disabled={busy || !methodId || !collectorId}>{busy ? 'Registrando…' : 'Registrar pago'}</button>
     </form>}
     <h3>Plan vigente y pagos válidos</h3>
-    {rows.length ? <ul>{rows.map((row) => <li key={`${row.kind}:${row.id}`}>{formatDateOnlyForDisplay(row.date)} · {row.kind}: {row.amount}</li>)}</ul> : <p>No hay pagos válidos ni cuotas pendientes.</p>}
+    {rows.length ? <ul>{rows.map((row) => <li key={`${row.kind}:${row.id}`}>{formatDateOnlyForDisplay(row.date)} · {row.kind}: {formatCRC(row.amount)}</li>)}</ul> : <p>No hay pagos válidos ni cuotas pendientes.</p>}
   </section>;
 }
 
@@ -190,8 +191,8 @@ export function PaymentAnnulDialog({ context, payment, reason, busy, eligible, e
   </div></div>;
 }
 
-export function SelectedPaymentDetails({ context, canCreate, canCustomize, canAnnul, canExport, annulBusy, downloadBusy, onPay, onCustomize, onAnnul, onDownload, onChangeLoan, onCloseLoan, triggerRef, paymentTriggerRef, planTriggerRef, annulTriggerRef }: {
-  context: PaymentContext; canCreate: boolean; canCustomize: boolean; canAnnul: boolean; canExport: boolean; annulBusy: boolean; downloadBusy: boolean; onPay: () => void; onCustomize: () => void; onAnnul: (paymentId: string) => void; onDownload: () => void;
+export function SelectedPaymentDetails({ context, canCreate, canCustomize, canAnnul, canExport, canRefinance, annulBusy, downloadBusy, onPay, onCustomize, onAnnul, onDownload, onChangeLoan, onCloseLoan, triggerRef, paymentTriggerRef, planTriggerRef, annulTriggerRef }: {
+  context: PaymentContext; canCreate: boolean; canCustomize: boolean; canAnnul: boolean; canExport: boolean; canRefinance: boolean; annulBusy: boolean; downloadBusy: boolean; onPay: () => void; onCustomize: () => void; onAnnul: (paymentId: string) => void; onDownload: () => void;
   onChangeLoan: () => void; onCloseLoan: () => void;
   triggerRef: RefObject<HTMLButtonElement | null>; paymentTriggerRef: RefObject<HTMLButtonElement | null>; planTriggerRef: RefObject<HTMLButtonElement | null>; annulTriggerRef: RefObject<HTMLButtonElement | null>;
 }) {
@@ -205,6 +206,7 @@ export function SelectedPaymentDetails({ context, canCreate, canCustomize, canAn
       <header className="payment-selected__header">
         <div><h2 id="payment-selected-loan">{context.summary.customerName}</h2><p>Préstamo #{context.summary.loanNumber}</p><small>Identificación: {context.summary.identification}</small></div>
         <div className="payment-selected__actions">
+          {canRefinance && context.refinanceEligibility && <Link className="button button--secondary" to={`/loan-refinancings/new?loanId=${encodeURIComponent(context.summary.loanId)}`}><RefreshCw aria-hidden="true" />Refinanciar</Link>}
           <button className="button button--secondary" type="button" ref={triggerRef} onClick={onChangeLoan}>Cambiar préstamo</button>
           <button className="button button--secondary" type="button" onClick={onCloseLoan}>Cerrar préstamo</button>
         </div>
@@ -541,7 +543,7 @@ export function PaymentsPage() {
   const savePlan = async () => {
     if (planLocked.current || !showPlan || !selected || !planBase || !can('payments.plan.customize')) return;
     const selection = selectionToken.current;
-    const review = reviewPlanDraft(planBase.financialBalance, planDraft);
+    const review = reviewPlanDraft(planBase.financialBalance, planDraft, { protectedEntryIds: selected.protectedPlanEntryIds });
     if (!review.canSave) { setPlanError('Revisa las fechas, los montos y el saldo distribuido.'); return; }
     const attempt = planSaveAttempt(planAttempt.current, selected.summary.loanId, planBase, review.entries);
     planAttempt.current = attempt;
@@ -611,7 +613,7 @@ export function PaymentsPage() {
     {planSuccess && <div className="success-message" role="status">{planSuccess}</div>}
     {(selectionPending || (!isNewPayment && selecting)) && <p role="status">Cargando contexto de pago…</p>}
     {selected && <div ref={detailsRef} tabIndex={-1}>{isNewPayment
-      ? <SelectedPaymentDetails context={selected} canCreate={can('payments.create')} canCustomize={can('payments.plan.customize')} canAnnul={can('payments.annul')} canExport={canDownloadPaymentPlan(can)} annulBusy={annulSaving} downloadBusy={downloadingSelection === selectionToken.current} onPay={openPayment} onCustomize={() => { void openPlan(); }} onAnnul={openAnnul} onDownload={() => { void download(); }} onChangeLoan={() => { if (annulLocked.current) return; clearLoan(); setShowSelector(true); }} onCloseLoan={() => { if (annulLocked.current) return; if (showAnnul) closeAnnul(); clearLoan(); setShowSelector(false); }} triggerRef={triggerRef} paymentTriggerRef={paymentTriggerRef} planTriggerRef={planTriggerRef} annulTriggerRef={annulTriggerRef} />
+      ? <SelectedPaymentDetails context={selected} canCreate={can('payments.create')} canCustomize={can('payments.plan.customize')} canAnnul={can('payments.annul')} canExport={canDownloadPaymentPlan(can)} canRefinance={can('loans.refinance.view')} annulBusy={annulSaving} downloadBusy={downloadingSelection === selectionToken.current} onPay={openPayment} onCustomize={() => { void openPlan(); }} onAnnul={openAnnul} onDownload={() => { void download(); }} onChangeLoan={() => { if (annulLocked.current) return; clearLoan(); setShowSelector(true); }} onCloseLoan={() => { if (annulLocked.current) return; if (showAnnul) closeAnnul(); clearLoan(); setShowSelector(false); }} triggerRef={triggerRef} paymentTriggerRef={paymentTriggerRef} planTriggerRef={planTriggerRef} annulTriggerRef={annulTriggerRef} />
       : <><button type="button" onClick={() => { selectionToken.current += 1; setSelected(null); setError(''); }}>Cerrar préstamo</button><PaymentDetails context={selected} canCreate={can('payments.create')} amount={amount} methodId={methodId} collectorId={collectorId} busy={busy} onAmount={setAmount} onMethod={setMethodId} onCollector={setCollectorId} onSubmit={() => { void register(); }} /></>}
     </div>}
     {isNewPayment && showPayment && selected?.firstOperationalRow && can('payments.create') && <PaymentCaptureDialog
@@ -620,7 +622,8 @@ export function PaymentsPage() {
       dialogRef={captureDialogRef} dateRef={paymentDateRef} today={new Date().toISOString().slice(0, 10)} />}
     {isNewPayment && showPlan && selected && planBase && can('payments.plan.customize') && <PaymentPlanEditorDialog
       draft={planDraft} balance={planBase.financialBalance} busy={planSaving} error={planError}
-      onChange={(draft) => { setPlanDraft(draft); setPlanError(''); }} onAdd={() => { setPlanDraft((draft) => [...draft, { key: crypto.randomUUID(), id: null, dueDate: localDateOnly(), pendingAmount: '' }]); setPlanError(''); }}
+      protectedEntryIds={selected.protectedPlanEntryIds} reschedulableProtectedEntryId={planBase.entries.at(-1)?.id ?? null}
+      onChange={(draft) => { setPlanDraft(draft); setPlanError(''); }} onAdd={() => { setPlanDraft((draft) => appendAutomaticPlanObligation(draft, selected.paymentFrequency)); setPlanError(''); }}
       onSave={() => { void savePlan(); }} onClose={closePlan} dialogRef={planDialogRef} dateRef={planDateRef} />}
     {isNewPayment && showAnnul && selected && annulTarget && selected.summary.loanId === annulTarget.loanId && can('payments.annul') && <PaymentAnnulDialog
       context={selected} payment={annulTarget.payment} reason={annulReason} busy={annulSaving} eligible={annulEligible} error={annulError}

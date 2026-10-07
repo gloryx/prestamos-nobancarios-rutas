@@ -8,7 +8,7 @@ import { AppLayout } from '../components/layout/AppLayout';
 import { canAccess } from '../hooks/auth-permissions';
 import { AuthContext } from '../hooks/auth-context';
 import { PaymentsPage } from '../pages/PaymentsPage';
-import { DailyCollectionsPage } from '../pages/DailyCollectionsPage';
+import { CollectorDailyCollectionsPage, DailyCollectionsPage } from '../pages/DailyCollectionsPage';
 import { PaymentHistoryPage } from '../pages/PaymentHistoryPage';
 import { CancelledLoansPage } from '../pages/CancelledLoansPage';
 import { LoanManagementPage } from '../pages/LoanManagementPage';
@@ -26,6 +26,11 @@ import { FinancialClosePage } from '../pages/FinancialClosePage';
 import { RouteAssignmentsPage } from '../pages/RouteAssignmentsPage';
 import { PaymentCollectorReportPage } from '../pages/PaymentCollectorReportPage';
 import { CollectionAgendaPage } from '../pages/CollectionAgendaPage';
+import { CollectorCustomersPage } from '../pages/CollectorCustomersPage';
+import { CollectorLoansPage } from '../pages/CollectorLoansPage';
+import { CollectorFinancialSummaryPage } from '../pages/CollectorFinancialSummaryPage';
+import { LoanDetailPage } from '../pages/LoanDetailPage';
+import { CustomerAgendaPage } from '../pages/CustomerAgendaPage';
 import { AppRouter } from './AppRouter';
 
 const elements = (node: ReactNode): ReactElement[] => Children.toArray(node).flatMap((child) =>
@@ -306,6 +311,48 @@ describe('route assignments publication', () => {
   });
 });
 
+describe('collector assigned customers publication', () => {
+  const path = '/collector/customers';
+  it('publishes Mis clientes with its narrow permission and central superadmin bypass', () => {
+    const routes = elements(AppRouter()).filter((element) => element.type === Route);
+    const entry = routes.find((route) => (route.props as { path?: string }).path === path);
+    expect((entry?.props as { element?: ReactNode }).element).toMatchObject({ type: RouteGuard,
+      props: { permission: 'customers.assigned.view', children: { type: CollectorCustomersPage } } });
+    expect(renderRoute(path, { ...identity, permissions: ['customers.assigned.view', 'customers.site.view'] })).toContain('MIS CLIENTES');
+    expect(renderRoute(path, { ...identity, permissions: ['customers.view'] })).toContain('No tienes permiso');
+    expect(renderRoute(path, { ...identity, role: { ...identity.role, isSuperAdmin: true } })).toContain('MIS CLIENTES');
+  });
+});
+
+describe('collector assigned loans and daily collections publication', () => {
+  it('publishes independent narrow routes without granting administrative permissions', () => {
+    const routes = elements(AppRouter()).filter((element) => element.type === Route);
+    const loans = routes.find((route) => (route.props as { path?: string }).path === '/collector/loans');
+    const detail = routes.find((route) => (route.props as { path?: string }).path === '/collector/loans/:id');
+    const daily = routes.find((route) => (route.props as { path?: string }).path === '/collector/daily-collections');
+    expect((loans?.props as { element?: ReactNode }).element).toMatchObject({ type: RouteGuard,
+      props: { permission: 'loans.assigned.view', children: { type: CollectorLoansPage } } });
+    expect((detail?.props as { element?: ReactNode }).element).toMatchObject({ type: RouteGuard,
+      props: { permission: 'loans.assigned.view', children: { type: LoanDetailPage, props: { assigned: true } } } });
+    expect((daily?.props as { element?: ReactNode }).element).toMatchObject({ type: RouteGuard,
+      props: { permission: 'daily-collections.assigned.view', children: { type: CollectorDailyCollectionsPage } } });
+    expect(renderRoute('/collector/loans', { ...identity, permissions: ['loans.assigned.view'] })).toContain('Mis préstamos');
+    expect(renderRoute('/collector/loans', { ...identity, permissions: ['loans.view'] })).toContain('No tienes permiso');
+    expect(renderRoute('/collector/daily-collections', { ...identity, permissions: ['daily-collections.assigned.view'] })).toContain('Mis cobros del día');
+    expect(renderRoute('/collector/daily-collections', { ...identity, permissions: ['payments.view'] })).toContain('No tienes permiso');
+  });
+  it('publishes the financial summary with only its dedicated scoped permission', () => {
+    const path = '/collector/financial-summary';
+    const routes = elements(AppRouter()).filter((element) => element.type === Route);
+    const entry = routes.find((route) => (route.props as { path?: string }).path === path);
+    expect((entry?.props as { element?: ReactNode }).element).toMatchObject({ type: RouteGuard,
+      props: { permission: 'collectors.financial-summary.view', children: { type: CollectorFinancialSummaryPage } } });
+    expect(renderRoute(path, { ...identity, permissions: ['collectors.financial-summary.view'] })).toContain('Mi resumen financiero');
+    expect(renderRoute(path, { ...identity, permissions: ['loans.assigned.view'] })).toContain('No tienes permiso');
+    expect(renderRoute(path, { ...identity, role: { ...identity.role, isSuperAdmin: true } })).toContain('Mi resumen financiero');
+  });
+});
+
 describe('collection agenda publication', () => {
   const path = '/collectors/collection-agenda';
   it('uses only collection-agenda.view and preserves the central superadmin bypass', () => {
@@ -313,9 +360,39 @@ describe('collection agenda publication', () => {
     const entry = routes.find((route) => (route.props as { path?: string }).path === path);
     expect((entry?.props as { element?: ReactNode }).element).toMatchObject({ type: RouteGuard,
       props: { permission: 'collection-agenda.view', children: { type: CollectionAgendaPage } } });
-    expect(renderRoute(path, { ...identity, permissions: ['collection-agenda.view'] })).toContain('Agenda de cobros');
+    const globalAgenda = renderRoute(path, { ...identity, permissions: ['collection-agenda.view'] });
+    expect(globalAgenda).toContain('Agenda de cobros');
+    expect(globalAgenda).not.toContain('Mi agenda de cobros');
+    expect(renderRoute(path, { ...identity, role: { ...identity.role, code: 'COLLECTOR' }, permissions: ['collection-agenda.view'] })).toContain('Mi agenda de cobros');
     expect(renderRoute(path, { ...identity, permissions: ['collectors.view', 'payments.view'] })).toContain('No tienes permiso');
-    expect(renderRoute(path, { ...identity, role: { ...identity.role, isSuperAdmin: true } })).toContain('Agenda de cobros');
+    const superadminAgenda = renderRoute(path, { ...identity, role: { ...identity.role, isSuperAdmin: true } });
+    expect(superadminAgenda).toContain('Agenda de cobros');
+    expect(superadminAgenda).not.toContain('Mi agenda de cobros');
+  });
+});
+
+describe('customer agenda publication', () => {
+  const path = '/collectors/customer-agenda';
+  it('accepts global or assigned customer access and preserves the central superadmin bypass', () => {
+    const routes = elements(AppRouter()).filter((element) => element.type === Route);
+    const entry = routes.find((route) => (route.props as { path?: string }).path === path);
+    expect((entry?.props as { element?: ReactNode }).element).toMatchObject({ type: RouteGuard,
+      props: { anyPermissions: ['customers.view', 'customers.assigned.view'], children: { type: CustomerAgendaPage } } });
+    const allowed = renderRoute(path, { ...identity, permissions: ['customers.view'] });
+    expect(allowed).toContain('Agenda de clientes');
+    expect(allowed).toContain(`nav-link--active" href="${path}`);
+    const collector = renderRoute(path, { ...identity, role: { ...identity.role, code: 'COLLECTOR' }, permissions: ['customers.assigned.view'] });
+    expect(collector).toContain('Agenda de clientes');
+    expect(collector).toContain(`href="${path}`);
+    expect(renderRoute(path, { ...identity, permissions: ['collectors.view'] })).toContain('No tienes permiso');
+    expect(renderRoute(path, { ...identity, role: { ...identity.role, isSuperAdmin: true } })).toContain('Agenda de clientes');
+  });
+
+  it('adds the same agenda page to the personal COLLECTOR navigation without replacing existing links', () => {
+    const html = renderRoute('/collector/customers', { ...identity, role: { ...identity.role, code: 'COLLECTOR' }, permissions: ['customers.assigned.view'] });
+    expect(html).toContain('Mis clientes');
+    expect(html).toContain('href="/collectors/customer-agenda"');
+    for (const label of ['Mis clientes', 'Agenda de clientes']) expect(html).toContain(label);
   });
 });
 

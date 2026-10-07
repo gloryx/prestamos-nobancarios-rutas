@@ -68,6 +68,7 @@ function setup() {
         const row = staged.operations[String(args[0])] ?? committed.operations[String(args[0])]; return row ? [row] : [];
       }
       if (sql.startsWith('SELECT COALESCE(SUM(pending_amount)')) return [{ pendingAmount: money(staged.plan.reduce((sum, row) => sum + cents(row.pendingAmount), 0n)) }];
+      if (sql.startsWith('SELECT DISTINCT e.id')) return [];
       if (sql.includes('FROM payment_plan_entries')) return structuredClone(staged.plan.filter((row) => !sql.includes('pending_amount > 0') || cents(row.pendingAmount) > 0n));
       if (sql.includes('FROM payments WHERE loan_id')) {
         if (missingTotals) return [];
@@ -306,8 +307,59 @@ const increase = () => financial('30.00', [
   { id: FIRST, dueDate: '2026-10-01', pendingAmount: '60.00' },
   { id: SECOND, dueDate: '2026-11-02', pendingAmount: '44.50' },
 ]);
+const scenario = (fake: ReturnType<typeof setup>, values: { principal: string; oldInterest: string; newInterest: string;
+  paidAmount?: string; paidPrincipal?: string; paidInterest?: string }) => {
+  const paidAmount = values.paidAmount ?? '0.00'; const paidPrincipal = values.paidPrincipal ?? '0.00';
+  const paidInterest = values.paidInterest ?? '0.00';
+  const oldTotal = cents(values.principal) + cents(values.oldInterest); const oldBalance = oldTotal - cents(paidAmount);
+  const newBalance = cents(values.principal) + cents(values.newInterest) - cents(paidAmount);
+  fake.set((state) => {
+    Object.assign(state.loans[LOAN], { principal: values.principal, interestAmount: values.oldInterest, totalAmount: money(oldTotal) });
+    state.payments = cents(paidAmount) === 0n ? [] : [{ status: 'VALID', amount: paidAmount, principal: paidPrincipal, interest: paidInterest }];
+    state.plan[0].pendingAmount = money(oldBalance); state.plan[1].pendingAmount = '0.00';
+  });
+  return { ...input(), baseline: { ...input().baseline, interestAmount: values.oldInterest, financialBalance: money(oldBalance),
+    plan: [{ id: FIRST, dueDate: '2026-10-01', pendingAmount: money(oldBalance) }] },
+  changes: { interestAmount: values.newInterest },
+  plan: newBalance < 0n ? [] : [{ id: FIRST, dueDate: '2026-10-01', pendingAmount: money(newBalance) }] };
+};
 
 describe('B4 internal interest and plan edit (real B1 helper, staged manager)', () => {
+  it('changes interest from 30000 to 20000 without payments and reconciles the final plan to the authoritative balance', async () => {
+    const fake = setup();
+    await fake.execute(scenario(fake, { principal: '150000.00', oldInterest: '30000.00', newInterest: '20000.00' }));
+    expect(fake.state().loans[LOAN]).toMatchObject({ status: 'ACTIVE', interestAmount: '20000.00', totalAmount: '170000.00' });
+    expect(fake.state().plan.reduce((sum, row) => sum + cents(row.pendingAmount), 0n)).toBe(17000000n);
+  });
+
+  it('leaves a 90000 balance after 80000 of VALID principal payments', async () => {
+    const fake = setup();
+    const body = scenario(fake, { principal: '150000.00', oldInterest: '30000.00', newInterest: '20000.00',
+      paidAmount: '80000.00', paidPrincipal: '80000.00' });
+    const payments = structuredClone(fake.state().payments);
+    await fake.execute(body);
+    expect(fake.state().plan.reduce((sum, row) => sum + cents(row.pendingAmount), 0n)).toBe(9000000n);
+    expect(fake.state().payments).toEqual(payments);
+  });
+
+  it('rejects interest 5000 after 10000 of VALID interest was applied, without writes', async () => {
+    const fake = setup(); const body = scenario(fake, { principal: '150000.00', oldInterest: '30000.00', newInterest: '5000.00',
+      paidAmount: '160000.00', paidPrincipal: '150000.00', paidInterest: '10000.00' });
+    await expect(fake.execute(body)).rejects.toMatchObject({
+      message: 'El interés propuesto no puede ser menor que el interés ya aplicado. Ingrese un interés de al menos 10000.00.',
+    });
+    expect(changed(fake.calls)).toEqual([]);
+  });
+
+  it('increases interest from 30000 to 40000 without writing financial history', async () => {
+    const fake = setup(); const before = structuredClone(fake.state());
+    await fake.execute(scenario(fake, { principal: '150000.00', oldInterest: '30000.00', newInterest: '40000.00' }));
+    expect(fake.state().loans[LOAN]).toMatchObject({ status: 'ACTIVE', interestAmount: '40000.00', totalAmount: '190000.00' });
+    expect(fake.state().payments).toEqual([]);
+    expect(changed(fake.calls).every(({ sql }) => !/\b(loan_disbursements|payments|payment_applications|cash_movements|loan_status_history)\b/.test(sql))).toBe(true);
+    expect(before.loans[LOAN].status).toBe(fake.state().loans[LOAN].status);
+  });
+
   it('increases interest with the canonical balance and rechecks persisted Loan, plan and VALID totals before claiming', async () => {
     const fake = setup(); const original = structuredClone(fake.state());
     expect(await fake.execute(increase())).toEqual({ operationId: 'operation-1', loanId: LOAN, createdAt });
@@ -318,7 +370,7 @@ describe('B4 internal interest and plan edit (real B1 helper, staged manager)', 
     expect(fake.state().payments).toEqual(original.payments);
     expect(fake.calls.filter(({ sql }) => sql.includes('FROM loans WHERE id = $1 FOR UPDATE'))).toHaveLength(2);
     expect(fake.calls.filter(({ sql }) => sql.includes('FROM payments WHERE loan_id'))).toHaveLength(2);
-    expect(fake.calls.filter(({ sql }) => sql.includes('FROM payment_plan_entries'))).toHaveLength(5);
+    expect(fake.calls.filter(({ sql }) => sql.includes('FROM payment_plan_entries'))).toHaveLength(6);
     expect(fake.calls.every(({ manager }) => manager === fake.managers[0])).toBe(true);
     expect(changed(fake.calls).map(({ sql }) => sql.split(' ')[0])).toEqual(['UPDATE', 'UPDATE', 'UPDATE', 'INSERT']);
     expect(fake.calls.find(({ sql }) => sql.startsWith('UPDATE loans SET'))?.sql).toMatch(/interest_amount = \$1::numeric\(18,2\), total_amount = \$2::numeric\(18,2\), updated_at = now\(\)/);
@@ -398,6 +450,7 @@ describe('B4 internal interest and plan edit (real B1 helper, staged manager)', 
     expect(equal.calls.filter(({ sql }) => sql.includes('FROM payments WHERE loan_id'))).toHaveLength(1);
     expect(changed(equal.calls).map(({ sql }) => sql.split(' ')[0])).toEqual(['UPDATE', 'INSERT']);
     expect(equal.calls.find(({ sql }) => sql.startsWith('UPDATE loans SET'))?.sql).not.toContain('interest_amount =');
+    expect(changed(equal.calls).every(({ sql }) => !/\b(loan_disbursements|payments|payment_applications|cash_movements|loan_status_history)\b/.test(sql))).toBe(true);
   });
 
   it.each([

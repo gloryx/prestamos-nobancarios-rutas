@@ -18,9 +18,9 @@ describe('PaymentCollectorReportView', () => {
   it('renders filters, authoritative totals, both charts and the full comparative table', () => {
     const html = render({ filters: { fromDate: '2026-10-01', toDate: '2026-10-31', collectorId: '', paymentMethodId: '' },
       data, options: data.options, loading: false, error: '' });
-    for (const fragment of ['Cobros por cobrador', 'Aplicar filtros', 'Exportar PDF', 'PAGOS', '>3<', '₡150.000,00',
-      'CAPITAL APLICADO', '₡120.000,00', 'INTERÉS APLICADO', '₡30.000,00', 'Total por cobrador', 'Composición del total',
-      'Ana Mora', 'Inactivo', '₡50.000,00', '100.00%']) expect(html).toContain(fragment);
+    for (const fragment of ['Cobros por cobrador', 'Aplicar filtros', 'Exportar PDF', 'PAGOS', '>3<', '₡150.000',
+      'CAPITAL APLICADO', '₡120.000', 'INTERÉS APLICADO', '₡30.000', 'Total por cobrador', 'Composición del total',
+      'Ana Mora', 'Inactivo', '₡50.000', '100.00%']) expect(html).toContain(fragment);
     expect(html).toContain('Capital 80.0%, interés 20.0%');
   });
 

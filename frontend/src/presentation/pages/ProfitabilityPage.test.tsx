@@ -36,7 +36,7 @@ describe('Rentabilidad integral', () => {
     for (const fragment of ['Rentabilidad integral', 'GANANCIA REALIZADA DEL PERÍODO', '₡125.000,50',
       'PRÉSTAMOS NORMALES', '₡80.000,25', 'REFINANCIAMIENTOS', '₡45.000,25',
       '12,07 %', '11,68 %', '0,17x', '₡1.035.483,87', 'Capital trabajando durante el mes',
-      '01/10/2026: <strong>₡1.000.000,00', 'Datos completos para el período seleccionado.'])
+      '01/10/2026: <strong>₡1.000.000', 'Datos completos para el período seleccionado.'])
       expect(html).toContain(fragment);
     expect(html).not.toMatch(/NaN|Infinity/);
   });
@@ -79,7 +79,7 @@ describe('Rentabilidad integral', () => {
           realizedInterestInPeriod: '100.00', paymentCountContributing: 1 },
       ] } } };
     const normalHtml = render(normalState, controller);
-    for (const fragment of ['DETALLE AUDITABLE', 'GANANCIA DEL CONJUNTO', '₡1.200.000,00', 'REGISTROS', '#4548', 'Ana Pérez', 'CANCELADO', '₡80.000,25',
+    for (const fragment of ['DETALLE AUDITABLE', 'GANANCIA DEL CONJUNTO', '₡1.200.000', 'REGISTROS', '#4548', 'Ana Pérez', 'CANCELADO', '₡80.000,25',
       'href="/loans/loan-1"', 'Ver pagos del préstamo 4548', 'Página 1 de 2 · 21 registros']) expect(normalHtml).toContain(fragment);
     for (const label of ['Todos', 'Cancelados', 'Activos', 'Refinanciados', 'Incobrables', 'Anulados', 'Luis Mora'])
       expect(normalHtml).toContain(label);
@@ -92,7 +92,7 @@ describe('Rentabilidad integral', () => {
           capitalizedYieldRecovered: '-5000.00', interestApplied: '-20000.00', economicGainContribution: '-25000.00' },
       ] } } };
     const paymentHtml = render(paymentState, controller);
-    expect(paymentHtml).toContain('Reverso'); expect(paymentHtml).toContain('-₡25.000,00'); expect(paymentHtml).toContain('15/10/2026');
+    expect(paymentHtml).toContain('Reverso'); expect(paymentHtml).toContain('-₡25.000'); expect(paymentHtml).toContain('15/10/2026');
     const unavailableSummary = render({ ...baseState(), detail: { ...normalState.detail!, data: { items: [], total: 0,
       page: 1, pageSize: 20, totalPages: 0, summary: { realizedInterest: null } } } }, controller);
     expect(unavailableSummary).toContain('No hay registros para este filtro.');
@@ -111,8 +111,8 @@ describe('Rentabilidad integral', () => {
           economicGainInPeriod: '15.00', capitalizedYieldPendingAtEnd: '0.00', paymentCountContributing: 1 }],
       } } };
     const html = render(state);
-    for (const label of ['Todas las cadenas', 'Deuda final cancelada', 'Cadenas activas', 'GANANCIA ECONÓMICA', '₡450.000,00',
-      'INTERÉS REGULAR', '₡300.000,00', 'RENDIMIENTO CAPITALIZADO RECUPERADO', '₡150.000,00', 'Socio visible', 'CANCELADO'])
+    for (const label of ['Todas las cadenas', 'Deuda final cancelada', 'Cadenas activas', 'GANANCIA ECONÓMICA', '₡450.000',
+      'INTERÉS REGULAR', '₡300.000', 'RENDIMIENTO CAPITALIZADO RECUPERADO', '₡150.000', 'Socio visible', 'CANCELADO'])
       expect(html).toContain(label);
   });
 });

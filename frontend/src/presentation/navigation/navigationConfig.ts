@@ -31,6 +31,8 @@ export type NavigationIcon =
 
 export type NavigationPermissionChecker = (permission: string) => boolean;
 
+type NavigationIdentity = { role: { code: string; isSuperAdmin: boolean } };
+
 export function filterNavigationEntries(
   entries: NavigationEntry[],
   can: NavigationPermissionChecker,
@@ -110,13 +112,15 @@ export const navigationEntries: NavigationEntry[] = [
     label: 'Cobradores',
     icon: 'users',
     items: [
-       { id: 'collector.collectors', type: 'link', label: 'Cobradores', path: '/collectors', icon: 'users', requiredPermission: 'collectors.view', activeExcludes: ['/collectors/route-assignments', '/collectors/collection-agenda', '/collectors/statistics'] },
+       { id: 'collector.collectors', type: 'link', label: 'Cobradores', path: '/collectors', icon: 'users', requiredPermission: 'collectors.view', activeExcludes: ['/collectors/route-assignments', '/collectors/customer-agenda', '/collectors/collection-agenda', '/collectors/statistics'] },
        { id: 'collector.route-assignments', type: 'link', label: 'Rutas y asignaciones', path: '/collectors/route-assignments', icon: 'route', requiredPermission: 'collectors.view' },
+       { id: 'collector.customer-agenda', type: 'link', label: 'Agenda de clientes', path: '/collectors/customer-agenda', icon: 'users', requiredPermission: 'customers.view' },
        { id: 'collector.collection-agenda', type: 'link', label: 'Agenda de cobros', path: '/collectors/collection-agenda', icon: 'payment', requiredPermission: 'collection-agenda.view' },
+       { id: 'payments.collector-report', type: 'link', label: 'Cobros por cobrador', path: '/payments/collector-report', icon: 'dashboard', requiredPermission: 'payments.view' },
        { id: 'collector.statistics', type: 'link', label: 'Estadísticas', path: '/collectors/statistics', icon: 'dashboard', requiredPermission: 'payments.view' },
      ],
    },
-  { id: 'payments', type: 'group', label: 'PAGOS', icon: 'payment', items: [{ id: 'payments.new', type: 'link', label: 'Registrar pago', path: '/payments/new', icon: 'payment', requiredPermission: 'payments.view' }, { id: 'payments.portfolio-tracking', type: 'link', label: 'Seguimiento de cartera', path: '/payments/portfolio-tracking', icon: 'payment', requiredPermission: 'payments.view' }, { id: 'payments.daily-collections', type: 'link', label: 'Cobros del día', path: '/payments/daily-collections', icon: 'payment', requiredPermission: 'payments.view' }, { id: 'payments.history', type: 'link', label: 'Historial de pagos', path: '/payments/history', icon: 'payment', requiredPermission: 'payments.view' }, { id: 'payments.collector-report', type: 'link', label: 'Cobros por cobrador', path: '/payments/collector-report', icon: 'dashboard', requiredPermission: 'payments.view' }] },
+   { id: 'payments', type: 'group', label: 'PAGOS', icon: 'payment', items: [{ id: 'payments.new', type: 'link', label: 'Registrar pago', path: '/payments/new', icon: 'payment', requiredPermission: 'payments.view' }, { id: 'payments.portfolio-tracking', type: 'link', label: 'Seguimiento de cartera', path: '/payments/portfolio-tracking', icon: 'payment', requiredPermission: 'payments.view' }, { id: 'payments.daily-collections', type: 'link', label: 'Cobros del día', path: '/payments/daily-collections', icon: 'payment', requiredPermission: 'payments.view' }, { id: 'payments.history', type: 'link', label: 'Historial de pagos', path: '/payments/history', icon: 'payment', requiredPermission: 'payments.view' }] },
   { id: 'finance', type: 'group', label: 'Finanzas', icon: 'payment', items: [
     { id: 'finance.cash-movements', type: 'link', label: 'Movimientos de caja', path: '/finance/cash-movements', icon: 'payment', requiredPermission: 'cash-movements.view' },
     { id: 'finance.financial-closes', type: 'link', label: 'Cierre financiero mensual', path: '/finance/financial-closes', icon: 'payment', requiredPermission: 'financial-closes.view' },
@@ -159,3 +163,18 @@ export const navigationEntries: NavigationEntry[] = [
     ],
   },
 ];
+
+export const collectorNavigationEntries: NavigationEntry[] = [{
+  id: 'collector', type: 'group', label: 'COBRADOR', icon: 'users', items: [
+    { id: 'collector.my-customers', type: 'link', label: 'Mis clientes', path: '/collector/customers', icon: 'users', requiredPermission: 'customers.assigned.view' },
+    { id: 'collector.customer-agenda', type: 'link', label: 'Agenda de clientes', path: '/collectors/customer-agenda', icon: 'users', requiredPermission: 'customers.assigned.view' },
+    { id: 'collector.my-loans', type: 'link', label: 'Mis préstamos activos', path: '/collector/loans', icon: 'payment', requiredPermission: 'loans.assigned.view' },
+    { id: 'collector.financial-summary', type: 'link', label: 'Mi resumen financiero', path: '/collector/financial-summary', icon: 'dashboard', requiredPermission: 'collectors.financial-summary.view' },
+    { id: 'collector.daily-collections', type: 'link', label: 'Mis cobros del día', path: '/collector/daily-collections', icon: 'payment', requiredPermission: 'daily-collections.assigned.view' },
+    { id: 'collector.collection-agenda', type: 'link', label: 'Mi agenda de cobros', path: '/collectors/collection-agenda', icon: 'payment', requiredPermission: 'collection-agenda.view' },
+  ],
+}];
+
+export function navigationEntriesFor(identity?: NavigationIdentity): NavigationEntry[] {
+  return identity?.role.code === 'COLLECTOR' && !identity.role.isSuperAdmin ? collectorNavigationEntries : navigationEntries;
+}

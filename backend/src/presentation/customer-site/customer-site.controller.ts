@@ -1,12 +1,13 @@
-import { BadRequestException, Body, ConflictException, Controller, ForbiddenException, Get, NotFoundException, Param, Patch, Post, UploadedFiles, UseInterceptors } from '@nestjs/common';
+import { BadRequestException, Body, ConflictException, Controller, ForbiddenException, Get, NotFoundException, Param, Patch, Post, Query, Res, UploadedFiles, UseInterceptors } from '@nestjs/common';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
+import type { Response } from 'express';
 import { memoryStorage } from 'multer';
 import { CurrentUser, RequirePermissions } from '../security/security.decorators';
 import type { CurrentIdentity } from '../../domain/security/security.types';
 import type { UploadFile } from '../../application/customer/file-storage';
 import { CustomerSiteBadRequestError, CustomerSiteConflictError, CustomerSiteForbiddenError, CustomerSiteNotFoundError } from '../../domain/customer-site/customer-site.errors';
 import { CustomerSiteUseCases } from '../../application/customer-site/customer-site.use-cases';
-import { CreateSiteAuthorizationDto } from './customer-site.dto';
+import { AssignedCustomersQueryDto, CreateSiteAuthorizationDto } from './customer-site.dto';
 
 const handle = (error: unknown): never => {
   if (error instanceof CustomerSiteNotFoundError) throw new NotFoundException(error.message);
@@ -27,9 +28,10 @@ const coordinate = (body: Record<string, unknown>, name: string): number | undef
 @Controller('customers')
 export class CustomerSiteController {
   constructor(private readonly useCases: CustomerSiteUseCases) {}
-  @Get('assigned') @RequirePermissions('customers.assigned.view') async assigned(@CurrentUser() actor: CurrentIdentity) { try { return await this.useCases.assignedCustomers(actor); } catch (error) { return handle(error); } }
+  @Get('assigned') @RequirePermissions('customers.assigned.view') async assigned(@Query() query: AssignedCustomersQueryDto, @CurrentUser() actor: CurrentIdentity) { try { return await this.useCases.assignedCustomers(query, actor); } catch (error) { return handle(error); } }
   @Get(':id/site-assigned-collectors') @RequirePermissions('customers.site.replace.authorize') async assignedCollectors(@Param('id') id: string, @CurrentUser() actor: CurrentIdentity) { try { return await this.useCases.assignedCollectors(id, actor); } catch (error) { return handle(error); } }
   @Get(':id/site') @RequirePermissions('customers.site.view', 'customers.view') async read(@Param('id') id: string, @CurrentUser() actor: CurrentIdentity) { try { return await this.useCases.site(id, actor); } catch (error) { return handle(error); } }
+  @Get(':id/site-photo') @RequirePermissions('customers.site.view', 'customers.files.view') async photo(@Param('id') id: string, @CurrentUser() actor: CurrentIdentity, @Res() response: Response) { try { const file = await this.useCases.photo(id, actor); return response.type(file.mimetype).send(file.buffer); } catch (error) { return handle(error); } }
   @Patch(':id/site') @RequirePermissions('customers.site.capture', 'customers.site.replace') @UseInterceptors(FileFieldsInterceptor([{ name: 'propertyPhoto', maxCount: 1 }], { limits: { fileSize: 5 * 1024 * 1024 }, storage: memoryStorage() })) async update(@Param('id') id: string, @Body() body: Record<string, unknown>, @UploadedFiles() files: { propertyPhoto?: Express.Multer.File[] }, @CurrentUser() actor: CurrentIdentity) { try { return await this.useCases.update(id, { latitude: coordinate(body, 'latitude'), longitude: coordinate(body, 'longitude'), propertyPhoto: files?.propertyPhoto?.[0] as UploadFile }, actor); } catch (error) { return handle(error); } }
   @Post(':id/site-update-authorizations') @RequirePermissions('customers.site.replace.authorize') async authorize(@Param('id') id: string, @Body() body: CreateSiteAuthorizationDto, @CurrentUser() actor: CurrentIdentity) { try { return await this.useCases.authorize(id, body, actor); } catch (error) { return handle(error); } }
   @Get(':id/site-update-authorizations') @RequirePermissions('customers.site.replace.authorize') async listAuthorizations(@Param('id') id: string, @CurrentUser() actor: CurrentIdentity) { try { return await this.useCases.list(id, actor); } catch (error) { return handle(error); } }

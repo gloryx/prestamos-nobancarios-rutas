@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { CurrentIdentity } from '../../domain/security/security.types';
 import type { SiteUpdateScope } from '../../domain/customer-site/customer-site.types';
 import { CustomerSiteBadRequestError, CustomerSiteForbiddenError, CustomerSiteNotFoundError } from '../../domain/customer-site/customer-site.errors';
-import type { AssignmentBatchOperation, AssignmentWorkspaceQuery, CustomerSiteRepository } from './customer-site.repository';
+import type { AssignedCustomerQuery, AssignmentBatchOperation, AssignmentWorkspaceQuery, CustomerSiteRepository } from './customer-site.repository';
 import type { FileStorage, UploadFile } from '../customer/file-storage';
 
 const scopes: readonly SiteUpdateScope[] = ['LOCATION', 'PHOTO', 'LOCATION_AND_PHOTO'];
@@ -12,17 +12,20 @@ const image = (file: UploadFile): void => {
   const valid = (b.length > 3 && b[0] === 255 && b[1] === 216 && b[2] === 255) || (b.length > 8 && b.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) || (b.length > 12 && b.subarray(0, 4).toString() === 'RIFF' && b.subarray(8, 12).toString() === 'WEBP');
   if (!valid || !['image/jpeg', 'image/png', 'image/webp'].includes(file.mimetype ?? '')) throw new CustomerSiteBadRequestError('La foto del inmueble debe ser JPEG, PNG o WEBP válido.');
 };
-const scoped = (actor: CurrentIdentity): boolean => !actor.role.isSuperAdmin && !actor.permissions.includes('customers.view');
+const scoped = (actor: CurrentIdentity): boolean => !actor.role.isSuperAdmin && actor.role.code === 'COLLECTOR';
 const can = (actor: CurrentIdentity, permission: string): boolean => actor.role.isSuperAdmin || actor.permissions.includes(permission);
 const normalizedReason = (reason: string): string => reason.trim().replace(/\s+/g, ' ').toUpperCase();
 
 export class CustomerSiteUseCases {
   constructor(private readonly repository: CustomerSiteRepository, private readonly storage: FileStorage) {}
 
-  async assignedCustomers(actor: CurrentIdentity) {
+  async assignedCustomers(query: AssignedCustomerQuery, actor: CurrentIdentity) {
     if (!can(actor, 'customers.assigned.view')) throw new CustomerSiteForbiddenError('No tiene permiso para consultar clientes asignados.');
-    if (!actor.role.isSuperAdmin && !actor.permissions.includes('customers.assigned.view')) throw new CustomerSiteForbiddenError('No tiene permiso para consultar clientes asignados.');
-    return this.repository.listAssignedCustomers(actor.id);
+    const access = await this.repository.resolveCollectorAccess(actor.id, query.routeId);
+    if (!access && !actor.role.isSuperAdmin) throw new CustomerSiteForbiddenError('El usuario autenticado no tiene un perfil de cobrador activo.');
+    if (access && !access.routeAllowed) throw new CustomerSiteForbiddenError('La ruta solicitada está fuera del alcance del cobrador autenticado.');
+    const result = await this.repository.listAssignedCustomers(actor.id, query);
+    return { ...result, page: query.page, pageSize: query.pageSize, totalPages: Math.ceil(result.total / query.pageSize) };
   }
 
   async assignedCollectors(customerId: string, actor: CurrentIdentity) {
@@ -96,8 +99,18 @@ export class CustomerSiteUseCases {
   async site(customerId: string, actor: CurrentIdentity) {
     await this.hasAccess(customerId, actor);
     const site = await this.repository.readSite(customerId, scoped(actor) ? actor.id : undefined);
+    if (!site && scoped(actor)) throw new CustomerSiteForbiddenError('El cliente no está asignado al usuario activo.');
     if (!site) throw new CustomerSiteNotFoundError('Cliente activo no encontrado.');
     return site;
+  }
+
+  async photo(customerId: string, actor: CurrentIdentity) {
+    if (!can(actor, 'customers.site.view') && !can(actor, 'customers.files.view')) throw new CustomerSiteForbiddenError('No tiene permiso para consultar la foto del inmueble.');
+    await this.hasAccess(customerId, actor);
+    const key = await this.repository.readPropertyPhotoKey(customerId, scoped(actor) ? actor.id : undefined);
+    if (key === undefined && scoped(actor)) throw new CustomerSiteForbiddenError('El cliente no está asignado al usuario activo.');
+    if (!key) throw new CustomerSiteNotFoundError('El cliente no tiene foto del inmueble.');
+    try { return await this.storage.read(key); } catch { throw new CustomerSiteNotFoundError('La foto del inmueble no está disponible.'); }
   }
 
   async update(customerId: string, input: { latitude?: number | null; longitude?: number | null; propertyPhoto?: UploadFile }, actor: CurrentIdentity) {
@@ -122,9 +135,12 @@ export class CustomerSiteUseCases {
     const key = input.propertyPhoto ? `clientes/casas-negocios/site-${customerId}-${randomUUID()}.${input.propertyPhoto.mimetype === 'image/png' ? 'png' : input.propertyPhoto.mimetype === 'image/webp' ? 'webp' : 'jpg'}` : undefined;
     if (key) await this.storage.save(input.propertyPhoto!, key);
     try {
-      const result = await this.repository.updateSiteAtomically(customerId, { latitude: input.latitude ?? undefined, longitude: input.longitude ?? undefined, propertyPhotoFileKey: key }, actor.id, replacing && scoped(actor) ? authorizationScopes : [], new Date());
+      const result = await this.repository.updateSiteAtomically(customerId, { latitude: input.latitude ?? undefined, longitude: input.longitude ?? undefined, propertyPhotoFileKey: key }, actor.id, replacing && scoped(actor) ? authorizationScopes : [], new Date(), scoped(actor));
       if (result.oldPropertyPhotoKey && key && result.oldPropertyPhotoKey !== key) await this.storage.delete(result.oldPropertyPhotoKey);
-      return this.repository.readSite(customerId);
+      const updated = await this.repository.readSite(customerId, scoped(actor) ? actor.id : undefined);
+      if (!updated && scoped(actor)) throw new CustomerSiteForbiddenError('El cliente dejó de pertenecer al alcance del cobrador autenticado.');
+      if (!updated) throw new CustomerSiteNotFoundError('Cliente activo no encontrado.');
+      return updated;
     } catch (error) {
       if (key) await Promise.allSettled([this.storage.delete(key)]);
       throw error;

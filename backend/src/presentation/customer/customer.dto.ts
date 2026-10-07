@@ -1,4 +1,4 @@
-import { IsBoolean, IsIn, IsInt, IsOptional, IsString, Matches, Min } from 'class-validator';
+import { IsBoolean, IsIn, IsInt, IsOptional, IsString, IsUUID, Matches, Min } from 'class-validator';
 import { Transform } from 'class-transformer';
 
 export class CreateCustomerDto {
@@ -13,3 +13,14 @@ export class CustomerListQueryDto { @IsOptional() @IsString() search?: string; @
 export class CustomerStatusDto { @IsBoolean() isActive!: boolean; }
 export class CustomerFinancialAnalysisQueryDto { @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}$/) asOf?: string; }
 export class CustomerStatisticsQueryDto { @IsOptional() @Matches(/^[1-9]\d{3}$/) year?: string; @IsOptional() @IsInt() @Transform(({ value }) => Number(value)) @Min(1) limit?: number; }
+export class CustomerAgendaQueryDto {
+  @IsOptional() @IsString() search?: string;
+  @IsOptional() @IsUUID() collectorId?: string;
+  @IsOptional() @IsUUID() routeId?: string;
+  @IsOptional() @IsInt() @Min(1) @Transform(({ value }) => Number(value)) provinceCode?: number;
+  @IsOptional() @IsInt() @Min(1) @Transform(({ value }) => Number(value)) cantonCode?: number;
+  @IsOptional() @IsInt() @Min(1) @Transform(({ value }) => Number(value)) districtCode?: number;
+  @IsOptional() @IsIn(['ALL', 'ASSIGNED', 'UNASSIGNED']) assignmentStatus?: 'ALL' | 'ASSIGNED' | 'UNASSIGNED';
+  @IsOptional() @IsInt() @Min(1) @Transform(({ value }) => Number(value)) page?: number;
+  @IsOptional() @IsInt() @IsIn([10, 20, 50]) @Transform(({ value }) => Number(value)) pageSize?: 10 | 20 | 50;
+}

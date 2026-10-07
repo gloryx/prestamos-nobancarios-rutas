@@ -7,7 +7,7 @@ import type { AuthIdentity } from '../../domain/entities/auth';
 import { AuthContext, type AuthContextValue } from '../hooks/auth-context';
 import { canAccess } from '../hooks/auth-permissions';
 import { TableActions, type TableAction } from '../components/TableActions';
-import { ActiveLoanSummaryView, ActiveLoansTable, LoansPage } from './LoansPage';
+import { ActiveLoanSummaryView, ActiveLoansTable, LoansPage, LoansPageRoute } from './LoansPage';
 
 const loan: ActiveLoanListItem = { id: '14870d77-8723-49e5-96b8-e4313943d726', loanNumber: '42', startDate: '2026-01-01', principal: '100.00', interestAmount: '10.00', totalAmount: '110.00', customerName: 'Ana', identification: '101', frequencyName: 'Mensual', pendingTotal: '60.00', isOverdue: false };
 const onSort = vi.fn(), onView = vi.fn(), onEdit = vi.fn(), onDownload = vi.fn();
@@ -25,14 +25,14 @@ describe('active loan condition presentation', () => {
     expect([...html.matchAll(/<span>(.*?)<\/span>/g)].map((match) => match[1])).toEqual([
       'Préstamos activos', 'Capital colocado', 'Capital pendiente', 'Interés pendiente', 'Saldo pendiente']);
     expect(html).toContain('<strong>209</strong>');
-    for (const value of ['₡31.000.000,00', '₡18.500.000,00', '₡3.200.000,00', '₡21.700.000,00']) expect(html).toContain(value);
+    for (const value of ['₡31.000.000', '₡18.500.000', '₡3.200.000', '₡21.700.000']) expect(html).toContain(value);
     expect(Number(summary.financialBalance)).toBe(Number(summary.outstandingPrincipal) + Number(summary.outstandingInterest));
   });
 
   it('keeps all existing columns, currency, and compact actions while adding selector-colored badges between Pend. and Acciones', () => {
     const html = markup();
     expect([...html.matchAll(/<th\b[^>]*>(.*?)<\/th>/g)].map((match) => match[1].replace(/<[^>]*>/g, ''))).toEqual(['N°', 'Cliente', 'Inicio', 'Cap.', 'Int.', 'Total', 'Frec.', 'Pend.', 'Condición', 'Acciones']);
-    expect(html).toContain('>₡60,00</td><td class="loan-list__center"><span class="status-badge status-badge--active">AL DÍA</span>');
+    expect(html).toContain('>₡60</td><td class="loan-list__center"><span class="status-badge status-badge--active">AL DÍA</span>');
     expect(html).toContain('class="status-badge payment-loan-dialog__late">CON ATRASO</span>');
     expect(html).toContain('loan-list__table-wrap');
     expect(html).toContain('aria-label="Ver información del préstamo 42"');
@@ -105,10 +105,19 @@ describe('active loan condition presentation', () => {
     expect(markup({ canEdit: true, canExport: false, items: [loan] })).toContain('Editar préstamo 42');
   });
 
+  it('reuses the table in assigned read-only mode with status and no administrative actions', () => {
+    const assigned = { ...loan, status: 'UNCOLLECTIBLE' as const };
+    const html = markup({ items: [assigned], canEdit: false, canExport: false, canRegisterPayment: false, showStatus: true });
+    expect(html).toContain('<th>Estado</th>');
+    expect(html).toContain('>INCOBRABLE</span>');
+    expect(html).toContain('Ver información del préstamo 42');
+    for (const action of ['Editar préstamo', 'Registrar pago', 'Descargar plan de pago']) expect(html).not.toContain(action);
+  });
+
   it('keeps the page filters and creation link behind centralized permissions, including superadmin', () => {
-    const page = (identity: AuthIdentity) => {
+    const page = (identity: AuthIdentity, initialEntry = '/loans') => {
       const auth: AuthContextValue = { user: identity, loading: false, can: (code) => canAccess(identity, code), canAll: (codes) => codes.every((code) => canAccess(identity, code)), login: async () => {}, logout: async () => {}, changePassword: async () => {} };
-      return renderToStaticMarkup(<MemoryRouter><AuthContext.Provider value={auth}><LoansPage /></AuthContext.Provider></MemoryRouter>);
+      return renderToStaticMarkup(<MemoryRouter initialEntries={[initialEntry]}><AuthContext.Provider value={auth}><LoansPage /></AuthContext.Provider></MemoryRouter>);
     };
     const restricted = page(user);
     expect(restricted).toContain('Buscar por préstamo, cliente, identificación o teléfono');
@@ -127,5 +136,7 @@ describe('active loan condition presentation', () => {
     expect(canAccess({ ...user, role: { ...user.role, isSuperAdmin: true } }, 'loans.export')).toBe(true);
     expect(page({ ...user, role: { ...user.role, isSuperAdmin: true } })).toContain('href="/loans/new"');
     expect(page({ ...user, role: { ...user.role, isSuperAdmin: true } })).toContain('Exportar Excel');
+    const auth: AuthContextValue = { user, loading: false, can: (code) => canAccess(user, code), canAll: (codes) => codes.every((code) => canAccess(user, code)), login: async () => {}, logout: async () => {}, changePassword: async () => {} };
+    expect(renderToStaticMarkup(<MemoryRouter initialEntries={['/loans?search=1-1111-1111']}><AuthContext.Provider value={auth}><LoansPageRoute /></AuthContext.Provider></MemoryRouter>)).toContain('value="1-1111-1111"');
   });
 });

@@ -1,5 +1,5 @@
 import type { CustomerCreated, CustomerDetail, CustomerExportItem, CustomerForm, CustomerListItem, CustomerSummary } from '../../domain/entities/customer';
-import type { AssignedCollector, AssignedCustomer, CustomerSite, SiteAuthorization, SiteUpdateScope } from '../../domain/entities/customer-site';
+import type { AssignedCollector, AssignedCustomerQuery, AssignedCustomerResult, CustomerSite, SiteAuthorization, SiteUpdateScope } from '../../domain/entities/customer-site';
 import type { CustomerFinancialAnalysis } from '../../domain/entities/customer-financial-analysis';
 import type { CustomerRepository, CustomerStatusFilter, CustomerListSort, CustomerSummaryQuery } from '../../application/ports/customer.repository';
 import { normalizeCustomerForm } from '../../application/use-cases/customer-normalization';
@@ -41,7 +41,7 @@ export class CustomerApi implements CustomerRepository {
   async create(input: CustomerForm): Promise<CustomerCreated> { return this.request('/customers', { method: 'POST', body: buildCustomerFormData(input) }); }
   async list(query: { search: string; status: CustomerStatusFilter; page: number; pageSize: number } & CustomerListSort) { const params = new URLSearchParams({ search: query.search, status: query.status, page: String(query.page), pageSize: String(query.pageSize) }); if (query.sortBy) params.set('sortBy', query.sortBy); if (query.sortOrder) params.set('sortOrder', query.sortOrder); return this.request<{ items: CustomerListItem[]; total: number; page: number; pageSize: number; totalPages: number }>(`/customers?${params}`); }
   async exportAll(): Promise<CustomerExportItem[]> { return this.request('/customers/export', { cache: 'no-store' }); }
-  async assigned(): Promise<AssignedCustomer[]> { return this.request('/customers/assigned'); }
+  async assigned(query: AssignedCustomerQuery): Promise<AssignedCustomerResult> { const params = new URLSearchParams({ page: String(query.page), pageSize: String(query.pageSize) }); if (query.search?.trim()) params.set('search', query.search.trim()); if (query.routeId) params.set('routeId', query.routeId); return this.request(`/customers/assigned?${params}`); }
   async summary(query: CustomerSummaryQuery): Promise<CustomerSummary> { return this.request(`/customers/summary?${new URLSearchParams(query)}`); }
   async detail(id: string): Promise<CustomerDetail> { return this.request(`/customers/${encodeURIComponent(id)}`); }
   async financialAnalysis(id: string, asOf: string): Promise<CustomerFinancialAnalysis> {
@@ -50,6 +50,7 @@ export class CustomerApi implements CustomerRepository {
   }
   async update(id: string, input: Partial<CustomerForm>): Promise<CustomerDetail> { return this.request(`/customers/${encodeURIComponent(id)}`, { method: 'PATCH', body: buildCustomerFormData(input) }); }
   async site(id: string): Promise<CustomerSite> { return this.request(`/customers/${encodeURIComponent(id)}/site`); }
+  async sitePhoto(id: string): Promise<Blob> { return apiClient.blob(`/customers/${encodeURIComponent(id)}/site-photo`); }
   async assignedCollectors(id: string): Promise<AssignedCollector[]> { return this.request(`/customers/${encodeURIComponent(id)}/site-assigned-collectors`); }
   async updateSite(id: string, input: { latitude?: number; longitude?: number; propertyPhoto?: File }): Promise<CustomerSite> {
     const data = new FormData();

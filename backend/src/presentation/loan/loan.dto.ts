@@ -101,6 +101,10 @@ export class LoanListQueryDto {
   @IsOptional() @IsString() pageSize?: string;
 }
 
+export class AssignedLoanListQueryDto extends LoanListQueryDto {
+  @IsOptional() @IsIn(['ALL', 'ACTIVE', 'CANCELLED', 'REFINANCED', 'UNCOLLECTIBLE', 'ANNULLED']) status?: 'ALL' | 'ACTIVE' | 'CANCELLED' | 'REFINANCED' | 'UNCOLLECTIBLE' | 'ANNULLED';
+}
+
 export class CancelledLoansQueryDto {
   @IsOptional() @IsString() search?: string;
   @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}$/) startDate?: string;

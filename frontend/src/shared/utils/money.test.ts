@@ -3,15 +3,26 @@ import { formatCRC, formatCRCAggregate, formatCRCForPdf, formatMoneyInput, norma
 
 describe('money utilities', () => {
   it('groups CRC amounts without Number precision loss', () => {
-    expect(formatCRC('1000')).toBe('₡1.000,00');
-    expect(formatCRC('100000')).toBe('₡100.000,00');
-    expect(formatCRC('1250000')).toBe('₡1.250.000,00');
+    expect(formatCRC(0)).toBe('₡0');
+    expect(formatCRC(500)).toBe('₡500');
+    expect(formatCRC('1000')).toBe('₡1.000');
+    expect(formatCRC(12500)).toBe('₡12.500');
+    expect(formatCRC('100000')).toBe('₡100.000');
+    expect(formatCRC(1250000)).toBe('₡1.250.000');
+    expect(formatCRC(126435950)).toBe('₡126.435.950');
+    expect(formatCRC('126435950.00')).toBe('₡126.435.950');
+    expect(formatCRC(-25000)).toBe('-₡25.000');
+    expect(formatCRC(1250.5)).toBe('₡1.250,50');
+    expect(formatCRC(null)).toBe('—');
+    expect(formatCRC(undefined)).toBe('—');
+    expect(formatCRC('-0.00')).toBe('₡0');
   });
   it('formats the PDF alias through the centralized CRC formatter', () => {
-    expect(formatCRCForPdf('120000')).toBe('¢120.000,00');
-    expect(formatCRCForPdf('240000')).toBe('¢240.000,00');
-    expect(formatCRCForPdf('0')).toBe('¢0,00');
-    expect(formatCRCForPdf('2000000')).toBe('¢2.000.000,00');
+    expect(formatCRCForPdf('120000')).toBe('¢120.000');
+    expect(formatCRCForPdf('240000')).toBe('¢240.000');
+    expect(formatCRCForPdf('0')).toBe('¢0');
+    expect(formatCRCForPdf('2000000')).toBe('¢2.000.000');
+    expect(formatCRCForPdf('-25000.50')).toBe('-¢25.000,50');
     expect(formatCRCForPdf('120000')).not.toMatch(/[€₡$¡]|CRC/);
   });
   it('accepts currency symbols, spaces and comma decimals', () => {
@@ -34,9 +45,9 @@ describe('money utilities', () => {
   });
   it('formats large read-only totals without weakening the 16-digit editable input limit', () => {
     expect(formatCRCAggregate('30000000000000000.25')).toBe('₡30.000.000.000.000.000,25');
-    expect(formatCRCAggregate('0.00')).toBe('₡0,00');
-    expect(formatCRCAggregate('undefined')).toBe('₡0,00');
-    expect(formatCRCAggregate('100.999')).toBe('₡0,00');
+    expect(formatCRCAggregate('0.00')).toBe('₡0');
+    expect(formatCRCAggregate('undefined')).toBe('—');
+    expect(formatCRCAggregate('100.999')).toBe('—');
     expect(normalizeMoney('30000000000000000.25')).toBe('');
   });
 });

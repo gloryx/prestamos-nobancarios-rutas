@@ -2,6 +2,7 @@ import { useEffect, useState, useSyncExternalStore, type ReactElement } from 're
 import { createFinancialClose } from '../../app/financial-close';
 import { FinancialCloseController, type FinancialCloseState } from '../../application/use-cases/financial-close-controller';
 import type { FinancialCloseDetail, FinancialCloseIssue, FinancialClosePreview, FinancialCloseSectionKey, FinancialCloseValue } from '../../domain/entities/financial-close';
+import { formatCRC } from '../../shared/utils/money';
 import { TableActions } from '../components/TableActions';
 import { Icon } from '../components/layout/Icon';
 import { useAuth } from '../hooks/auth-context';
@@ -17,8 +18,12 @@ const sections: Array<{ key: FinancialCloseSectionKey; title: string }> = [
 
 const label = (value: string) => value.replace(/([a-záéíóú])([A-ZÁÉÍÓÚ])/g, '$1 $2').replaceAll('_', ' ')
   .replace(/^./, (character) => character.toUpperCase());
-const display = (value: FinancialCloseValue) => value === null ? 'No disponible' : typeof value === 'boolean'
-  ? value ? 'Sí' : 'No' : String(value);
+const display = (name: string, value: FinancialCloseValue) => {
+  if (value === null) return 'No disponible';
+  if (typeof value === 'boolean') return value ? 'Sí' : 'No';
+  if (/(?:count|cantidad|cadenas|coincide|estado|status)/i.test(name)) return String(value);
+  return formatCRC(value);
+};
 const timestamp = (value: string) => {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat('es-CR', { dateStyle: 'medium', timeStyle: 'short' }).format(date);
@@ -44,7 +49,7 @@ function Snapshot({ snapshot }: { snapshot: FinancialClosePreview }) {
           <header><h2 id={`financial-close-${key}`}>{title}</h2>{section.status &&
             <span className={`financial-close__status financial-close__status--${section.status.toLowerCase()}`}>{section.status}</span>}</header>
           {Object.keys(section.values).length ? <dl>{Object.entries(section.values).map(([name, value]) =>
-            <div key={name}><dt>{label(name)}</dt><dd>{display(value)}</dd></div>)}</dl>
+             <div key={name}><dt>{label(name)}</dt><dd>{display(name, value)}</dd></div>)}</dl>
             : <p className="loan-list__message">Sin valores para este apartado.</p>}
         </section>;
       })}

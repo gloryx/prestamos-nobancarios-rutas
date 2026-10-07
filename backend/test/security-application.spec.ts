@@ -26,4 +26,18 @@ describe('security application boundary', () => {
     expect((await service.authenticate('raw-token')).permissions).toEqual(['customers.update']);
     expect(repo.rolePermissionCodes).toHaveBeenCalledTimes(2);
   });
+
+  it('returns every persisted scoped permission unchanged for the Roles catalog', async () => {
+    const records = [
+      { id: '1', code: 'customers.assigned.view', name: 'Ver clientes asignados', module: 'Clientes', description: null, createdAt: new Date(), updatedAt: new Date() },
+      { id: '2', code: 'loans.assigned.view', name: 'Ver préstamos asignados', module: 'PRÉSTAMOS', description: null, createdAt: new Date(), updatedAt: new Date() },
+      { id: '3', code: 'collectors.financial-summary.view', name: 'Ver mi resumen financiero', module: 'COBRADORES', description: null, createdAt: new Date(), updatedAt: new Date() },
+      { id: '4', code: 'daily-collections.assigned.view', name: 'Ver cobros del día asignados', module: 'COBRANZAS', description: null, createdAt: new Date(), updatedAt: new Date() },
+      { id: '5', code: 'collection-agenda.view', name: 'Ver agenda de cobros', module: 'COBRANZAS', description: null, createdAt: new Date(), updatedAt: new Date() },
+    ];
+    const repo = repository([]);
+    (repo.listPermissions as jest.Mock).mockResolvedValue(records);
+    await expect(new SecurityService(repo, hasher, tokens, 12).permissions()).resolves.toEqual(records);
+    expect(repo.listPermissions).toHaveBeenCalledTimes(1);
+  });
 });

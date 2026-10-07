@@ -11,7 +11,7 @@ import { Icon } from '../components/layout/Icon';
 import { useAuth } from '../hooks/auth-context';
 import { formatLoanStatus } from '../helpers/loan';
 
-export function LoanDetailPage(): ReactElement {
+export function LoanDetailPage({ assigned = false }: { assigned?: boolean } = {}): ReactElement {
   const { id = '' } = useParams();
   const { can } = useAuth();
   const [loan, setLoan] = useState<LoanOperationalDetail>();
@@ -20,9 +20,9 @@ export function LoanDetailPage(): ReactElement {
   const closeEdit = useCallback(() => setEditing(false), []);
 
   useEffect(() => {
-    void loanApi.detail(id).then(setLoan);
-  }, [id]);
-  const refreshDetail = useCallback(async () => { setLoan(await loanApi.detail(id)); setExportError(''); }, [id]);
+    void (assigned ? loanApi.assignedDetail(id) : loanApi.detail(id)).then(setLoan);
+  }, [assigned, id]);
+  const refreshDetail = useCallback(async () => { setLoan(await (assigned ? loanApi.assignedDetail(id) : loanApi.detail(id))); setExportError(''); }, [assigned, id]);
   const refreshUnavailable = useCallback(async () => { try { await refreshDetail(); } catch (cause) { setExportError(cause instanceof Error ? cause.message : 'No se pudo actualizar el préstamo.'); } }, [refreshDetail]);
 
   const download = async () => {
@@ -41,9 +41,9 @@ export function LoanDetailPage(): ReactElement {
           <h1 tabIndex={-1}>{loan.customerName}</h1>
         </div>
         <div className="loan-detail__actions">
-        {loan.status === 'ACTIVE' && can('loans.update') && <button className="button button--secondary" type="button" onClick={() => setEditing(true)}>Editar préstamo</button>}
-        {loan.status === 'ACTIVE' && can('payments.view') && can('payments.create') && <Link className="button button--secondary" to={`/payments/new?loanId=${encodeURIComponent(loan.id)}`}><Icon name="payment" />Registrar pago</Link>}
-        {can('loans.export') && (
+        {!assigned && loan.status === 'ACTIVE' && can('loans.update') && <button className="button button--secondary" type="button" onClick={() => setEditing(true)}>Editar préstamo</button>}
+        {!assigned && loan.status === 'ACTIVE' && can('payments.view') && can('payments.create') && <Link className="button button--secondary" to={`/payments/new?loanId=${encodeURIComponent(loan.id)}`}><Icon name="payment" />Registrar pago</Link>}
+        {!assigned && can('loans.export') && (
           <button className="button button--secondary" type="button" onClick={() => void download()}>
             Descargar plan de pago
           </button>
@@ -72,7 +72,7 @@ export function LoanDetailPage(): ReactElement {
       </section>
 
       <LoanPaymentPlanTable plan={loan.plan} total={loan.totalAmount} showCondition />
-      {editing && can('loans.update') && <LoanEditDialog loanId={id} api={loanApi} onSaved={refreshDetail} onUnavailable={refreshUnavailable} onClose={closeEdit} />}
+      {!assigned && editing && can('loans.update') && <LoanEditDialog loanId={id} api={loanApi} onSaved={refreshDetail} onUnavailable={refreshUnavailable} onClose={closeEdit} />}
     </section>
   );
 }

@@ -1,3 +1,5 @@
+import type { IntervalUnit } from './payment-frequency';
+
 export type LoanStatus = 'ACTIVE' | 'CANCELLED' | 'REFINANCED' | 'UNCOLLECTIBLE' | 'ANNULLED';
 export type PaymentLoan = { id: string; loanNumber: string; identification: string; customerName: string; financialBalance: string; isOverdue: boolean };
 export type PaymentLoanPage = { items: PaymentLoan[]; total: number; page: number; pageSize: number };
@@ -8,9 +10,11 @@ export type PaymentContext = {
   summary: { loanId: string; loanNumber: string; status: LoanStatus; identification: string; customerName: string; totalAmount: string; principal: string; interestAmount: string };
   balances: { financialBalance: string; outstandingPrincipal: string; outstandingInterest: string };
   combinedPlan: PendingPaymentEntry[];
+  protectedPlanEntryIds: string[];
   validPayments: ValidPayment[];
   firstOperationalRow: PendingPaymentEntry | null;
   lastValidPayment: ValidPayment | null;
   refinanceEligibility: boolean;
   preferredMethod: { id: string | null; activeMethods: Array<{ id: string; name: string }>; collectors: Array<{ id: string; name: string }> };
+  paymentFrequency: { intervalUnit: IntervalUnit; intervalValue: number };
 };

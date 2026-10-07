@@ -21,7 +21,12 @@ describe('permission matrix helpers', () => {
     permission('Métodos de pago', 'payment-methods.view'),
     permission('Rutas', 'routes.view', 'Consultar rutas'),
     permission('COBRADORES', 'collectors.view'),
+    permission('COBRADORES', 'collectors.financial-summary.view', 'Ver mi resumen financiero'),
     permission('Clientes', 'customers.view', 'Consultar clientes'),
+    permission('Clientes', 'customers.assigned.view', 'Ver clientes asignados'),
+    permission('PRÉSTAMOS', 'loans.assigned.view', 'Ver préstamos asignados'),
+    permission('COBRANZAS', 'daily-collections.assigned.view', 'Ver cobros del día asignados'),
+    permission('COBRANZAS', 'collection-agenda.view', 'Ver agenda de cobros'),
     permission('Rutas', 'routes.create', 'Crear rutas'),
     permission('Seguridad', 'roles.view'),
     permission('Usuarios', 'users.view'),
@@ -32,6 +37,8 @@ describe('permission matrix helpers', () => {
       'Usuarios',
       'Seguridad',
       'Clientes',
+      'PRÉSTAMOS',
+      'COBRANZAS',
       'COBRADORES',
       'Rutas',
       'Métodos de pago',
@@ -41,12 +48,29 @@ describe('permission matrix helpers', () => {
     ]);
     expect(buildPermissionGroups(records).find((group) => group.module === 'Seguridad')?.label).toBe('Roles y permisos');
     expect(buildPermissionGroups(records).find((group) => group.module === 'COBRADORES')?.label).toBe('Cobradores');
+    expect(buildPermissionGroups(records).find((group) => group.module === 'PRÉSTAMOS')?.label).toBe('Préstamos');
+    expect(buildPermissionGroups(records).find((group) => group.module === 'COBRANZAS')?.label).toBe('Cobranzas');
   });
 
   it('supports collapsed-by-default accordion state through explicit open ids', () => {
     expect(toggleModule([], 'Clientes')).toEqual(['Clientes']);
     expect(toggleModule(['Clientes'], 'Clientes')).toEqual([]);
     expect(toggleModule(['Clientes'], 'Rutas')).toEqual(['Clientes', 'Rutas']);
+  });
+
+  it('keeps every scoped collector permission in its API-provided group with its friendly label', () => {
+    const groups = buildPermissionGroups(records);
+    const expected = [
+      ['Clientes', 'customers.assigned.view', 'Ver clientes asignados'],
+      ['PRÉSTAMOS', 'loans.assigned.view', 'Ver préstamos asignados'],
+      ['COBRADORES', 'collectors.financial-summary.view', 'Ver mi resumen financiero'],
+      ['COBRANZAS', 'daily-collections.assigned.view', 'Ver cobros del día asignados'],
+      ['COBRANZAS', 'collection-agenda.view', 'Ver agenda de cobros'],
+    ];
+    for (const [module, code, name] of expected) {
+      expect(groups.find((group) => group.module === module)?.permissions).toContainEqual(expect.objectContaining({ code, name, module }));
+      expect(filterPermissionGroups(groups, code).flatMap((group) => group.permissions.map((item) => item.code))).toEqual([code]);
+    }
   });
 
   it('updates selected totals and module selection without affecting another module', () => {

@@ -28,7 +28,8 @@ function summaryNumber(value: string): number {
 }
 
 function signedPdfCRC(amount: string, direction: CashMovement['direction']): string {
-  return `${direction === 'INFLOW' ? '+' : '-'}${formatCRCForPdf(amount)}`;
+  const formatted = formatCRCForPdf(amount.replace(/^-/, ''));
+  return formatted === '—' ? formatted : `${direction === 'INFLOW' ? '+' : '-'}${formatted}`;
 }
 
 export function buildCashMovementWorkbook(XLSX: XlsxModule, items: CashMovement[], summary: CashMovementSummary, fromDate?: string, toDate?: string): WorkBook {

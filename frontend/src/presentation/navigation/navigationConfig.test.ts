@@ -4,6 +4,8 @@ import {
   getActiveGroupIds,
   isNavigationEntryActive,
   navigationEntries,
+  collectorNavigationEntries,
+  navigationEntriesFor,
   toggleAccordionGroup,
   toggleExpandedGroup,
 } from './navigationConfig';
@@ -79,16 +81,15 @@ describe('sidebar navigation configuration', () => {
       items: [{ type: 'link', label: 'Registrar pago', path: '/payments/new', icon: 'payment', requiredPermission: 'payments.view' },
         { type: 'link', label: 'Seguimiento de cartera', path: '/payments/portfolio-tracking', icon: 'payment', requiredPermission: 'payments.view' },
         { type: 'link', label: 'Cobros del día', path: '/payments/daily-collections', icon: 'payment', requiredPermission: 'payments.view' },
-        { type: 'link', label: 'Historial de pagos', path: '/payments/history', icon: 'payment', requiredPermission: 'payments.view' },
-        { type: 'link', label: 'Cobros por cobrador', path: '/payments/collector-report', icon: 'dashboard', requiredPermission: 'payments.view' }],
+        { type: 'link', label: 'Historial de pagos', path: '/payments/history', icon: 'payment', requiredPermission: 'payments.view' }],
     });
     if (payments?.type !== 'group') return;
-    expect(payments.items).toHaveLength(5);
+    expect(payments.items).toHaveLength(4);
     expect(getActiveGroupIds(navigationEntries, '/payments/new')).toEqual(['payments']);
     expect(getActiveGroupIds(navigationEntries, '/payments/portfolio-tracking')).toEqual(['payments']);
     expect(getActiveGroupIds(navigationEntries, '/payments/daily-collections')).toEqual(['payments']);
     expect(getActiveGroupIds(navigationEntries, '/payments/history')).toEqual(['payments']);
-    expect(getActiveGroupIds(navigationEntries, '/payments/collector-report')).toEqual(['payments']);
+    expect(getActiveGroupIds(navigationEntries, '/payments/collector-report')).toEqual(['collector']);
   });
 
   it('filters registration by payments.view using the existing navigation helper', () => {
@@ -101,8 +102,7 @@ describe('sidebar navigation configuration', () => {
       items: [{ label: 'Registrar pago', path: '/payments/new', requiredPermission: 'payments.view' },
         { label: 'Seguimiento de cartera', path: '/payments/portfolio-tracking', requiredPermission: 'payments.view' },
         { label: 'Cobros del día', path: '/payments/daily-collections', requiredPermission: 'payments.view' },
-        { label: 'Historial de pagos', path: '/payments/history', requiredPermission: 'payments.view' },
-        { label: 'Cobros por cobrador', path: '/payments/collector-report', requiredPermission: 'payments.view' }],
+        { label: 'Historial de pagos', path: '/payments/history', requiredPermission: 'payments.view' }],
     });
   });
   it('publishes profitability under Finanzas and nested Reportes with the existing cash permission', () => {
@@ -148,31 +148,97 @@ describe('sidebar navigation configuration', () => {
     ]);
     expect(customers.items.some((entry) => entry.label === 'Clientes asignados')).toBe(false);
   });
-  it('publishes collector statistics after management with payments.view', () => {
+  it('publishes only administrative collector options and reports in the requested order', () => {
     const collectors = navigationEntries.find((entry) => entry.label === 'Cobradores');
     expect(collectors?.type).toBe('group');
     if (collectors?.type !== 'group') return;
     expect(collectors.items).toMatchObject([
       { label: 'Cobradores', path: '/collectors', requiredPermission: 'collectors.view' },
       { label: 'Rutas y asignaciones', path: '/collectors/route-assignments', requiredPermission: 'collectors.view' },
+      { label: 'Agenda de clientes', path: '/collectors/customer-agenda', requiredPermission: 'customers.view' },
       { label: 'Agenda de cobros', path: '/collectors/collection-agenda', requiredPermission: 'collection-agenda.view' },
+      { label: 'Cobros por cobrador', path: '/payments/collector-report', requiredPermission: 'payments.view' },
       { label: 'Estadísticas', path: '/collectors/statistics', requiredPermission: 'payments.view' },
     ]);
+    expect(JSON.stringify(collectors.items)).not.toContain('/collector/customers');
+    expect(JSON.stringify(collectors.items)).not.toContain('/collector/loans');
+    expect(JSON.stringify(collectors.items)).not.toContain('/collector/daily-collections');
+    expect(getActiveGroupIds(navigationEntries, '/payments/collector-report')).toEqual(['collector']);
     expect(getActiveGroupIds(navigationEntries, '/collectors/statistics')).toEqual(['collector']);
     const statisticsOnly = filterNavigationEntries(navigationEntries, (permission) => permission === 'payments.view');
     expect(statisticsOnly.find((entry) => entry.label === 'Cobradores')).toMatchObject({ type: 'group', items: [
+      { label: 'Cobros por cobrador', path: '/payments/collector-report' },
       { label: 'Estadísticas', path: '/collectors/statistics' },
+    ] });
+    expect(statisticsOnly.find((entry) => entry.label === 'PAGOS')).toMatchObject({ type: 'group', items: [
+      { label: 'Registrar pago' }, { label: 'Seguimiento de cartera' }, { label: 'Cobros del día' }, { label: 'Historial de pagos' },
     ] });
     const managementOnly = filterNavigationEntries(navigationEntries, (permission) => permission === 'collectors.view');
     expect(managementOnly.find((entry) => entry.label === 'Cobradores')).toMatchObject({ type: 'group', items: [
       { label: 'Cobradores' }, { label: 'Rutas y asignaciones', path: '/collectors/route-assignments' },
     ] });
     expect(getActiveGroupIds(navigationEntries, '/collectors/route-assignments')).toEqual(['collector']);
+    expect(getActiveGroupIds(navigationEntries, '/collectors/customer-agenda')).toEqual(['collector']);
     expect(getActiveGroupIds(navigationEntries, '/collectors/collection-agenda')).toEqual(['collector']);
     const agendaOnly = filterNavigationEntries(navigationEntries, (permission) => permission === 'collection-agenda.view');
     expect(agendaOnly.find((entry) => entry.label === 'Cobradores')).toMatchObject({ type: 'group', items: [
       { label: 'Agenda de cobros', path: '/collectors/collection-agenda' },
     ] });
+    const customerAgendaOnly = filterNavigationEntries(navigationEntries, (permission) => permission === 'customers.view');
+    expect(customerAgendaOnly.find((entry) => entry.label === 'Cobradores')).toMatchObject({ type: 'group', items: [
+      { label: 'Agenda de clientes', path: '/collectors/customer-agenda' },
+    ] });
+  });
+  it('adds Agenda de clientes without replacing the five existing scoped links for a non-superadmin COLLECTOR', () => {
+    const collector = { role: { code: 'COLLECTOR', isSuperAdmin: false } };
+    const entries = navigationEntriesFor(collector);
+    expect(entries).toBe(collectorNavigationEntries);
+    expect(entries).toMatchObject([{ type: 'group', label: 'COBRADOR', items: [
+      { label: 'Mis clientes', path: '/collector/customers', requiredPermission: 'customers.assigned.view' },
+      { label: 'Agenda de clientes', path: '/collectors/customer-agenda', requiredPermission: 'customers.assigned.view' },
+      { label: 'Mis préstamos activos', path: '/collector/loans', requiredPermission: 'loans.assigned.view' },
+      { label: 'Mi resumen financiero', path: '/collector/financial-summary', requiredPermission: 'collectors.financial-summary.view' },
+      { label: 'Mis cobros del día', path: '/collector/daily-collections', requiredPermission: 'daily-collections.assigned.view', icon: 'payment' },
+      { label: 'Mi agenda de cobros', path: '/collectors/collection-agenda', requiredPermission: 'collection-agenda.view', icon: 'payment' },
+    ] }]);
+    const visible = filterNavigationEntries(entries, () => true);
+    expect(visible[0]?.type === 'group' && visible[0].items.map((entry) => entry.label)).toEqual([
+      'Mis clientes', 'Agenda de clientes', 'Mis préstamos activos', 'Mi resumen financiero', 'Mis cobros del día', 'Mi agenda de cobros',
+    ]);
+    expect(JSON.stringify(visible)).not.toContain('Inicio');
+  });
+  it('filters each new COLLECTOR link by its scoped permission', () => {
+    const collector = { role: { code: 'COLLECTOR', isSuperAdmin: false } };
+    const daily = filterNavigationEntries(navigationEntriesFor(collector),
+      (permission) => permission === 'daily-collections.assigned.view');
+    const agenda = filterNavigationEntries(navigationEntriesFor(collector),
+      (permission) => permission === 'collection-agenda.view');
+    const customers = filterNavigationEntries(navigationEntriesFor(collector),
+      (permission) => permission === 'customers.assigned.view');
+    expect(daily).toMatchObject([{ type: 'group', items: [
+      { label: 'Mis cobros del día', path: '/collector/daily-collections', requiredPermission: 'daily-collections.assigned.view' },
+    ] }]);
+    expect(JSON.stringify(daily)).not.toContain('Mi agenda de cobros');
+    expect(agenda).toMatchObject([{ type: 'group', items: [
+      { label: 'Mi agenda de cobros', path: '/collectors/collection-agenda', requiredPermission: 'collection-agenda.view' },
+    ] }]);
+    expect(JSON.stringify(agenda)).not.toContain('Mis cobros del día');
+    expect(customers).toMatchObject([{ type: 'group', items: [
+      { label: 'Mis clientes', path: '/collector/customers', requiredPermission: 'customers.assigned.view' },
+      { label: 'Agenda de clientes', path: '/collectors/customer-agenda', requiredPermission: 'customers.assigned.view' },
+    ] }]);
+  });
+  it('uses the administrative projection without personal collector options for ADMIN, manager and SUPERADMIN', () => {
+    const adminEntries = navigationEntriesFor({ role: { code: 'ADMIN', isSuperAdmin: false } });
+    const managerEntries = navigationEntriesFor({ role: { code: 'COLLECTION_MANAGER', isSuperAdmin: false } });
+    expect(adminEntries).toBe(navigationEntries);
+    expect(managerEntries).toBe(navigationEntries);
+    expect(navigationEntriesFor({ role: { code: 'COLLECTOR', isSuperAdmin: true } })).toBe(navigationEntries);
+    for (const entries of [adminEntries, managerEntries]) {
+      expect(JSON.stringify(entries)).not.toContain('/collector/customers');
+      expect(JSON.stringify(entries)).not.toContain('/collector/loans');
+      expect(JSON.stringify(entries)).not.toContain('/collector/daily-collections');
+    }
   });
   it('places new loan second without changing the remaining loan entries', () => {
     const loans = navigationEntries.find((entry) => entry.label === 'PRÉSTAMOS');

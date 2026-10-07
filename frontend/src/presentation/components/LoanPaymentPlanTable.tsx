@@ -32,7 +32,6 @@ export function LoanPaymentPlanTable({
   );
   const totalCents = parseMoneyCents(total) ?? 0n;
   const difference = totalCents - distributed;
-  const absoluteDifference = difference < 0n ? -difference : difference;
   const updateEntry = (index: number, update: Partial<LoanPlanEntry>) => {
     onChange?.(
       plan.map((entry, entryIndex) =>
@@ -132,7 +131,7 @@ export function LoanPaymentPlanTable({
         <div aria-live="polite">
           <span>Diferencia</span>
           <strong>
-            {formatCRC(moneyFromCents(absoluteDifference))}
+            {formatCRC(moneyFromCents(difference))}
             {difference !== 0n && <span className="loan-confirmation__reconciliation-status"> — Revisar</span>}
           </strong>
         </div>

@@ -3,7 +3,7 @@ import { NavLink, useLocation } from 'react-router-dom';
 import {
   filterNavigationEntries,
   getActiveGroupIds,
-  navigationEntries,
+  navigationEntriesFor,
   toggleAccordionGroup,
   type NavigationEntry,
 } from '../../navigation/navigationConfig';
@@ -16,7 +16,7 @@ export function AppSidebar({ isOpen, onNavigate }: AppSidebarProps): ReactElemen
   const location = useLocation();
   const { can, user, logout } = useAuth();
   const sidebarId = useId();
-  const visibleEntries = useMemo(() => filterNavigationEntries(navigationEntries, can), [can]);
+  const visibleEntries = useMemo(() => filterNavigationEntries(navigationEntriesFor(user), can), [can, user]);
   const activeGroupIds = useMemo(() => getActiveGroupIds(visibleEntries, location.pathname), [location.pathname, visibleEntries]);
   const [openGroupIds, setOpenGroupIds] = useState<string[]>(activeGroupIds);
 
@@ -75,4 +75,3 @@ function renderEntry(entry: NavigationEntry, context: NavigationRenderContext): 
     </div>
   </div>;
 }
-

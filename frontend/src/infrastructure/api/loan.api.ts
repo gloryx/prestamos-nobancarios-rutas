@@ -1,15 +1,18 @@
-import type { ActiveLoanExport, ActiveLoanListItem, ActiveLoanSummary, AnnullableLoanItem, AnnulledLoanItem, AnnulmentQuery, AnnulmentResult, AnnulmentSort, CancelledLoansResult, LoanAnnulmentBody, LoanAnnulmentReceipt, LoanDetail, LoanEditBody, LoanEditContext, LoanEditReceipt, LoanManagementQuery, LoanManagementResult, LoanManagementSortDir, LoanOperationalDetail, LoanTransitionBody, LoanTransitionReply, OverdueLoan, OverdueLoanSort, UncollectibleLoan, UncollectibleLoanSort } from '../../domain/entities/loan';
+import type { ActiveLoanExport, ActiveLoanListItem, ActiveLoanSummary, AssignedLoanListItem, AssignedLoanStatus, AnnullableLoanItem, AnnulledLoanItem, AnnulmentQuery, AnnulmentResult, AnnulmentSort, CancelledLoansResult, LoanAnnulmentBody, LoanAnnulmentReceipt, LoanDetail, LoanEditBody, LoanEditContext, LoanEditReceipt, LoanManagementQuery, LoanManagementResult, LoanManagementSortDir, LoanOperationalDetail, LoanTransitionBody, LoanTransitionReply, OverdueLoan, OverdueLoanSort, UncollectibleLoan, UncollectibleLoanSort } from '../../domain/entities/loan';
 import type { CancelledLoansQuery } from '../../application/use-cases/cancelled-loans';
 import { apiClient } from './api-client';
 export type LoanSortBy = 'number' | 'customer' | 'startDate' | 'principal' | 'interest' | 'total' | 'frequency' | 'pending' | 'condition';
 export type LoanSortOrder = 'asc' | 'desc';
 export type LoanListQuery = { page: number; pageSize: number; search?: string; frequencyId?: string; fromDate?: string; toDate?: string; sortBy?: LoanSortBy; sortOrder?: LoanSortOrder };
+export type AssignedLoanListQuery = LoanListQuery & { status?: AssignedLoanStatus | 'ALL' };
 const managementParams = <Sort extends string>(query: LoanManagementQuery<Sort>, sortBy: Sort, sortDir: LoanManagementSortDir) =>
   new URLSearchParams(Object.entries({ ...query, page: query.page ?? 1, pageSize: query.pageSize ?? 20, sortBy: query.sortBy ?? sortBy, sortDir: query.sortDir ?? sortDir })
     .filter(([, value]) => value !== undefined && value !== '').map(([key, value]) => [key, String(value)]));
 export const loanApi = {
   customerOptions(query: { search: string; page: number; pageSize: number }) { const params = new URLSearchParams({ search: query.search, page: String(query.page), pageSize: String(query.pageSize) }); return apiClient.request<{ items: { id: string; identification: string; fullName: string; primaryPhone: string }[]; total: number }>(`/loans/customer-options?${params}`); },
   list(query: LoanListQuery) { const params = new URLSearchParams(Object.entries(query).filter(([, value]) => value !== undefined).map(([key, value]) => [key, String(value)])); return apiClient.request<{ items: ActiveLoanListItem[]; total: number }>(`/loans?${params}`); },
+  assignedList(query: AssignedLoanListQuery) { const params = new URLSearchParams(Object.entries(query).filter(([, value]) => value !== undefined && value !== '').map(([key, value]) => [key, String(value)])); return apiClient.request<{ items: AssignedLoanListItem[]; total: number; page: number; pageSize: number }>(`/loans/assigned?${params}`); },
+  assignedDetail(id: string) { return apiClient.request<LoanOperationalDetail>(`/loans/assigned/${encodeURIComponent(id)}`); },
   summary() { return apiClient.request<ActiveLoanSummary>('/loans/summary', { cache: 'no-store' }); },
   exportActive() { return apiClient.request<ActiveLoanExport>('/loans/export', { cache: 'no-store' }); },
   cancelled(query: CancelledLoansQuery) { const params = new URLSearchParams(Object.entries(query).filter(([, value]) => value !== undefined && value !== '').map(([key, value]) => [key, String(value)])); return apiClient.request<CancelledLoansResult>(`/loans/cancelled?${params}`); },

@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Controller, Get, Param, Patch, Post, Body, Query, Headers, HttpCode, HttpStatus, InternalServerErrorException, NotFoundException, Optional, ParseUUIDPipe } from '@nestjs/common';
+import { BadRequestException, ConflictException, Controller, ForbiddenException, Get, Param, Patch, Post, Body, Query, Headers, HttpCode, HttpStatus, InternalServerErrorException, NotFoundException, Optional, ParseUUIDPipe } from '@nestjs/common';
 import { CurrentUser, RequirePermissions } from '../security/security.decorators';
 import type { CurrentIdentity } from '../../domain/security/security.types';
 import { CreateLoanUseCase, ListActiveLoanCustomersUseCase, ListLoansUseCase, LoanConflictError, LoanValidationError } from '../../application/loan/loan.use-case';
@@ -16,9 +16,20 @@ import { ListAnnulledLoansUseCase, AnnulledLoansIntegrityError, AnnulledLoansVal
 import { PaymentConflictError, PaymentValidationError } from '../../application/payment/payment.errors';
 import { AnnulledLoansQueryDto, AnnulLoanDto, CancelledLoansQueryDto, CreateLoanDto, LoanEditDto, LoanListQueryDto, MarkUncollectibleDto, OverdueLoansQueryDto, ReactivateLoanDto, UncollectibleLoansQueryDto } from './loan.dto';
 import { ActiveLoanExportIntegrityError, ExportActiveLoansUseCase } from '../../application/loan/export-active-loans.use-case';
+import { AssignedLoansForbiddenError, AssignedLoansUseCase, AssignedLoansValidationError } from '../../application/loan/assigned-loans.use-case';
+import { AssignedLoanListQueryDto } from './loan.dto';
 @Controller('loans') export class LoanController {
-  constructor(private readonly create: CreateLoanUseCase, private readonly list: ListLoansUseCase, private readonly customers: ListActiveLoanCustomersUseCase, private readonly cancelled: ListCancelledLoansUseCase, private readonly markUncollectible: MarkUncollectibleUseCase, private readonly reactivateLoan: ReactivateLoanUseCase, private readonly overdue?: ListOverdueLoansUseCase, private readonly uncollectible?: ListUncollectibleLoansUseCase, private readonly edit?: EditLoanUseCase, private readonly editContext?: GetLoanEditContextUseCase, @Optional() private readonly annulList?: ListAnnulledLoansUseCase, @Optional() private readonly annul?: AnnulLoanUseCase, @Optional() private readonly exportActive?: ExportActiveLoansUseCase) {}
+  constructor(private readonly create: CreateLoanUseCase, private readonly list: ListLoansUseCase, private readonly customers: ListActiveLoanCustomersUseCase, private readonly cancelled: ListCancelledLoansUseCase, private readonly markUncollectible: MarkUncollectibleUseCase, private readonly reactivateLoan: ReactivateLoanUseCase, private readonly overdue?: ListOverdueLoansUseCase, private readonly uncollectible?: ListUncollectibleLoansUseCase, private readonly edit?: EditLoanUseCase, private readonly editContext?: GetLoanEditContextUseCase, @Optional() private readonly annulList?: ListAnnulledLoansUseCase, @Optional() private readonly annul?: AnnulLoanUseCase, @Optional() private readonly exportActive?: ExportActiveLoansUseCase, @Optional() private readonly assigned?: AssignedLoansUseCase) {}
   @Get('customer-options') @RequirePermissions('loans.create') customerOptions(@Query() query: { page?: string; pageSize?: string; search?: string }) { return this.customers.execute({ page: Math.max(1, Number(query.page) || 1), pageSize: Math.min(20, Math.max(10, Number(query.pageSize) || 10)), search: query.search }); }
+  @Get('assigned') @RequirePermissions('loans.assigned.view') async assignedLoans(@Query() query: AssignedLoanListQueryDto, @CurrentUser() actor: CurrentIdentity) {
+    try { return await this.assigned!.list({ page: Math.max(1, Number(query.page) || 1), pageSize: Math.min(100, Math.max(20, Number(query.pageSize) || 20)), search: query.search, frequencyId: query.frequencyId, fromDate: query.fromDate, toDate: query.toDate, sortBy: query.sortBy, sortOrder: query.sortOrder, status: query.status }, actor); }
+    catch (error) { return this.mapAssigned(error); }
+  }
+  @Get('assigned/:id') @RequirePermissions('loans.assigned.view') async assignedLoanDetail(@Param('id', new ParseUUIDPipe()) id: string, @CurrentUser() actor: CurrentIdentity) {
+    try { return await this.assigned!.detail(id, actor); }
+    catch (error) { return this.mapAssigned(error); }
+  }
+  private mapAssigned(error: unknown): never { if (error instanceof AssignedLoansValidationError) throw new BadRequestException(error.message); if (error instanceof AssignedLoansForbiddenError) throw new ForbiddenException(error.message); throw error; }
   @Get() @RequirePermissions('loans.view') listLoans(@Query() query: LoanListQueryDto) { return this.list.execute({ page: Math.max(1, Number(query.page) || 1), pageSize: Math.min(100, Math.max(20, Number(query.pageSize) || 20)), search: query.search, frequencyId: query.frequencyId, fromDate: query.fromDate, toDate: query.toDate, sortBy: query.sortBy, sortOrder: query.sortOrder }); }
   @Get('summary') @RequirePermissions('loans.view') async activeLoanSummary() {
     return this.readActivePortfolio(() => this.exportActive!.executeSummary());

@@ -96,14 +96,14 @@ export function LoanManagementView({ state, controller, can, onBegin, selectedRo
       <div className="loan-management__tabs" role="tablist" aria-label="Estado de préstamos" onKeyDown={(event) => {
         if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
         event.preventDefault();
-        const next = event.key === 'Home' ? 'OVERDUE' : event.key === 'End' ? 'UNCOLLECTIBLE' : overdue ? 'UNCOLLECTIBLE' : 'OVERDUE';
+        const next = event.key === 'Home' ? 'UNCOLLECTIBLE' : event.key === 'End' ? 'OVERDUE' : overdue ? 'UNCOLLECTIBLE' : 'OVERDUE';
         controller.setActiveTab(next);
         (next === 'OVERDUE' ? overdueTabRef : uncollectibleTabRef)?.current?.focus();
       }}>
-        <button ref={overdueTabRef} role="tab" id="loan-management-overdue-tab" aria-controls="loan-management-panel" aria-selected={overdue} tabIndex={overdue ? 0 : -1}
-          type="button" onClick={() => controller.setActiveTab('OVERDUE')}>Vencidos</button>
         <button ref={uncollectibleTabRef} role="tab" id="loan-management-uncollectible-tab" aria-controls="loan-management-panel" aria-selected={!overdue} tabIndex={overdue ? -1 : 0}
           type="button" onClick={() => controller.setActiveTab('UNCOLLECTIBLE')}>Incobrables</button>
+        <button ref={overdueTabRef} role="tab" id="loan-management-overdue-tab" aria-controls="loan-management-panel" aria-selected={overdue} tabIndex={overdue ? 0 : -1}
+          type="button" onClick={() => controller.setActiveTab('OVERDUE')}>Candidatos a vencerse</button>
       </div>
       <div className="loan-list__toolbar" aria-label="Filtros de préstamos">
         <label htmlFor="loan-management-search">Buscar<input id="loan-management-search" value={state.search} placeholder="Préstamo, cliente o identificación" onChange={(event) => controller.setSearch(event.target.value)} /></label>

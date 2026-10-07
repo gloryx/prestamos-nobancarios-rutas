@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { DndContext } from '@dnd-kit/core';
 import { describe, expect, it, vi } from 'vitest';
-import type { AssignmentWorkspace } from '../../../domain/entities/route-assignment';
+import type { ActiveLoanFilter, AssignmentWorkspace } from '../../../domain/entities/route-assignment';
 import { RouteAssignmentBoard } from './RouteAssignmentBoard';
 import { filterVisibleCustomers } from './route-assignment-visibility';
 
@@ -11,7 +11,7 @@ const workspace: AssignmentWorkspace = {
   unassignedRoutes: [{ routeId: 'free-route', routeName: 'Tamarindo', customers: [] }],
   unassignedCustomers: { items: [{ customerId: 'free-customer', name: 'Carlos Vega', identification: '2-2222', phone: '8777-0000', cantonName: 'Santa Cruz', districtName: 'Tamarindo' }], total: 1, totalUnassigned: 377, page: 1, pageSize: 20 },
 };
-const render = (canMoveRoutes: boolean, canMoveCustomers: boolean, showUnassignedCustomers = false, dragging: 'route' | 'customer' | null = null, filters: { search?: string; cantonCode?: number; districtCode?: number } = {}, currentWorkspace = workspace) => renderToStaticMarkup(<DndContext><RouteAssignmentBoard workspace={currentWorkspace} selectedCollectorUserId="user" selectedRouteId="route" showUnassignedCustomers={showUnassignedCustomers} pendingRoutes={new Set(['route'])} pendingCustomers={new Set(['customer'])} dragging={dragging} canMoveRoutes={canMoveRoutes} canMoveCustomers={canMoveCustomers} unassignedSearch={filters.search ?? ''} cantonCode={filters.cantonCode} districtCode={filters.districtCode} cantons={[{ code: 503, name: 'Santa Cruz', province: { code: 5, name: 'Guanacaste' } }, { code: 505, name: 'Carrillo', province: { code: 5, name: 'Guanacaste' } }]} districts={filters.cantonCode === 503 ? [{ code: 50301, name: 'Tamarindo', canton: { code: 503, name: 'Santa Cruz' }, province: { code: 5, name: 'Guanacaste' } }] : []} territorialLoading={false} territorialError="" onUnassignedSearchChange={vi.fn()} onSearchUnassigned={vi.fn()} onCantonChange={vi.fn()} onDistrictChange={vi.fn()} onClearFilters={vi.fn()} onUnassignedPage={vi.fn()} onSelectCollector={vi.fn()} onSelectRoute={vi.fn()} onShowUnassignedCustomers={vi.fn()} onMoveRoute={vi.fn()} onMoveCustomer={vi.fn()} /></DndContext>);
+const render = (canMoveRoutes: boolean, canMoveCustomers: boolean, showUnassignedCustomers = false, dragging: 'route' | 'customer' | null = null, filters: { search?: string; cantonCode?: number; districtCode?: number; activeLoanFilter?: ActiveLoanFilter } = {}, currentWorkspace = workspace) => renderToStaticMarkup(<DndContext><RouteAssignmentBoard workspace={currentWorkspace} selectedCollectorUserId="user" selectedRouteId="route" showUnassignedCustomers={showUnassignedCustomers} pendingRoutes={new Set(['route'])} pendingCustomers={new Set(['customer'])} dragging={dragging} canMoveRoutes={canMoveRoutes} canMoveCustomers={canMoveCustomers} unassignedSearch={filters.search ?? ''} cantonCode={filters.cantonCode} districtCode={filters.districtCode} activeLoanFilter={filters.activeLoanFilter ?? 'ALL'} cantons={[{ code: 503, name: 'Santa Cruz', province: { code: 5, name: 'Guanacaste' } }, { code: 505, name: 'Carrillo', province: { code: 5, name: 'Guanacaste' } }]} districts={filters.cantonCode === 503 ? [{ code: 50301, name: 'Tamarindo', canton: { code: 503, name: 'Santa Cruz' }, province: { code: 5, name: 'Guanacaste' } }] : []} territorialLoading={false} territorialError="" onUnassignedSearchChange={vi.fn()} onSearchUnassigned={vi.fn()} onCantonChange={vi.fn()} onDistrictChange={vi.fn()} onActiveLoanFilterChange={vi.fn()} onClearFilters={vi.fn()} onUnassignedPage={vi.fn()} onSelectCollector={vi.fn()} onSelectRoute={vi.fn()} onShowUnassignedCustomers={vi.fn()} onMoveRoute={vi.fn()} onMoveCustomer={vi.fn()} /></DndContext>);
 
 describe('route assignment board presentation', () => {
   it('communicates collector to route to customer and both unassigned trays', () => {
@@ -50,6 +50,11 @@ describe('route assignment board presentation', () => {
     expect(html).toContain('Asignar a ruta');
     expect(html).toContain('Todos los cantones');
     expect(html).toContain('Seleccione un cantón');
+    expect(html).toContain('Situación del préstamo');
+    expect(html).toContain('Todos los clientes');
+    expect(html).toContain('Con préstamos activos');
+    expect(html).toContain('Sin préstamos activos');
+    expect(html).toContain('value="ALL" selected=""');
     expect(html).toContain('disabled=""');
     expect(html).toContain('Clientes sin ruta</span><strong>377</strong>');
   });
@@ -70,9 +75,10 @@ describe('route assignment board presentation', () => {
   });
 
   it('renders dependent territorial options, filtered count, clear action and compact location', () => {
-    const html = render(true, true, true, null, { search: 'Carlos', cantonCode: 503, districtCode: 50301 });
+    const html = render(true, true, true, null, { search: 'Carlos', cantonCode: 503, districtCode: 50301, activeLoanFilter: 'WITH_ACTIVE' });
     expect(html).toContain('value="503" selected=""');
     expect(html).toContain('value="50301" selected=""');
+    expect(html).toContain('value="WITH_ACTIVE" selected=""');
     expect(html).toContain('1 resultados');
     expect(html).toContain('Limpiar filtros');
     expect(html).toContain('Santa Cruz · Tamarindo');

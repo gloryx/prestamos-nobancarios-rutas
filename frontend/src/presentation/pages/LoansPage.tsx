@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ComponentProps, type ReactElement } from 'react';
-import { Link as RouterLink, useNavigate } from 'react-router-dom';
+import { Link as RouterLink, useNavigate, useSearchParams } from 'react-router-dom';
 import { loanApi } from '../../infrastructure/api/loan.api';
 import { PaymentFrequencyApi } from '../../infrastructure/api/payment-frequency.api';
 import type { PaymentFrequency } from '../../domain/entities/payment-frequency';
@@ -14,6 +14,7 @@ import { generateLoanPaymentPlanReport } from '../../infrastructure/reports/loan
 import type { LoanSortBy, LoanSortOrder } from '../../infrastructure/api/loan.api';
 import { FileSpreadsheet } from 'lucide-react';
 import { generateActiveLoansExcel } from '../../infrastructure/reports/active-loans-excel.service';
+import { formatLoanStatus } from '../helpers/loan';
 
 const NewLoanLink = (props: ComponentProps<typeof RouterLink>) => {
   const { can } = useAuth();
@@ -48,12 +49,17 @@ function ActiveLoansSummary(): ReactElement {
   return <ActiveLoanSummaryView summary={summary} loading={loading} error={error} />;
 }
 
-export function LoansPage(): ReactElement {
+export function LoansPageRoute(): ReactElement {
+  const [urlSearchParams] = useSearchParams();
+  return <LoansPage initialSearch={urlSearchParams.get('search') ?? ''} />;
+}
+
+export function LoansPage({ initialSearch = '' }: { initialSearch?: string } = {}): ReactElement {
   const navigate = useNavigate();
   const { can } = useAuth();
   const [items, setItems] = useState<ActiveLoanListItem[]>([]);
   const [frequencies, setFrequencies] = useState<PaymentFrequency[]>([]);
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState(initialSearch);
   const [frequencyId, setFrequencyId] = useState('');
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
@@ -155,23 +161,25 @@ export function LoansPage(): ReactElement {
   </section>;
 }
 
-export function ActiveLoansTable({ items, sortBy, sortOrder, onSort, onView, onEdit, onDownload, canEdit, canExport, canRegisterPayment }: {
+export function ActiveLoansTable({ items, sortBy, sortOrder, onSort, onView, onEdit, onDownload, canEdit, canExport, canRegisterPayment, showStatus = false, showCollectorDetails = false }: {
   items: ActiveLoanListItem[]; sortBy: LoanSortBy; sortOrder: LoanSortOrder; onSort: (column: LoanSortBy) => void;
-  onView: (loan: ActiveLoanListItem) => void; onEdit: (loan: ActiveLoanListItem) => void; onDownload: (loan: ActiveLoanListItem) => void; canEdit: boolean; canExport: boolean; canRegisterPayment: boolean;
+  onView: (loan: ActiveLoanListItem) => void; onEdit: (loan: ActiveLoanListItem) => void; onDownload: (loan: ActiveLoanListItem) => void; canEdit: boolean; canExport: boolean; canRegisterPayment: boolean; showStatus?: boolean; showCollectorDetails?: boolean;
 }): ReactElement {
   return <div className="loan-list__table-wrap"><table className="loan-list__table">
     <caption className="loan-list__sr-only">Listado de préstamos</caption>
-    <thead><tr><SortableHeader column="number" label="N°" align="center" sortBy={sortBy} sortOrder={sortOrder} onSort={onSort} /><SortableHeader column="customer" label="Cliente" sortBy={sortBy} sortOrder={sortOrder} onSort={onSort} /><SortableHeader column="startDate" label="Inicio" align="center" sortBy={sortBy} sortOrder={sortOrder} onSort={onSort} /><SortableHeader column="principal" label="Cap." title="Capital" numeric sortBy={sortBy} sortOrder={sortOrder} onSort={onSort} /><SortableHeader column="interest" label="Int." title="Interés" numeric sortBy={sortBy} sortOrder={sortOrder} onSort={onSort} /><SortableHeader column="total" label="Total" numeric sortBy={sortBy} sortOrder={sortOrder} onSort={onSort} /><SortableHeader column="frequency" label="Frec." title="Frecuencia" align="center" sortBy={sortBy} sortOrder={sortOrder} onSort={onSort} /><SortableHeader column="pending" label="Pend." title="Pendiente" numeric sortBy={sortBy} sortOrder={sortOrder} onSort={onSort} /><SortableHeader column="condition" label="Condición" align="center" sortBy={sortBy} sortOrder={sortOrder} onSort={onSort} /><th className="loan-list__actions">Acciones</th></tr></thead>
+    <thead><tr><SortableHeader column="number" label="N°" align="center" sortBy={sortBy} sortOrder={sortOrder} onSort={onSort} /><SortableHeader column="customer" label="Cliente" sortBy={sortBy} sortOrder={sortOrder} onSort={onSort} /><SortableHeader column="startDate" label="Inicio" align="center" sortBy={sortBy} sortOrder={sortOrder} onSort={onSort} /><SortableHeader column="principal" label="Cap." title="Capital" numeric sortBy={sortBy} sortOrder={sortOrder} onSort={onSort} /><SortableHeader column="interest" label="Int." title="Interés" numeric sortBy={sortBy} sortOrder={sortOrder} onSort={onSort} /><SortableHeader column="total" label="Total" numeric sortBy={sortBy} sortOrder={sortOrder} onSort={onSort} /><SortableHeader column="frequency" label="Frec." title="Frecuencia" align="center" sortBy={sortBy} sortOrder={sortOrder} onSort={onSort} /><SortableHeader column="pending" label={showCollectorDetails ? 'Saldo' : 'Pend.'} title={showCollectorDetails ? 'Saldo actual' : 'Pendiente'} numeric sortBy={sortBy} sortOrder={sortOrder} onSort={onSort} />{showCollectorDetails && <th>Próxima obligación</th>}{showStatus && <th>Estado</th>}<SortableHeader column="condition" label="Condición" align="center" sortBy={sortBy} sortOrder={sortOrder} onSort={onSort} /><th className="loan-list__actions">Acciones</th></tr></thead>
     <tbody>{items.map((loan) => <tr key={loan.id}>
       <td className="loan-list__center">{loan.loanNumber}</td>
-      <td><strong>{loan.customerName}</strong><small>{loan.identification}</small></td>
+      <td><strong>{loan.customerName}</strong><small>{loan.identification}</small>{showCollectorDetails && loan.primaryPhone && <small>{loan.primaryPhone}</small>}</td>
       <td className="loan-list__center">{formatDateOnlyForDisplay(loan.startDate)}</td>
       <td className="loan-list__numeric">{formatCRC(loan.principal)}</td>
       <td className="loan-list__numeric">{formatCRC(loan.interestAmount)}</td>
       <td className="loan-list__numeric">{formatCRC(loan.totalAmount)}</td>
       <td className="loan-list__center">{loan.frequencyName}</td>
       <td className="loan-list__numeric">{formatCRC(loan.pendingTotal)}</td>
-      <td className="loan-list__center"><span className={`status-badge ${loan.isOverdue ? 'payment-loan-dialog__late' : 'status-badge--active'}`}>{loan.isOverdue ? 'CON ATRASO' : 'AL DÍA'}</span></td>
+      {showCollectorDetails && <td>{loan.nextDueDate ? <><strong>{formatDateOnlyForDisplay(loan.nextDueDate)}</strong><small>{formatCRC(loan.nextDueAmount!)}</small></> : '—'}</td>}
+      {showStatus && <td><span className="loan-detail__status">{'status' in loan ? formatLoanStatus((loan as ActiveLoanListItem & { status: string }).status) : 'Activo'}</span></td>}
+      <td className="loan-list__center">{showStatus && 'status' in loan && loan.status !== 'ACTIVE' ? '—' : <span className={`status-badge ${loan.isOverdue ? 'payment-loan-dialog__late' : 'status-badge--active'}`}>{loan.isOverdue ? 'CON ATRASO' : 'AL DÍA'}</span>}</td>
       <td className="loan-list__actions"><TableActions ariaLabel={`Acciones del préstamo ${loan.loanNumber}`} actions={[{ key: 'view', icon: 'view', label: 'Ver información', title: 'Ver información', ariaLabel: `Ver información del préstamo ${loan.loanNumber}`, onClick: () => onView(loan) }, ...(canEdit && (!('status' in loan) || loan.status === 'ACTIVE') ? [{ key: 'edit', icon: 'edit' as const, label: 'Editar', title: 'Editar préstamo', ariaLabel: `Editar préstamo ${loan.loanNumber}`, onClick: () => onEdit(loan) }] : []), ...(canRegisterPayment && (!('status' in loan) || loan.status === 'ACTIVE') ? [{ key: 'payment', icon: 'payment' as const, label: 'Registrar pago', title: 'Registrar pago', ariaLabel: 'Registrar pago', to: `/payments/new?loanId=${encodeURIComponent(loan.id)}` }] : []), ...(canExport ? [{ key: 'download', icon: 'download' as const, label: 'Descargar plan de pago', title: 'Descargar plan de pago', ariaLabel: `Descargar plan de pago del préstamo ${loan.loanNumber}`, onClick: () => onDownload(loan) }] : [])]} /></td>
     </tr>)}</tbody>
   </table></div>;

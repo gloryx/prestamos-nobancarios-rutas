@@ -5,7 +5,7 @@ import type { loanApi } from '../../infrastructure/api/loan.api';
 import { formatDateOnlyForDisplay } from '../../shared/utils/date';
 import { formatCRCAggregate } from '../../shared/utils/money';
 import { draftFromLoan, loanEditAttempt, reviewLoanEdit, type LoanEditDraft } from '../helpers/loan-edit';
-import { localDateOnly, reviewPlanDraft, type PlanDraftEntry } from '../helpers/payment-plan';
+import { adaptPendingPlanToBalance, appendAutomaticPlanObligation, reviewPlanDraft, type PlanDraftEntry, type PlanFrequency } from '../helpers/payment-plan';
 import { useToast } from './ToastContext';
 import { MoneyInput } from './MoneyInput';
 import { PaymentPlanDraftFields } from './PaymentPlanDraftFields';
@@ -113,8 +113,22 @@ export function LoanEditDialog({ loanId, api, onSaved, onUnavailable, onClose }:
     if (locked.current || busy || saved || conflict || blocked || !context || !draft) return;
     const review = reviewLoanEdit(context, draft);
     if (!review.valid || !Object.keys(review.changes).length) return;
-    if (review.interestChanged && step === 1) { setStep(2); setError(''); return; }
-    const planReview = review.interestChanged ? reviewPlanDraft(review.newBalance!, plan, { allowEmpty: true, minDate: context.loan.startDate }) : null;
+    if (review.interestChanged && step === 1) {
+      const option = context.paymentFrequencyOptions.find(({ id }) => id === draft.paymentFrequencyId);
+      const frequency: PlanFrequency | null = option?.intervalUnit && option.intervalValue !== undefined
+        ? { intervalUnit: option.intervalUnit, intervalValue: option.intervalValue } : null;
+      const adapted = adaptPendingPlanToBalance(plan, review.newBalance!, frequency, context.protectedPlanEntryIds);
+      if (!adapted.adaptable) {
+        setError(adapted.reason === 'protected-total'
+          ? 'El nuevo saldo es menor que las obligaciones protegidas del plan.'
+          : adapted.reason === 'protected-date'
+            ? 'Las fechas protegidas impiden normalizar automáticamente el plan.'
+            : 'No fue posible adaptar automáticamente el plan con la periodicidad actual.');
+        return;
+      }
+      setPlan(adapted.entries); setStep(2); setError(''); return;
+    }
+    const planReview = review.interestChanged ? reviewPlanDraft(review.newBalance!, plan, { allowEmpty: true, minDate: context.loan.startDate, protectedEntryIds: context.protectedPlanEntryIds }) : null;
     if (planReview && !planReview.canSave) return;
     const body: Omit<LoanEditBody, 'idempotencyKey'> = { baseline: context.baseline, changes: review.changes,
       ...(planReview ? { plan: planReview.entries } : {}) };
@@ -133,9 +147,9 @@ export function LoanEditDialog({ loanId, api, onSaved, onUnavailable, onClose }:
     } finally { locked.current = false; setBusy(false); }
   };
   const review = context && draft ? reviewLoanEdit(context, draft) : null;
-  const planReview = review?.interestChanged && review.newBalance ? reviewPlanDraft(review.newBalance, plan, { allowEmpty: true, minDate: context!.loan.startDate }) : null;
+  const planReview = review?.interestChanged && review.newBalance ? reviewPlanDraft(review.newBalance, plan, { allowEmpty: true, minDate: context!.loan.startDate, protectedEntryIds: context!.protectedPlanEntryIds }) : null;
   const disabled = busy || saved || conflict || blocked || loading;
-  const selectOptions = (options: LoanEditContext['paymentFrequencyOptions'], selected: string) =>
+  const selectOptions = (options: Array<{ id: string; name: string; active: boolean }>, selected: string) =>
     options.filter((option) => option.active || option.id === selected).map((option) =>
       <option key={option.id} value={option.id}>{option.name}{option.active ? '' : ' (inactivo)'}</option>);
 
@@ -163,9 +177,13 @@ export function LoanEditDialog({ loanId, api, onSaved, onUnavailable, onClose }:
           </div>
           <dl className="loan-edit__facts" aria-label="Vista previa de importes"><div><dt>Nuevo total (vista previa)</dt><dd>{review?.valid && review.newTotal ? formatCRCAggregate(review.newTotal) : '—'}</dd></div><div><dt>Nuevo saldo (vista previa)</dt><dd>{review?.valid && review.newBalance ? formatCRCAggregate(review.newBalance) : '—'}</dd></div></dl>
           <p>Los importes son orientativos; el servidor valida el saldo y el plan al guardar.</p>
-        </> : <div className="loan-edit__plan"><p>Paso 2: ajusta manualmente las obligaciones al nuevo saldo. Los pagos realizados no se modifican.</p>
+        </> : <div className="loan-edit__plan"><p>Paso 2: revisa las obligaciones adaptadas al nuevo saldo. Los pagos realizados no se modifican.</p>
           <PaymentPlanDraftFields draft={plan} balance={review?.newBalance ?? ''} busy={disabled} minDate={context.loan.startDate} allowEmpty balanceLabel="Nuevo saldo a distribuir" dateRef={dateRef}
-            onChange={changePlan} onAdd={() => changePlan([...plan, { key: crypto.randomUUID(), id: null, dueDate: localDateOnly(), pendingAmount: '' }])} />
+            onChange={changePlan} onAdd={() => {
+              const option = context.paymentFrequencyOptions.find(({ id }) => id === draft.paymentFrequencyId);
+              if (option?.intervalUnit && option.intervalValue !== undefined)
+                changePlan(appendAutomaticPlanObligation(plan, { intervalUnit: option.intervalUnit, intervalValue: option.intervalValue }));
+            }} />
         </div>}
         <footer className="payment-plan-editor__footer"><button className="button button--secondary" type="button" disabled={busy} onClick={onClose}>Cancelar</button>
           {step === 2 && <button className="button button--secondary" type="button" disabled={busy} onClick={() => setStep(1)}>Anterior</button>}

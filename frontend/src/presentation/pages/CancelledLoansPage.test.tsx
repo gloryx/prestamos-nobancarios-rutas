@@ -27,7 +27,7 @@ describe('cancelled loans read-only presentation', () => {
     expect(html).toContain('Ana María López');
     expect(html).toContain('01/01/2026');
     expect(html).toContain('12/02/2026');
-    expect(html).toContain('₡100,00');
+    expect(html).toContain('₡100');
     expect(html).toContain('₡25,50');
     expect(html).toContain('₡125,50');
     expect(html).toContain('href="/loans/loan-1"');
@@ -45,7 +45,7 @@ describe('cancelled loans read-only presentation', () => {
     expect(markup({ result: empty, search: 'Ana' })).toContain('No se encontraron préstamos cancelados');
     expect(markup({ result: { ...result, items: [] }, page: 3 })).toContain('No hay préstamos en esta página.');
     expect(markup({ result: { ...result, items: [{ ...result.items[0], cancelledDate: null, recoveredInterest: '0.00', totalRecovered: '0.00' }] } })).toContain('>—</td>');
-    expect(markup({ result: empty })).toContain('₡0,00');
+    expect(markup({ result: empty })).toContain('₡0');
     expect(markup({ result: empty })).not.toContain('undefined');
   });
 

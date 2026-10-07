@@ -8,15 +8,19 @@ const FOREIGN = '44444444-4444-4444-8444-444444444444';
 const cents = (value: string) => { const [whole, fraction = ''] = value.split('.'); return BigInt(whole) * 100n + BigInt(fraction.padEnd(2, '0')); };
 const money = (value: bigint) => `${value / 100n}.${(value % 100n).toString().padStart(2, '0')}`;
 type Row = { id: string; loanId: string; dueDate: string; sequence: number; pendingAmount: string };
+type Application = { status: 'VALID' | 'ANNULLED'; paymentPlanEntryId: string; carriedToPlanEntryId: string | null; principalApplied?: string; interestApplied?: string };
 const row = (id: string, sequence: number, dueDate: string, pendingAmount: string, loanId = 'loan'): Row => ({ id, loanId, sequence, dueDate, pendingAmount });
 const initial = () => [row(A, 3, '2026-02-02', '400.00'), row(B, 7, '2026-03-02', '500.00'), row(ZERO, 9, '2026-01-15', '0.00'), row(FOREIGN, 30, '2026-02-02', '1.00', 'other')];
 const draft = (): PaymentPlanDraftEntry[] => [{ id: A, dueDate: '2026-04-01', pendingAmount: '400.00' }, { id: B, dueDate: '2026-05-01', pendingAmount: '500.00' }];
 
-function executor() {
-  const rows = initial();
+function executor(applications: Application[] = [], openingRows: Row[] = initial()) {
+  const rows = structuredClone(openingRows);
   const calls: Array<{ sql: string; params: unknown[] }> = [];
   const query = jest.fn(async (sql: string, params: unknown[]) => {
     calls.push({ sql, params });
+    if (sql.startsWith('SELECT DISTINCT e.id')) return rows.filter((item) => item.loanId === params[0] && cents(item.pendingAmount) > 0n
+      && applications.some((application) => application.status === 'VALID'
+        && (application.paymentPlanEntryId === item.id || application.carriedToPlanEntryId === item.id))).map(({ id }) => ({ id }));
     if (sql.startsWith('SELECT id, due_date::text')) return rows.filter((item) => item.loanId === params[0] && (!sql.includes('pending_amount > 0') || cents(item.pendingAmount) > 0n))
       .sort((left, right) => left.dueDate.localeCompare(right.dueDate) || left.sequence - right.sequence || left.id.localeCompare(right.id)).map((item) => ({ ...item }));
     if (sql.startsWith('SELECT COALESCE(SUM(pending_amount)')) return [{ pendingAmount: money(rows.filter((item) => item.loanId === params[0] && cents(item.pendingAmount) > 0n).reduce((sum, item) => sum + cents(item.pendingAmount), 0n)) }];
@@ -79,8 +83,93 @@ describe('transaction-scoped ID-safe payment plan draft', () => {
     ]);
     expect(final.reduce((sum, item) => sum + cents(item.pendingAmount), 0n)).toBe(storedLoanBalance + 1n);
     expect(storedLoan).toEqual({ totalAmount: '1000.00', paidAmount: '100.00' });
-    expect(db.calls.every(({ sql }) => !/\b(loans|payments|payment_applications|cash_movements)\b/i.test(sql))).toBe(true);
+    expect(db.calls.every(({ sql }) => !/\b(loans|cash_movements)\b/i.test(sql))).toBe(true);
+    expect(db.calls.filter(({ sql }) => /\b(payments|payment_applications)\b/i.test(sql))).toHaveLength(1);
     expect(db.rows.find((item) => item.id === B)?.pendingAmount).toBe('500.01');
+  });
+
+  it.each([
+    ['direct application', { status: 'VALID', paymentPlanEntryId: A, carriedToPlanEntryId: null }],
+    ['carried application', { status: 'VALID', paymentPlanEntryId: B, carriedToPlanEntryId: A }],
+  ] as const)('rejects amount mutation or omission of a positive row protected by a VALID %s before writing', async (_, application) => {
+    for (const [entries, message] of [
+      [[{ id: A, dueDate: '2026-02-02', pendingAmount: '399.00' }, { id: B, dueDate: '2026-03-02', pendingAmount: '501.00' }], 'Una cuota con aplicaciones de pagos válidos debe conservar exactamente su fecha y monto pendiente.'],
+      [[{ id: B, dueDate: '2026-03-02', pendingAmount: '900.00' }], 'Una cuota con aplicaciones de pagos válidos no puede eliminarse del plan.'],
+    ] as const) {
+      const db = executor([application]);
+      await expect(applyPaymentPlanDraft(db, 'loan', '2026-01-01', 90000n, entries)).rejects.toMatchObject({ message });
+      expect(db.writes()).toEqual([]);
+      expect(db.rows).toEqual(initial());
+    }
+  });
+
+  it('reschedules the single protected #4376-equivalent obligation while preserving financial and application facts', async () => {
+    const applications: Application[] = [{ status: 'VALID', paymentPlanEntryId: A, carriedToPlanEntryId: null, principalApplied: '15000.00', interestApplied: '5000.00' }];
+    const payment = { id: 'payment', status: 'VALID', paymentDate: '2026-08-20', amount: '20000.00', cash: '20000.00' };
+    const applicationSnapshot = structuredClone(applications);
+    const paymentSnapshot = structuredClone(payment);
+    const db = executor(applications, [row(A, 1, '2026-09-01', '130000.00')]);
+
+    await expect(applyPaymentPlanDraft(db, 'loan', '2026-01-01', 13000000n, [
+      { id: A, dueDate: '2026-10-10', pendingAmount: '130000' },
+    ])).resolves.toEqual([expect.objectContaining({ id: A, dueDate: '2026-10-10', pendingAmount: '130000' })]);
+
+    expect(applications).toEqual(applicationSnapshot);
+    expect(payment).toEqual(paymentSnapshot);
+    expect(db.writes()).toHaveLength(1);
+    expect(db.writes().every(({ sql }) => sql.startsWith('UPDATE payment_plan_entries'))).toBe(true);
+    expect(db.calls.every(({ sql }) => !/^\s*(INSERT|UPDATE|DELETE)\s+(payments|payment_applications|cash_movements|loans)\b/i.test(sql))).toBe(true);
+  });
+
+  it('rejects changing the protected #4376-equivalent pending amount before writing', async () => {
+    const db = executor([{ status: 'VALID', paymentPlanEntryId: A, carriedToPlanEntryId: null }], [row(A, 1, '2026-09-01', '130000.00')]);
+    await expect(applyPaymentPlanDraft(db, 'loan', '2026-01-01', 12000000n, [
+      { id: A, dueDate: '2026-10-10', pendingAmount: '120000.00' },
+    ])).rejects.toBeInstanceOf(PaymentValidationError);
+    expect(db.writes()).toEqual([]);
+  });
+
+  it.each([
+    ['Sunday', [{ id: A, dueDate: '2026-10-11', pendingAmount: '130000.00' }], 'Los domingos no son días de cobro.'],
+    ['duplicate date', [{ id: A, dueDate: '2026-10-10', pendingAmount: '130000.00' }, { id: null, dueDate: '2026-10-10', pendingAmount: '1.00' }], 'Ya existe una cuota programada para esta fecha.'],
+  ] as const)('still rejects a protected last-row %s through shared plan validation', async (_, entries, message) => {
+    const target = entries.reduce((sum, entry) => sum + cents(entry.pendingAmount), 0n);
+    const db = executor([{ status: 'VALID', paymentPlanEntryId: A, carriedToPlanEntryId: null }], [row(A, 1, '2026-09-01', '130000.00')]);
+    await expect(applyPaymentPlanDraft(db, 'loan', '2026-01-01', target, entries)).rejects.toMatchObject({ message });
+    expect(db.writes()).toEqual([]);
+  });
+
+  it('allows the same last-row reschedule when there are no payment applications', async () => {
+    const db = executor([], [row(A, 1, '2026-09-01', '130000.00')]);
+    await expect(applyPaymentPlanDraft(db, 'loan', '2026-01-01', 13000000n, [
+      { id: A, dueDate: '2026-10-10', pendingAmount: '130000.00' },
+    ])).resolves.toEqual([expect.objectContaining({ dueDate: '2026-10-10' })]);
+  });
+
+  it('only reschedules the last current positive protected row and keeps earlier protected rows frozen', async () => {
+    const applications: Application[] = [
+      { status: 'VALID', paymentPlanEntryId: A, carriedToPlanEntryId: null },
+      { status: 'VALID', paymentPlanEntryId: B, carriedToPlanEntryId: null },
+    ];
+    const unchangedEarlier = { id: A, dueDate: '2026-02-02', pendingAmount: '400.00' };
+    const accepted = executor(applications);
+    await expect(applyPaymentPlanDraft(accepted, 'loan', '2026-01-01', 90000n, [
+      unchangedEarlier, { id: B, dueDate: '2026-04-02', pendingAmount: '500.00' },
+    ])).resolves.toEqual([expect.objectContaining(unchangedEarlier), expect.objectContaining({ id: B, dueDate: '2026-04-02', pendingAmount: '500.00' })]);
+
+    const rejected = executor(applications);
+    await expect(applyPaymentPlanDraft(rejected, 'loan', '2026-01-01', 90000n, [
+      { ...unchangedEarlier, dueDate: '2026-02-03' }, { id: B, dueDate: '2026-04-02', pendingAmount: '500.00' },
+    ])).rejects.toBeInstanceOf(PaymentValidationError);
+    expect(rejected.writes()).toEqual([]);
+  });
+
+  it('does not protect rows referenced only by ANNULLED payment applications', async () => {
+    const db = executor([{ status: 'ANNULLED', paymentPlanEntryId: A, carriedToPlanEntryId: B }]);
+    await expect(applyPaymentPlanDraft(db, 'loan', '2026-01-01', 90000n, [
+      { id: A, dueDate: '2026-04-02', pendingAmount: '900.00' },
+    ])).resolves.toEqual([expect.objectContaining({ id: A, dueDate: '2026-04-02', pendingAmount: '900.00' })]);
+    expect(db.rows.find((item) => item.id === B)?.pendingAmount).toBe('0.00');
   });
 
   it.each([

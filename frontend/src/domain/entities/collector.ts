@@ -21,3 +21,10 @@ export type Collector = {
 };
 
 export type CollectorPage = { items: Collector[]; total: number; pages: number };
+
+export type CollectorFinancialSummary = {
+  totalPlaced: string;
+  totalOutstanding: string;
+  realizedGain: string;
+  activeLoansCount: number;
+};

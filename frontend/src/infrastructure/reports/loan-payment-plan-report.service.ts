@@ -56,11 +56,13 @@ export async function createLoanPaymentPlanDocument(loan: LoanOperationalDetail,
   function header(nameLines: string[], continuation = false): number {
     const status = STATUS_LABELS[loan.status] ?? loan.status;
     if (['CANCELLED', 'REFINANCED', 'UNCOLLECTIBLE'].includes(loan.status)) {
+      const cancelled = loan.status === 'CANCELLED';
       doc.saveGraphicsState();
-      doc.setGState(doc.GState({ opacity: 0.14 }));
-      doc.setTextColor(90);
+      doc.setGState(doc.GState({ opacity: cancelled ? 0.2 : 0.14 }));
+      if (cancelled) doc.setTextColor(35, 107, 69);
+      else doc.setTextColor(90);
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(19);
+      doc.setFontSize(cancelled ? 30 : 19);
       doc.text(status, WIDTH / 2, HEIGHT / 2, { align: 'center', angle: 38 });
       doc.restoreGraphicsState();
     }

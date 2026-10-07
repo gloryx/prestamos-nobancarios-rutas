@@ -6,10 +6,12 @@ import { FILE_STORAGE, type FileStorage } from '../../application/customer/file-
 import { CustomerManagementUseCase, RegisterCustomerUseCase } from '../../application/customer/customer.use-case';
 import { CUSTOMER_FINANCIAL_ANALYSIS_READER, CustomerFinancialAnalysisUseCase, type CustomerFinancialAnalysisReader } from '../../application/customer/customer-financial-analysis.use-case';
 import { CUSTOMER_STATISTICS_READER, CustomerStatisticsUseCase, type CustomerStatisticsReader } from '../../application/customer/customer-statistics.use-case';
+import { CUSTOMER_AGENDA_READER, CustomerAgendaUseCase, type CustomerAgendaReader } from '../../application/customer/customer-agenda.use-case';
 import { CantonOrmEntity, CustomerAddressOrmEntity, CustomerOrmEntity, DistrictOrmEntity, ProvinceOrmEntity } from '../../infrastructure/database/typeorm/entities';
 import { CustomerTypeOrmRepository } from '../../infrastructure/database/typeorm/repositories/customer.typeorm-repository';
 import { CustomerFinancialAnalysisTypeOrmReader } from '../../infrastructure/database/typeorm/repositories/customer-financial-analysis.reader';
 import { CustomerStatisticsTypeOrmReader } from '../../infrastructure/database/typeorm/repositories/customer-statistics.reader';
+import { CustomerAgendaTypeOrmReader } from '../../infrastructure/database/typeorm/repositories/customer-agenda.reader';
 import { LocalFileStorage } from '../../infrastructure/storage/local-file.storage';
 import { CustomerController } from './customer.controller';
 @Module({ imports: [TypeOrmModule.forFeature([CustomerOrmEntity, CustomerAddressOrmEntity, DistrictOrmEntity, CantonOrmEntity, ProvinceOrmEntity])], controllers: [CustomerController], providers: [
@@ -19,6 +21,8 @@ import { CustomerController } from './customer.controller';
   { provide: CustomerFinancialAnalysisUseCase, inject: [CUSTOMER_FINANCIAL_ANALYSIS_READER], useFactory: (reader: CustomerFinancialAnalysisReader) => new CustomerFinancialAnalysisUseCase(reader) },
   { provide: CUSTOMER_STATISTICS_READER, inject: [DataSource], useFactory: (source: DataSource) => new CustomerStatisticsTypeOrmReader(source) },
   { provide: CustomerStatisticsUseCase, inject: [CUSTOMER_STATISTICS_READER], useFactory: (reader: CustomerStatisticsReader) => new CustomerStatisticsUseCase(reader) },
+  { provide: CUSTOMER_AGENDA_READER, inject: [DataSource], useFactory: (source: DataSource) => new CustomerAgendaTypeOrmReader(source) },
+  { provide: CustomerAgendaUseCase, inject: [CUSTOMER_AGENDA_READER], useFactory: (reader: CustomerAgendaReader) => new CustomerAgendaUseCase(reader) },
   { provide: RegisterCustomerUseCase, inject: [CUSTOMER_REPOSITORY, FILE_STORAGE, getRepositoryToken(DistrictOrmEntity)], useFactory: (repository: CustomerRepository, storage: FileStorage, districts: Repository<DistrictOrmEntity>) => new RegisterCustomerUseCase(repository, storage, async (code) => Boolean(await districts.findOneBy({ code })) ) },
   { provide: CustomerManagementUseCase, inject: [CUSTOMER_REPOSITORY, FILE_STORAGE, getRepositoryToken(DistrictOrmEntity)], useFactory: (repository: CustomerRepository, storage: FileStorage, districts: Repository<DistrictOrmEntity>) => new CustomerManagementUseCase(repository, storage, async (code) => Boolean(await districts.findOneBy({ code })) ) },
 ] })

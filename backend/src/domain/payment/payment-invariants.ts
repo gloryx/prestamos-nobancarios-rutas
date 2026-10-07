@@ -1,5 +1,6 @@
 import { paymentDateOnlyKey } from './payment-date-only';
 import { paymentPlanDateIssue } from './payment-plan-dates';
+import type { IntervalUnit } from '../payment-frequency/payment-frequency.types';
 
 export type PendingPlanEntry = {
   id: string;
@@ -45,6 +46,8 @@ export function buildPaymentContext(input: {
   lastValidPayment: unknown;
   refinanceEligibility: boolean;
   preferredMethod: unknown;
+  paymentFrequency: { intervalUnit: IntervalUnit; intervalValue: number };
+  protectedPlanEntryIds?: string[];
 }) {
   const combinedPlan = filterPositivePendingEntries(input.combinedPlan)
     .sort((left, right) => paymentDateOnlyKey(left.dueDate).localeCompare(paymentDateOnlyKey(right.dueDate)) || left.sequence - right.sequence || left.id.localeCompare(right.id));
@@ -57,5 +60,7 @@ export function buildPaymentContext(input: {
     lastValidPayment: input.lastValidPayment,
     refinanceEligibility: input.refinanceEligibility,
     preferredMethod: input.preferredMethod,
+    paymentFrequency: input.paymentFrequency,
+    protectedPlanEntryIds: input.protectedPlanEntryIds ?? [],
   };
 }

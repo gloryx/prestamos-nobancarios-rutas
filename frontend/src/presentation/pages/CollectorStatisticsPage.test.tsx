@@ -51,8 +51,8 @@ describe('CollectorStatisticsView', () => {
     const html = render({ year: 2026, month: null, statistics: report(), loading: false, error: '' });
     for (const fragment of ['Estadísticas de cobradores', 'Actividad de cobro y atención de clientes por período.',
       'Todo el año', 'Octubre', 'COBRADORES ACTIVOS', '>2<', 'CON ACTIVIDAD', '>1<', 'ACTIVOS SIN ACTIVIDAD',
-      'CLIENTES ATENDIDOS', 'PAGOS VÁLIDOS', 'COBRADO POR COBRADORES', '₡125.000,00', 'CAPITAL COBRADO', '₡100.000,00',
-      'INTERÉS COBRADO', '₡25.000,00', 'PROMEDIO POR PAGO', '₡62.500,00']) expect(html).toContain(fragment);
+      'CLIENTES ATENDIDOS', 'PAGOS VÁLIDOS', 'COBRADO POR COBRADORES', '₡125.000', 'CAPITAL COBRADO', '₡100.000',
+      'INTERÉS COBRADO', '₡25.000', 'PROMEDIO POR PAGO', '₡62.500']) expect(html).toContain(fragment);
     expect(html).toContain('Clientes únicos con al menos un pago válido');
     expect(html).toContain('Monto de pagos válidos atribuibles a cobradores durante el período.');
     expect(html).not.toContain('TOTAL COBRADO');
@@ -84,13 +84,13 @@ describe('CollectorStatisticsView', () => {
     expect(html).toContain('Juan Rojas');
     expect(html).toContain('Luis Mora');
     expect(html).toContain('Clientes atendidos');
-    expect(html).toContain('₡0,00');
+    expect(html).toContain('₡0');
   });
 
   it('separates payment methods, annulments, unattributed payments and current coverage', () => {
     const html = render({ year: 2026, month: null, statistics: report(), loading: false, error: '' });
     for (const fragment of ['FORMAS DE PAGO', 'SINPE Móvil', '2 pagos', 'ANULACIONES', '1 pagos anulados',
-      '₡10.000,00', 'INTEGRIDAD DE COBRO', 'Pagos no atribuibles a un cobrador', '3 pagos válidos', '₡15.000,00', 'COBERTURA ACTUAL',
+      '₡10.000', 'INTEGRIDAD DE COBRO', 'Pagos no atribuibles a un cobrador', '3 pagos válidos', '₡15.000', 'COBERTURA ACTUAL',
       '2 rutas activas', '5 clientes actualmente asignados', 'no reconstruyen la asignación histórica'])
       expect(html).toContain(fragment);
     expect(html).not.toContain('Dinero perdido');

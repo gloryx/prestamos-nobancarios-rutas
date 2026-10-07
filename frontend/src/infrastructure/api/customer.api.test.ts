@@ -22,11 +22,19 @@ describe('CustomerApi site adapters', () => {
   });
 
   it('uses the scoped assigned endpoint instead of listing and filtering customers', async () => {
-    const response = { ok: true, status: 200, json: async () => [] } as Response;
+    const response = { ok: true, status: 200, json: async () => ({ items: [], total: 0, page: 1, pageSize: 20, totalPages: 0, routes: [] }) } as Response;
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(response);
-    await new CustomerApi().assigned();
-    expect(fetchMock).toHaveBeenCalledWith('http://localhost:3000/customers/assigned', expect.objectContaining({ credentials: 'include' }));
+    await new CustomerApi().assigned({ search: ' Ana ', routeId: 'route/1', page: 2, pageSize: 20 });
+    expect(fetchMock).toHaveBeenCalledWith('http://localhost:3000/customers/assigned?page=2&pageSize=20&search=Ana&routeId=route%2F1', expect.objectContaining({ credentials: 'include' }));
     expect(fetchMock.mock.calls[0][0]).not.toContain('/customers?');
+    fetchMock.mockRestore();
+  });
+
+  it('loads the property photo through the dedicated scoped endpoint', async () => {
+    const response = { ok: true, status: 200, blob: async () => new Blob(['photo'], { type: 'image/jpeg' }) } as Response;
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(response);
+    await new CustomerApi().sitePhoto('customer/1');
+    expect(fetchMock).toHaveBeenCalledWith('http://localhost:3000/customers/customer%2F1/site-photo', expect.objectContaining({ credentials: 'include' }));
     fetchMock.mockRestore();
   });
 

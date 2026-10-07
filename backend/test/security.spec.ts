@@ -85,8 +85,8 @@ describe('security guards and permission metadata', () => {
        'routes.view', 'routes.create', 'routes.update', 'routes.status.change', 'routes.export', 'routes.assign.collectors', 'routes.assign.customers',
        'customers.view', 'customers.create', 'customers.update', 'customers.status.change', 'customers.summary.view', 'customers.analysis.view', 'customers.files.view', 'customers.export', 'customers.assigned.view', 'customers.site.view', 'customers.site.capture', 'customers.site.replace', 'customers.site.replace.authorize',
        'users.view', 'users.create', 'users.update', 'users.status.change', 'users.password.reset', 'users.role.assign', 'roles.view', 'roles.permissions.update',
-       'collectors.view', 'collectors.create', 'collectors.update', 'collectors.status.change', 'collectors.user.assign', 'collectors.photo.view',
-             'financial-opening.view', 'financial-opening.perform', 'cash-movements.view', 'cash-movements.create', 'cash-movements.reverse', 'cash-movements.export', 'financial-closes.view', 'financial-closes.confirm', 'loans.view', 'loans.create', 'loans.update', 'loans.export', 'loans.status.annul', 'loans.status.uncollectible', 'loans.status.reactivate', 'loans.refinance.view', 'loans.refinance.create', 'payments.view', 'payments.create', 'payments.annul', 'payments.plan.customize', 'collection-agenda.view',
+       'collectors.view', 'collectors.create', 'collectors.update', 'collectors.status.change', 'collectors.user.assign', 'collectors.photo.view', 'collectors.financial-summary.view',
+             'financial-opening.view', 'financial-opening.perform', 'cash-movements.view', 'cash-movements.create', 'cash-movements.reverse', 'cash-movements.export', 'financial-closes.view', 'financial-closes.confirm', 'loans.view', 'loans.assigned.view', 'loans.create', 'loans.update', 'loans.export', 'loans.status.annul', 'loans.status.uncollectible', 'loans.status.reactivate', 'loans.refinance.view', 'loans.refinance.create', 'payments.view', 'payments.create', 'payments.annul', 'payments.plan.customize', 'collection-agenda.view', 'daily-collections.assigned.view',
     ]));
     expect(Reflect.getMetadata(PERMISSIONS_KEY, CustomerController.prototype.list)).toEqual(['customers.view']);
     expect(Reflect.getMetadata(PERMISSIONS_KEY, CustomerController.prototype.summary)).toEqual(['customers.summary.view']);
@@ -109,8 +109,18 @@ describe('security guards and permission metadata', () => {
       'customers.site.view',
       'customers.site.capture',
       'customers.site.replace',
+      'loans.assigned.view',
+      'collectors.financial-summary.view',
+      'daily-collections.assigned.view',
       'collection-agenda.view',
     ]);
+    expect(PERMISSIONS.find(([code]) => code === 'customers.view')?.[1]).toBe('Acceso global a clientes — Ver');
+    expect(PERMISSIONS.find(([code]) => code === 'customers.assigned.view')?.[1]).toBe('Ver clientes asignados');
+    expect(PERMISSIONS.find(([code]) => code === 'loans.view')?.[1]).toBe('Acceso global a préstamos — Ver');
+    expect(PERMISSIONS.find(([code]) => code === 'loans.assigned.view')?.[1]).toBe('Ver préstamos asignados');
+    expect(PERMISSIONS.find(([code]) => code === 'collectors.financial-summary.view')?.[1]).toBe('Ver mi resumen financiero');
+    expect(PERMISSIONS.find(([code]) => code === 'daily-collections.assigned.view')?.[1]).toBe('Ver cobros del día asignados');
+    expect(PERMISSIONS.find(([code]) => code === 'collection-agenda.view')?.[1]).toBe('Ver agenda de cobros');
   });
 
   it('protects the loan edit route with the existing dynamic loans.update permission', () => {

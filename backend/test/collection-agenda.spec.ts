@@ -290,7 +290,7 @@ describe('collection agenda HTTP registration', () => {
     expect(Reflect.getMetadata(METHOD_METADATA, handler)).toBe(RequestMethod.GET);
     expect(Reflect.getMetadata(PERMISSIONS_KEY, handler)).toEqual(['collection-agenda.view']);
     expect(PERMISSIONS.filter(([code]) => code === 'collection-agenda.view')).toEqual([
-      ['collection-agenda.view', 'Consultar agenda de cobros', 'COBRANZAS'],
+      ['collection-agenda.view', 'Ver agenda de cobros', 'COBRANZAS'],
     ]);
     expect(COLLECTION_MANAGER_DEFAULTS).not.toContain('collection-agenda.view');
     expect(COLLECTOR_DEFAULTS).toContain('collection-agenda.view');

@@ -9,7 +9,7 @@ import { MoneyInput } from '../components/MoneyInput';
 import { PaymentPlanEditorDialog } from '../components/PaymentPlanEditorDialog';
 import { PaymentPlanDraftFields } from '../components/PaymentPlanDraftFields';
 import { TableActions, type TableAction } from '../components/TableActions';
-import { localDateOnly, paymentTimeline, persistPlanAndRefresh, planBaselineFromContext, planDraftFromEntries, orderedPlanDraft, planSaveAttempt, PlanRefreshError, reviewPlanDraft, type PlanDraftEntry } from '../helpers/payment-plan';
+import { appendAutomaticPlanObligation, localDateOnly, paymentTimeline, persistPlanAndRefresh, planBaselineFromContext, planDraftFromEntries, orderedPlanDraft, planSaveAttempt, PlanRefreshError, reviewPlanDraft, type PlanDraftEntry } from '../helpers/payment-plan';
 import { canAccess } from '../hooks/auth-permissions';
 import { loadActivePaymentContext, paymentLoanIdFromSearch } from '../helpers/payment-loan-link';
 import type { AuthIdentity } from '../../domain/entities/auth';
@@ -21,11 +21,13 @@ const context: PaymentContext = {
   summary: { loanId: 'loan-1', loanNumber: '7', status: 'ACTIVE', identification: '101', customerName: 'Ana', totalAmount: '100.00', principal: '70.00', interestAmount: '30.00' },
   balances: { financialBalance: '60.00', outstandingPrincipal: '30.00', outstandingInterest: '30.00' },
   combinedPlan: [{ id: 'entry', sequence: 2, dueDate: '2020-01-01', pendingAmount: '60.00' }],
+  protectedPlanEntryIds: [],
   validPayments: [{ id: 'payment', paymentDate: '2020-01-02', amount: '40.00', status: 'VALID' }],
   firstOperationalRow: { id: 'entry', sequence: 2, dueDate: '2020-01-01', pendingAmount: '60.00' },
   lastValidPayment: { id: 'payment', paymentDate: '2020-01-02', amount: '40.00', status: 'VALID' },
   refinanceEligibility: true,
   preferredMethod: { id: 'cash', activeMethods: [{ id: 'cash', name: 'Efectivo' }, { id: 'card', name: 'Tarjeta' }], collectors: [{ id: 'collector-1', name: 'María' }] },
+  paymentFrequency: { intervalUnit: 'WEEK', intervalValue: 1 },
 };
 const noop = vi.fn();
 const elements = (node: ReactNode): ReactElement[] => Array.isArray(node)
@@ -42,10 +44,10 @@ describe('payment selection presentation', () => {
   });
   const dialog = (options: Partial<Parameters<typeof PaymentLoanDialog>[0]> = {}) => renderToStaticMarkup(<PaymentLoanDialog {...dialogProps(options)} />);
   const selectedProps = (options: Partial<Parameters<typeof SelectedPaymentDetails>[0]> = {}): Parameters<typeof SelectedPaymentDetails>[0] => ({
-    context, canCreate: true, canCustomize: false, canAnnul: false, canExport: false, annulBusy: false, downloadBusy: false, onPay: noop, onCustomize: noop, onAnnul: noop, onDownload: noop,
+    context, canCreate: true, canCustomize: false, canAnnul: false, canExport: false, canRefinance: true, annulBusy: false, downloadBusy: false, onPay: noop, onCustomize: noop, onAnnul: noop, onDownload: noop,
     onChangeLoan: noop, onCloseLoan: noop, triggerRef: createRef<HTMLButtonElement>(), paymentTriggerRef: createRef<HTMLButtonElement>(), planTriggerRef: createRef<HTMLButtonElement>(), annulTriggerRef: createRef<HTMLButtonElement>(), ...options,
   });
-  const selected = (options: Partial<Parameters<typeof SelectedPaymentDetails>[0]> = {}) => renderToStaticMarkup(<SelectedPaymentDetails {...selectedProps(options)} />);
+  const selected = (options: Partial<Parameters<typeof SelectedPaymentDetails>[0]> = {}) => renderToStaticMarkup(<MemoryRouter><SelectedPaymentDetails {...selectedProps(options)} /></MemoryRouter>);
   const captureProps = (options: Partial<Parameters<typeof PaymentCaptureDialog>[0]> = {}): Parameters<typeof PaymentCaptureDialog>[0] => ({
     context, entry: context.firstOperationalRow!, visibleNumber: 2, amount: '60.00', paymentDate: '2020-01-01', methodId: 'cash', collectorId: '', busy: false, error: '',
     onAmount: noop, onDate: noop, onMethod: noop, onCollector: noop, onSubmit: noop, onClose: noop,
@@ -103,6 +105,15 @@ describe('payment selection presentation', () => {
     expect(allowed({ ...user, permissions: ['loans.export', 'loans.view'] })).toBe(true);
     expect(allowed({ ...user, role: { ...user.role, isSuperAdmin: true } })).toBe(true);
     expect(selected({ canExport: true })).toContain('aria-label="Descargar plan de pago"');
+  });
+
+  it('shows refinancing before the existing loan actions only for eligible authorized loans', () => {
+    const markup = selected();
+    expect(markup).toMatch(/href="\/loan-refinancings\/new\?loanId=loan-1"[^>]*>.*Refinanciar<\/a>.*Cambiar préstamo.*Cerrar préstamo/);
+    expect(markup).toContain('class="lucide lucide-refresh-cw"');
+    expect(selected({ context: { ...context, refinanceEligibility: false } })).not.toContain('>Refinanciar</a>');
+    expect(selected({ canRefinance: false })).not.toContain('>Refinanciar</a>');
+
   });
 
   it('places the compact export beside plan customization without removing payment or annul actions', () => {
@@ -195,7 +206,7 @@ describe('payment selection presentation', () => {
     expect(markup).toContain('id="payment-loan-dialog-title">Seleccionar préstamo activo</h2>');
     expect(markup).toContain('placeholder="N.º préstamo, identificación, nombre o teléfono"');
     expect([...markup.matchAll(/<th>(.*?)<\/th>/g)].map((match) => match[1])).toEqual(['N°', 'Identificación', 'Cliente', 'Saldo pendiente', 'Condición', 'Acción']);
-    expect(markup).toContain('<td>#7</td><td>101</td><td>Ana</td><td>₡60.000,00</td>');
+    expect(markup).toContain('<td>#7</td><td>101</td><td>Ana</td><td>₡60.000</td>');
     expect(markup).toContain('payment-loan-dialog__late">Con atraso</span>');
     expect(dialog({ loans: [{ ...loan, isOverdue: false }] })).toContain('status-badge--active">Al día</span>');
     expect(markup).toContain('aria-label="Seleccionar préstamo 7">Seleccionar</button>');
@@ -251,7 +262,7 @@ describe('payment selection presentation', () => {
     const markup = dialog({ retainRowsOnError: true, error: 'No fue posible actualizar la lista.' });
     expect(markup).toContain('role="alert">No fue posible actualizar la lista.');
     expect(markup).toContain('value="Ana"');
-    expect(markup).toContain('₡60.000,00');
+    expect(markup).toContain('₡60.000');
     expect(markup).toContain('>Con atraso</span>');
     expect(markup).toContain('Página 2 de 2 · 21 préstamos');
     expect(markup).not.toMatch(/aria-label="Refrescar préstamos"[^>]*disabled/);
@@ -333,7 +344,7 @@ describe('payment selection presentation', () => {
     expect(markup).toContain('value="Ana"');
     expect(markup).toContain('Identificación');
     expect(markup).toContain('Saldo pendiente');
-    expect(markup).toContain('60.00');
+    expect(markup).toContain('₡60');
     expect(markup).toContain('Con atraso');
     expect(selector({ loans: [{ ...loan, isOverdue: false }] })).toContain('Al día');
     expect(markup).toContain('Seleccionar préstamo 7');
@@ -366,10 +377,10 @@ describe('payment selection presentation', () => {
     const props = { context, canCreate: true, amount: '', methodId: 'cash', collectorId: '', busy: false, onAmount: noop, onMethod: noop, onCollector: noop, onSubmit: noop };
     const markup = renderToStaticMarkup(<PaymentDetails {...props} />);
     expect(markup).toContain('Ana');
-    expect(markup).toContain('Capital pendiente (valor actual): 30.00');
-    expect(markup).toContain('Interés pendiente: 30.00');
-    expect(markup).toContain('Cuota vencida: 60.00');
-    expect(markup).toContain('Pago válido: 40.00');
+    expect(markup).toContain('Capital pendiente (valor actual): ₡30');
+    expect(markup).toContain('Interés pendiente: ₡30');
+    expect(markup).toContain('Cuota vencida: ₡60');
+    expect(markup).toContain('Pago válido: ₡40');
     expect(markup).toContain('Efectivo');
     expect(markup).toContain('Elegible para refinanciar: Sí');
     expect(renderToStaticMarkup(<PaymentDetails {...props} context={{ ...context, validPayments: [], combinedPlan: [], firstOperationalRow: null, lastValidPayment: null }} canCreate={false} />)).toContain('No hay pagos válidos ni cuotas pendientes');
@@ -381,14 +392,14 @@ describe('payment selection presentation', () => {
     expect(markup).toContain('Préstamo #7');
     expect(markup).not.toContain('Préstamo #loan-1');
     expect(markup).toContain('<dt>Próximo vencimiento</dt><dd>01/01/2020</dd>');
-    expect(markup).toContain('<dt>Capital pendiente</dt><dd>₡12.500,00</dd>');
-    expect(markup).toContain('<dt>Interés pendiente</dt><dd>₡20.000,00</dd>');
-    expect(markup).toContain('<dt>Saldo pendiente</dt><dd>₡32.500,00</dd>');
+    expect(markup).toContain('<dt>Capital pendiente</dt><dd>₡12.500</dd>');
+    expect(markup).toContain('<dt>Interés pendiente</dt><dd>₡20.000</dd>');
+    expect(markup).toContain('<dt>Saldo pendiente</dt><dd>₡32.500</dd>');
     expect(markup).toContain('>Con atraso</span>');
     expect(markup).toContain('>APTO</span>');
     expect(markup).toContain('>Cambiar préstamo</button>');
     expect(markup).toContain('>Cerrar préstamo</button>');
-    expect(markup).not.toMatch(/Personalizar plan|Estado de cuenta|Refinanciar/);
+    expect(markup).not.toMatch(/Personalizar plan|Estado de cuenta/);
 
     const empty = selected({ context: { ...context, balances: { outstandingPrincipal: '', outstandingInterest: '', financialBalance: '' }, combinedPlan: [], firstOperationalRow: null, validPayments: [], lastValidPayment: null, refinanceEligibility: false } });
     expect(empty).toContain('<dt>Próximo vencimiento</dt><dd>—</dd>');
@@ -397,6 +408,7 @@ describe('payment selection presentation', () => {
     expect(empty).toContain('<dt>Saldo pendiente</dt><dd>—</dd>');
     expect(empty).toContain('>Al día</span>');
     expect(empty).toContain('>NO APTO</span>');
+    expect(empty).not.toContain('>Refinanciar</a>');
     expect(empty).toContain('No hay pagos válidos ni cuotas pendientes.');
   });
 
@@ -406,19 +418,19 @@ describe('payment selection presentation', () => {
     const rows = body.match(/<tr>.*?<\/tr>/g) ?? [];
     expect([...markup.matchAll(/<th scope="col">(.*?)<\/th>/g)].map((match) => match[1])).toEqual(['N.º', 'Fecha', 'Monto pendiente', 'Monto pagado', 'Estado', 'Acción']);
     expect(rows).toHaveLength(3);
-    expect(rows[0]).toContain('<td>1</td><td>01/01/2020</td><td>₡60,00</td><td>—</td>');
+    expect(rows[0]).toContain('<td>1</td><td>01/01/2020</td><td>₡60</td><td>—</td>');
     expect(rows[0]).toContain('>VENCIDA</span>');
     expect(rows[0]).toContain('aria-label="Pagar cuota 1"');
     expect(rows[0]).toContain('title="Pagar cuota 1"');
     expect(body.match(/aria-label="Pagar cuota/g)).toHaveLength(1);
-    expect(rows[1]).toContain('<td>2</td><td>02/01/2020</td><td>—</td><td>₡40,00</td>');
+    expect(rows[1]).toContain('<td>2</td><td>02/01/2020</td><td>—</td><td>₡40</td>');
     expect(rows[1]).toContain('>PAGADA</span>');
     expect(rows[1]).not.toContain('Pagar cuota');
     expect(rows[2]).toContain('<td>3</td><td>31/12/9999</td><td>₡12,50</td><td>—</td>');
     expect(rows[2]).toContain('>PENDIENTE</span>');
     expect(rows[2]).not.toContain('Pagar cuota');
     expect(markup).toContain('<summary>Pagos válidos</summary>');
-    expect(markup).toContain('02/01/2020 · Pago válido: ₡40,00');
+    expect(markup).toContain('02/01/2020 · Pago válido: ₡40');
     expect(selected({ canCreate: false })).not.toContain('Pagar cuota');
     expect(selected({ canCustomize: true })).toContain('>Personalizar plan</button>');
     expect(selected({ canCustomize: false })).not.toContain('Personalizar plan');
@@ -473,8 +485,8 @@ describe('payment selection presentation', () => {
     const markup = selected({ context: projected });
     const rows = markup.split('<tbody>')[1].split('</tbody>')[0].match(/<tr>.*?<\/tr>/g) ?? [];
     expect(rows).toHaveLength(2);
-    expect(rows[0]).toContain('<td>1</td><td>01/01/2026</td><td>—</td><td>₡120.000,00</td>');
-    expect(rows[1]).toContain('<td>2</td><td>02/01/2026</td><td>₡60.000,00</td><td>—</td>');
+    expect(rows[0]).toContain('<td>1</td><td>01/01/2026</td><td>—</td><td>₡120.000</td>');
+    expect(rows[1]).toContain('<td>2</td><td>02/01/2026</td><td>₡60.000</td><td>—</td>');
     expect(rows[1]).toContain('aria-label="Pagar cuota 2"');
     expect(markup).not.toContain('zero-a');
   });
@@ -501,7 +513,7 @@ describe('payment selection presentation', () => {
       ...context.validPayments, { id: 'annulled', amount: '999.00', paymentDate: '2019-01-01', status: 'ANNULLED' },
     ] } as unknown as PaymentContext;
     expect(paymentTimeline(unexpected).map((row) => row.id)).toEqual(['entry', 'payment']);
-    expect(selected({ context: unexpected }).split('<tbody>')[1].split('</tbody>')[0]).not.toContain('₡999,00');
+    expect(selected({ context: unexpected }).split('<tbody>')[1].split('</tbody>')[0]).not.toContain('₡999');
   });
 
   it('renders a compact capture dialog with only four editable fields and no unsupported date minimum', () => {
@@ -509,7 +521,7 @@ describe('payment selection presentation', () => {
     expect(markup).toContain('role="dialog" aria-modal="true" aria-labelledby="payment-capture-title"');
     expect(markup).toContain('Cuota operativa N.º 2');
     expect(markup).toContain('Vencimiento: 01/01/2020');
-    expect(markup).toContain('Pendiente: ₡60,00');
+    expect(markup).toContain('Pendiente: ₡60');
     expect(markup).toContain('Fecha del pago');
     const dateInput = markup.match(/<input[^>]*type="date"[^>]*>/)?.[0];
     expect(dateInput).toContain('value="2020-01-01"');
@@ -563,7 +575,7 @@ describe('payment selection presentation', () => {
     const largerBalance = { ...context, balances: { ...context.balances, financialBalance: '100.00' } };
     const edited = paymentCapturePayload(largerBalance, { amount: '₡75,5', paymentDate: '2026-09-28', methodId: 'card', collectorId: 'collector-1' }, '2026-09-28');
     expect(edited).toEqual({ loanId: 'loan-1', paymentDate: '2026-09-28', amount: '75.50', methodId: 'card', collectorId: 'collector-1' });
-    const partial = paymentCapturePayload(context, { amount: '₡25,00', paymentDate: '2020-01-01', methodId: 'cash', collectorId: 'collector-1' }, '2026-09-28');
+    const partial = paymentCapturePayload(context, { amount: '₡25', paymentDate: '2020-01-01', methodId: 'cash', collectorId: 'collector-1' }, '2026-09-28');
     expect(partial).toEqual({ loanId: 'loan-1', paymentDate: '2020-01-01', amount: '25.00', methodId: 'cash', collectorId: 'collector-1' });
     const withoutCollector = paymentCapturePayload(context, { amount: '₡12,5', paymentDate: '2020-01-01', methodId: 'cash', collectorId: '' }, '2026-09-28');
     expect(withoutCollector).toBeNull();
@@ -589,11 +601,11 @@ describe('payment selection presentation', () => {
     const markup = selected({ context: ordered, canAnnul: true });
     const rows = markup.split('<tbody>')[1].split('</tbody>')[0].match(/<tr>.*?<\/tr>/g) ?? [];
     expect(rows[0]).toContain('Pagar cuota 1');
-    expect(rows[1]).toContain('aria-label="Anular pago del 02/01/2020 por ₡30,00 del préstamo 7"');
+    expect(rows[1]).toContain('aria-label="Anular pago del 02/01/2020 por ₡30 del préstamo 7"');
     expect(rows[1]).toContain('title="Anular último pago válido"');
     expect(rows[2]).not.toContain('Anular pago');
     expect(markup.match(/title="Anular último pago válido"/g)).toHaveLength(1);
-    expect(markup).toContain('Último pago válido: 02/01/2020 · ₡30,00');
+    expect(markup).toContain('Último pago válido: 02/01/2020 · ₡30');
     expect(markup.split('<summary>Pagos válidos</summary>')[1]).not.toContain('title="Anular');
     const onAnnul = vi.fn();
     const tree = elements(SelectedPaymentDetails(selectedProps({ context: ordered, canAnnul: true, onAnnul })));
@@ -629,7 +641,7 @@ describe('payment selection presentation', () => {
     expect(markup).toContain('role="dialog" aria-modal="true" aria-labelledby="payment-annul-title"');
     expect(markup).toContain('Préstamo #7 · Ana');
     expect(markup).toContain('Fecha del pago: 02/01/2020');
-    expect(markup).toContain('Monto: ₡40,00');
+    expect(markup).toContain('Monto: ₡40');
     expect(markup).toContain('anula el pago y recalcula el saldo y el plan de pagos. No elimina el registro.');
     expect(markup).toContain('Motivo<textarea id="payment-annul-reason"');
     expect(markup).toContain('required=""');
@@ -736,6 +748,40 @@ describe('payment plan editor', () => {
     expect(draft[0]).toEqual({ key: 'old-a', id: 'old-a', dueDate: '2026-11-02', pendingAmount: '40.00' });
   });
 
+  it.each([
+    [{ intervalUnit: 'DAY' as const, intervalValue: 7 }, '2026-10-08'],
+    [{ intervalUnit: 'DAY' as const, intervalValue: 14 }, '2026-10-15'],
+    [{ intervalUnit: 'MONTH' as const, intervalValue: 1 }, '2026-11-02'],
+  ])('adds the next obligation from the latest date using catalog frequency %o', (frequency, expected) => {
+    const original = [{ key: 'existing', id: 'existing', dueDate: '2026-10-01', pendingAmount: '100.00' }];
+    expect(appendAutomaticPlanObligation(original, frequency, () => 'new')).toEqual([
+      original[0],
+      { key: 'new', id: null, dueDate: expected, pendingAmount: '' },
+    ]);
+    expect(original).toEqual([{ key: 'existing', id: 'existing', dueDate: '2026-10-01', pendingAmount: '100.00' }]);
+  });
+
+  it('moves Sunday to Monday and uses each appended date as the next click anchor', () => {
+    let current: PlanDraftEntry[] = [{ key: 'existing', id: 'existing', dueDate: '2026-10-03', pendingAmount: '100.00' }];
+    current = appendAutomaticPlanObligation(current, { intervalUnit: 'DAY', intervalValue: 1 }, () => 'new-1');
+    current = appendAutomaticPlanObligation(current, { intervalUnit: 'DAY', intervalValue: 1 }, () => 'new-2');
+    expect(current.map((entry) => entry.dueDate)).toEqual(['2026-10-03', '2026-10-05', '2026-10-06']);
+  });
+
+  it('cascades occupied-date collisions without changing existing protected obligations', () => {
+    const original = [
+      { key: 'sunday', id: 'sunday', dueDate: '2026-10-04', pendingAmount: '40.00' },
+      { key: 'monday', id: 'monday', dueDate: '2026-10-05', pendingAmount: '60.00' },
+    ];
+    const appended = appendAutomaticPlanObligation(original, { intervalUnit: 'DAY', intervalValue: 1 }, () => 'new');
+    expect(appended.at(-1)).toEqual({ key: 'new', id: null, dueDate: '2026-10-07', pendingAmount: '' });
+    expect(appended.slice(0, -1)).toEqual(original);
+    expect(original.map(({ id, dueDate, pendingAmount }) => ({ id, dueDate, pendingAmount }))).toEqual([
+      { id: 'sunday', dueDate: '2026-10-04', pendingAmount: '40.00' },
+      { id: 'monday', dueDate: '2026-10-05', pendingAmount: '60.00' },
+    ]);
+  });
+
   it('captures an immutable positive-only opening baseline independently from editable and refreshed drafts', () => {
     const opening = { ...context, combinedPlan: [...context.combinedPlan.map((entry) => ({ ...entry })), { id: 'old', sequence: 3, dueDate: '2020-01-02', pendingAmount: '0.00' }] };
     const base = planBaselineFromContext(opening);
@@ -787,12 +833,79 @@ describe('payment plan editor', () => {
     expect(markup).not.toMatch(/\smax=/);
     expect(markup).not.toMatch(/\smin=/);
     expect(markup).toContain('title="Eliminar obligación"');
-    expect(markup).toContain('₡100,00');
-    expect(markup).toContain('₡0,00');
+    expect(markup).toContain('₡100');
+    expect(markup).toContain('₡0');
     expect(markup).toContain('role="alert">El servidor rechazó el plan.');
     expect(markup).toContain('>Guardar plan</button>');
     expect(renderToStaticMarkup(<PaymentPlanEditorDialog {...props({ balance: '100.01' })} />)).toContain('disabled="">Guardar plan');
     expect(renderToStaticMarkup(<PaymentPlanEditorDialog {...props({ balance: '99.99' })} />)).toContain('-₡0,01');
+  });
+
+  it('allows only a date change on the last opening protected 130000 obligation', () => {
+    const protectedDraft = [{ key: '4376-entry', id: '4376-entry', dueDate: '2026-09-01', pendingAmount: '130000.00' }];
+    const onChange = vi.fn();
+    const dialog = PaymentPlanEditorDialog(props({
+      draft: protectedDraft,
+      balance: '130000.00',
+      protectedEntryIds: ['4376-entry'],
+      reschedulableProtectedEntryId: '4376-entry',
+      onChange,
+    }));
+    const fields = elements(PaymentPlanDraftFields(elements(dialog).find((element) => element.type === PaymentPlanDraftFields)!.props as Parameters<typeof PaymentPlanDraftFields>[0]));
+    const date = fields.find((element) => element.type === 'input')!;
+    const amount = fields.find((element) => element.type === MoneyInput)!;
+    const remove = fields.find((element) => element.type === TableActions)!.props as { actions: TableAction[] };
+    expect((date.props as { disabled?: boolean }).disabled).toBe(false);
+    expect((amount.props as { disabled?: boolean }).disabled).toBe(true);
+    expect(remove.actions[0].disabled).toBe(true);
+    (date.props as { onChange: (event: ChangeEvent<HTMLInputElement>) => void }).onChange({ target: { value: '2026-10-10' } } as ChangeEvent<HTMLInputElement>);
+    expect(onChange).toHaveBeenCalledWith([{ ...protectedDraft[0], dueDate: '2026-10-10' }]);
+    const changed = renderToStaticMarkup(<PaymentPlanEditorDialog {...props({
+      draft: [{ ...protectedDraft[0], dueDate: '2026-10-10' }],
+      balance: '130000.00',
+      protectedEntryIds: ['4376-entry'],
+      reschedulableProtectedEntryId: '4376-entry',
+    })} />);
+    expect(changed).not.toMatch(/disabled="">Guardar plan/);
+  });
+
+  it('locks dates on earlier protected rows using the opening last positive ID, not draft order', () => {
+    const reordered = [
+      { key: 'protected-earlier', id: 'protected-earlier', dueDate: '2026-12-01', pendingAmount: '40.00' },
+      { key: 'protected-opening-last', id: 'protected-opening-last', dueDate: '2026-10-10', pendingAmount: '60.00' },
+    ];
+    const fields = elements(PaymentPlanDraftFields({
+      ...props(), draft: reordered, protectedEntryIds: ['protected-earlier', 'protected-opening-last'],
+      reschedulableProtectedEntryId: 'protected-opening-last',
+    }));
+    const dates = fields.filter((element) => element.type === 'input');
+    const byLabel = (label: string) => dates.find((element) => (element.props as { 'aria-label'?: string })['aria-label'] === label)!;
+    expect((byLabel('Fecha de la obligación 1').props as { disabled?: boolean }).disabled).toBe(false);
+    expect((byLabel('Fecha de la obligación 2').props as { disabled?: boolean }).disabled).toBe(true);
+  });
+
+  it('keeps Sunday and duplicate dates blocked for the reschedulable protected row', () => {
+    const options = { protectedEntryIds: ['protected-last'], reschedulableProtectedEntryId: 'protected-last' };
+    const sunday = [{ key: 'protected-last', id: 'protected-last', dueDate: '2026-10-11', pendingAmount: '100.00' }];
+    expect(reviewPlanDraft('100.00', sunday, options)).toMatchObject({ dateIssue: 'sunday', canSave: false });
+    expect(renderToStaticMarkup(<PaymentPlanEditorDialog {...props({ draft: sunday, ...options })} />)).toContain('disabled="">Guardar plan');
+    const duplicate = [
+      { key: 'unprotected', id: 'unprotected', dueDate: '2026-10-10', pendingAmount: '40.00' },
+      { key: 'protected-last', id: 'protected-last', dueDate: '2026-10-10', pendingAmount: '60.00' },
+    ];
+    expect(reviewPlanDraft('100.00', duplicate, options)).toMatchObject({ dateIssue: 'duplicate', canSave: false });
+    expect(renderToStaticMarkup(<PaymentPlanEditorDialog {...props({ draft: duplicate, ...options })} />)).toContain('disabled="">Guardar plan');
+  });
+
+  it('leaves unprotected and ANNULLED/not-listed plan IDs fully editable', () => {
+    const editable = [
+      { key: 'unprotected', id: 'unprotected', dueDate: '2026-10-10', pendingAmount: '40.00' },
+      { key: 'annulled-not-listed', id: 'annulled-not-listed', dueDate: '2026-10-12', pendingAmount: '60.00' },
+    ];
+    const fields = elements(PaymentPlanDraftFields({ ...props(), draft: editable, protectedEntryIds: ['different-protected-id'] }));
+    expect(fields.filter((element) => element.type === 'input').every((element) => !(element.props as { disabled?: boolean }).disabled)).toBe(true);
+    expect(fields.filter((element) => element.type === MoneyInput).every((element) => !(element.props as { disabled?: boolean }).disabled)).toBe(true);
+    expect(fields.filter((element) => element.type === TableActions).every((element) => !((element.props as { actions: TableAction[] }).actions[0].disabled))).toBe(true);
   });
 
   it('updates by local key, removes only the chosen row, and cannot submit invalid or busy plans', () => {

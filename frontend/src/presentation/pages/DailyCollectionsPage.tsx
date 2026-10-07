@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactElement, type ReactNode } from 'react';
-import { createDailyCollections } from '../../app/daily-collections';
+import { createAssignedDailyCollections, createDailyCollections } from '../../app/daily-collections';
 import { DailyCollectionsController, type DailyCollectionsState } from '../../application/use-cases/daily-collections-controller';
 import type { DailyDueItem, DailyReceivedItem } from '../../domain/entities/daily-collections';
-import type { PlanBaseline } from '../../infrastructure/api/payment.api';
+import type { PaymentContext, PlanBaseline } from '../../infrastructure/api/payment.api';
 import { costaRicaDateOnly, formatDateOnlyForDisplay } from '../../shared/utils/date';
 import { formatCRCAggregate } from '../../shared/utils/money';
 import { PaymentPlanEditorDialog } from '../components/PaymentPlanEditorDialog';
@@ -11,13 +11,13 @@ import { Icon } from '../components/layout/Icon';
 import { useAuth } from '../hooks/auth-context';
 import { downloadDailyPlan, saveDailyPlan } from '../helpers/daily-collections-operations';
 import { loadActivePaymentContext } from '../helpers/payment-loan-link';
-import { planBaselineFromContext, planDraftFromEntries, planSaveAttempt, reviewPlanDraft,
+import { appendAutomaticPlanObligation, planBaselineFromContext, planDraftFromEntries, planSaveAttempt, reviewPlanDraft,
   type PlanDraftEntry } from '../helpers/payment-plan';
 
-type PlanSession = { loanId: string; base: PlanBaseline; draft: PlanDraftEntry[]; busy: boolean; error: string };
+type PlanSession = { loanId: string; base: PlanBaseline; draft: PlanDraftEntry[]; paymentFrequency: PaymentContext['paymentFrequency']; busy: boolean; error: string };
 const message = (cause: unknown) => cause instanceof Error ? cause.message : 'No se pudo completar la operación.';
 
-export function DailyCollectionsPage({ controller: supplied }: { controller?: DailyCollectionsController } = {}): ReactElement {
+export function DailyCollectionsPage({ controller: supplied, assigned = false }: { controller?: DailyCollectionsController; assigned?: boolean } = {}): ReactElement {
   const { can } = useAuth();
   const [controller] = useState(() => supplied ?? createDailyCollections());
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
@@ -39,7 +39,7 @@ export function DailyCollectionsPage({ controller: supplied }: { controller?: Da
       const context = await loadActivePaymentContext(loanId, () => token === openToken.current);
       if (!context) return;
       planAttempt.current = null;
-      setPlan({ loanId, base: planBaselineFromContext(context), draft: planDraftFromEntries(context.combinedPlan), busy: false, error: '' });
+      setPlan({ loanId, base: planBaselineFromContext(context), draft: planDraftFromEntries(context.combinedPlan), paymentFrequency: context.paymentFrequency, busy: false, error: '' });
     } catch (cause) { if (token === openToken.current) setActionError(message(cause)); }
   };
   const closePlan = () => { if (planLocked.current) return; ++openToken.current; planAttempt.current = null; setPlan(null); };
@@ -61,14 +61,19 @@ export function DailyCollectionsPage({ controller: supplied }: { controller?: Da
     try { await downloadDailyPlan(loanId); }
     catch (cause) { setActionError(message(cause)); }
   };
-  return <DailyCollectionsView state={state} controller={controller} can={can} onCustomize={(id) => { void openPlan(id); }}
+  return <DailyCollectionsView state={state} controller={controller} can={can} assigned={assigned} onCustomize={(id) => { void openPlan(id); }}
     onPrint={(id) => { void download(id); }} actionError={actionError} success={success}>
-    {plan && can('payments.plan.customize') && <PaymentPlanEditorDialog draft={plan.draft} balance={plan.base.financialBalance}
+    {!assigned && plan && can('payments.plan.customize') && <PaymentPlanEditorDialog draft={plan.draft} balance={plan.base.financialBalance}
       busy={plan.busy} error={plan.error} onChange={(draft) => setPlan((current) => current ? { ...current, draft, error: '' } : null)}
-      onAdd={() => setPlan((current) => current ? { ...current, draft: [...current.draft,
-        { key: crypto.randomUUID(), id: null, dueDate: costaRicaDateOnly(), pendingAmount: '' }], error: '' } : null)}
+      onAdd={() => setPlan((current) => current ? { ...current,
+        draft: appendAutomaticPlanObligation(current.draft, current.paymentFrequency), error: '' } : null)}
       onSave={() => { void savePlan(); }} onClose={closePlan} dialogRef={dialogRef} dateRef={dateRef} />}
   </DailyCollectionsView>;
+}
+
+export function CollectorDailyCollectionsPage(): ReactElement {
+  const [controller] = useState(createAssignedDailyCollections);
+  return <DailyCollectionsPage controller={controller} assigned />;
 }
 
 function Pager({ section, total, page, pageSize, onPage }: { section: string; total: number; page: number; pageSize: number;
@@ -82,9 +87,9 @@ function Pager({ section, total, page, pageSize, onPage }: { section: string; to
 }
 
 export function DailyCollectionsView({ state, controller, can, onCustomize, onPrint, actionError = '', success = '',
-  today = costaRicaDateOnly(), children }: { state: DailyCollectionsState; controller: DailyCollectionsController;
+  today = costaRicaDateOnly(), assigned = false, children }: { state: DailyCollectionsState; controller: DailyCollectionsController;
   can: (permission: string) => boolean; onCustomize: (id: string) => void; onPrint: (id: string) => void;
-  actionError?: string; success?: string; today?: string; children?: ReactNode }): ReactElement {
+  actionError?: string; success?: string; today?: string; assigned?: boolean; children?: ReactNode }): ReactElement {
   const metrics = [
     { label: 'POR COBRAR', value: state.summary?.dueCount.toLocaleString('es-CR') },
     { label: 'PAGARON', value: state.summary?.paidLoansCount.toLocaleString('es-CR') },
@@ -92,20 +97,21 @@ export function DailyCollectionsView({ state, controller, can, onCustomize, onPr
     { label: 'MONTO RECIBIDO', value: state.summary && formatCRCAggregate(state.summary.receivedAmount) },
   ];
   return <section className="page-section loan-list loan-management daily-collections" aria-labelledby="daily-collections-title">
-    <div className="loan-list__heading"><div><span className="eyebrow">PAGOS</span><h1 id="daily-collections-title">Cobros del día</h1>
+    <div className="loan-list__heading"><div><span className="eyebrow">PAGOS</span><h1 id="daily-collections-title">{assigned ? 'Mis cobros del día' : 'Cobros del día'}</h1>
       <p>Consulta de obligaciones por cobrar y pagos recibidos.</p></div>
       <button className="button button--secondary loan-management__refresh" type="button" aria-label="Actualizar cobros"
         aria-busy={state.refreshing} disabled={state.loading || state.refreshing} onClick={() => { void controller.load(); }}>
         <Icon name="reverse" />Actualizar
       </button></div>
-    <div className="daily-collections__date-bar" aria-label="Fecha operativa">
+    {!assigned && <div className="daily-collections__date-bar" aria-label="Fecha operativa">
       <button className="button button--secondary" type="button" onClick={() => controller.previous()}>Día anterior</button>
       <label htmlFor="daily-collections-date">Fecha <input id="daily-collections-date" type="date" value={state.date}
         onChange={(event) => controller.setDate(event.target.value)} /></label>
       <span>{formatDateOnlyForDisplay(state.date)}</span>
       <button className="button button--secondary" type="button" disabled={state.date === today} onClick={() => controller.resetToday()}>Hoy</button>
       <button className="button button--secondary" type="button" onClick={() => controller.next()}>Día siguiente</button>
-    </div>
+    </div>}
+    {assigned && <p className="daily-collections__current-date">Hoy · {formatDateOnlyForDisplay(state.date)}</p>}
     {state.loading && <p role="status">Cargando cobros del día…</p>}
     {state.refreshing && <p role="status">Actualizando cobros del día…</p>}
     {actionError && <p role="alert">{actionError}</p>}{success && <p role="status">{success}</p>}
@@ -126,13 +132,13 @@ export function DailyCollectionsView({ state, controller, can, onCustomize, onPr
               <td>#{row.loan.loanNumber}</td><td>{row.sequence}</td><td>{formatDateOnlyForDisplay(row.dueDate)}</td>
               <td className="loan-list__numeric">{formatCRCAggregate(row.pendingAmount)}</td>
               <td className="loan-list__actions"><TableActions ariaLabel={`Acciones de cuota ${row.sequence} del préstamo ${row.loan.loanNumber}`} actions={[
-                ...(can('loans.view') ? [{ key: 'view', icon: 'view' as const, label: 'Ver', title: 'Ver información del préstamo',
-                  ariaLabel: `Ver préstamo ${row.loan.loanNumber}`, to: `/loans/${encodeURIComponent(row.loan.id)}` }] : []),
-                ...(can('payments.view') && can('payments.create') ? [{ key: 'pay', icon: 'payment' as const, label: 'Registrar pago', title: 'Registrar pago',
+                ...(can(assigned ? 'loans.assigned.view' : 'loans.view') ? [{ key: 'view', icon: 'view' as const, label: 'Ver', title: 'Ver información del préstamo',
+                  ariaLabel: `Ver préstamo ${row.loan.loanNumber}`, to: assigned ? `/collector/loans/${encodeURIComponent(row.loan.id)}` : `/loans/${encodeURIComponent(row.loan.id)}` }] : []),
+                ...(!assigned && can('payments.view') && can('payments.create') ? [{ key: 'pay', icon: 'payment' as const, label: 'Registrar pago', title: 'Registrar pago',
                   ariaLabel: `Registrar pago del préstamo ${row.loan.loanNumber}`, to: `/payments/new?loanId=${encodeURIComponent(row.loan.id)}` }] : []),
-                ...(can('payments.plan.customize') ? [{ key: 'plan', icon: 'edit' as const, label: 'Personalizar plan', title: 'Personalizar plan',
+                ...(!assigned && can('payments.plan.customize') ? [{ key: 'plan', icon: 'edit' as const, label: 'Personalizar plan', title: 'Personalizar plan',
                   ariaLabel: `Personalizar plan del préstamo ${row.loan.loanNumber}`, onClick: () => onCustomize(row.loan.id) }] : []),
-                ...(can('loans.view') && can('loans.export') ? [{ key: 'print', icon: 'download' as const, label: 'Imprimir plan', title: 'Imprimir plan',
+                ...(!assigned && can('loans.view') && can('loans.export') ? [{ key: 'print', icon: 'download' as const, label: 'Imprimir plan', title: 'Imprimir plan',
                   ariaLabel: `Imprimir plan del préstamo ${row.loan.loanNumber}`, onClick: () => onPrint(row.loan.id) }] : []),
               ]} /></td>
             </tr>)}</tbody></table></div>

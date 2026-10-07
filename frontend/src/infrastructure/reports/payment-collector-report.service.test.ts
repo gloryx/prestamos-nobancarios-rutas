@@ -18,7 +18,7 @@ describe('payment collector report PDF', () => {
     await generatePaymentCollectorReport(data, { fromDate: '2026-10-01', toDate: '2026-10-31', collectorId: 'collector-1', paymentMethodId: 'method-1' }, '2026-10-31');
     expect(pdf.text).toHaveBeenCalledWith('Cobros por cobrador', 10, 14);
     expect(pdf.text.mock.calls[1][0][0]).toContain('Cobrador: Ana Mora');
-    expect(pdf.autoTable.mock.calls[0][1].body[0]).toEqual(['Ana Mora', 2, 1, 1, '¢100,00', '¢80,00', '¢20,00', '¢50,00', '100.00%']);
+    expect(pdf.autoTable.mock.calls[0][1].body[0]).toEqual(['Ana Mora', 2, 1, 1, '¢100', '¢80', '¢20', '¢50', '100.00%']);
     expect(JSON.stringify(pdf.autoTable.mock.calls[0][1].body)).not.toContain('hidden-id');
     expect(pdf.save).toHaveBeenCalledWith('cobros-por-cobrador-2026-10-31.pdf');
   });

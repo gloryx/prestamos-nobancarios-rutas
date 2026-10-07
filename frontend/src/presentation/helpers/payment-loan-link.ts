@@ -1,12 +1,8 @@
 import { paymentApi, type PaymentContext } from '../../infrastructure/api/payment.api';
-
-const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+import { loanIdFromSearch } from './loan-id-query';
 
 export function paymentLoanIdFromSearch(search: string): { id: string | null; error: string | null } {
-  const values = new URLSearchParams(search).getAll('loanId');
-  if (!values.length) return { id: null, error: null };
-  if (values.length !== 1 || !uuid.test(values[0])) return { id: null, error: 'El identificador del préstamo no es válido.' };
-  return { id: values[0].toLowerCase(), error: null };
+  return loanIdFromSearch(search);
 }
 
 export function selectPaymentLoanFromDialog(

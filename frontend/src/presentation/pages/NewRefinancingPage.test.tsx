@@ -59,8 +59,8 @@ describe('refinancing origin selection', () => {
   it('uses server paging, compact actions, CRC/date formatting and resets the page when searching', async () => {
     const { api, controller, view, tree } = setup(); await controller.load();
     const html = view();
-    for (const text of ['#100', 'Ana Solís', '10203040', '01/09/2026', '₡150.000,00', '₡30.000,00',
-      '₡180.000,00', 'ACTIVO', 'Página 1 de 2 · 21 préstamos']) expect(html).toContain(text);
+    for (const text of ['#100', 'Ana Solís', '10203040', '01/09/2026', '₡150.000', '₡30.000',
+      '₡180.000', 'ACTIVO', 'Página 1 de 2 · 21 préstamos']) expect(html).toContain(text);
     const actions = tree().find((node) => node.type === TableActions)!;
     expect((actions.props as Parameters<typeof TableActions>[0]).actions.map((item) => item.key)).toEqual(['select']);
     controller.setPage(2); await controller.load();
@@ -84,11 +84,11 @@ describe('refinancing origin selection', () => {
     expect(controller.canContinue()).toBe(true);
     const html = view();
     for (const fragment of ['Préstamo #100', 'CONTRATO ACTUAL', 'PAGOS RECIBIDOS', 'SALDO PENDIENTE',
-      'Total pagado</dt><dd>₡30.000,00', 'Capital recuperado</dt><dd>₡30.000,00',
-      'Interés recuperado</dt><dd>₡0,00', 'Capital pendiente</dt><dd>₡120.000,00',
-      'Interés pendiente</dt><dd>₡30.000,00', 'Saldo financiero</dt><dd>₡150.000,00',
-      'Pagos válidos acumulados</dt><dd>₡30.000,00', 'Mínimo requerido</dt><dd>₡30.000,00',
-      'Monto faltante</dt><dd>₡0,00', 'Cumple el mínimo requerido para refinanciar.']) expect(html).toContain(fragment);
+      'Total pagado</dt><dd>₡30.000', 'Capital recuperado</dt><dd>₡30.000',
+      'Interés recuperado</dt><dd>₡0', 'Capital pendiente</dt><dd>₡120.000',
+      'Interés pendiente</dt><dd>₡30.000', 'Saldo financiero</dt><dd>₡150.000',
+      'Pagos válidos acumulados</dt><dd>₡30.000', 'Mínimo requerido</dt><dd>₡30.000',
+      'Monto faltante</dt><dd>₡0', 'Cumple el mínimo requerido para refinanciar.']) expect(html).toContain(fragment);
     expect(html).not.toMatch(/Interés cubierto|Interés pagado/);
     expect(html).toContain('disabled="" aria-label="Continuar a nuevas condiciones"');
   });
@@ -101,8 +101,8 @@ describe('refinancing origin selection', () => {
       reasonCode: 'MINIMUM_PAYMENT_NOT_MET', reasons: ['MINIMUM_PAYMENT_NOT_MET'] });
     await controller.select(loan.loanId);
     expect(controller.canContinue()).toBe(false);
-    expect(view()).toContain('Faltan ₡10.000,00 para alcanzarlo.');
-    expect(view()).toContain('Interés recuperado</dt><dd>₡0,00');
+    expect(view()).toContain('Faltan ₡10.000 para alcanzarlo.');
+    expect(view()).toContain('Interés recuperado</dt><dd>₡0');
     expect(view()).not.toContain('Cumple el mínimo requerido');
   });
 
@@ -202,10 +202,10 @@ describe('refinancing origin selection', () => {
       paymentFrequencyId: 'daily', preferredPaymentMethodId: 'cash', disbursementPaymentMethodId: 'cash', count: '3' });
     const page = () => renderToStaticMarkup(<MemoryRouter><NewRefinancingPage controller={controller} conditionsController={conditions} /></MemoryRouter>);
     const html = page();
-    for (const text of ['Nuevas condiciones y plan de pagos', 'Capital anterior pendiente', '₡120.000,00',
-      'Interés anterior pendiente capitalizado', '₡30.000,00', 'Nuevo capital contractual', '₡170.000,00',
-      'Nuevo total a pagar', '₡180.000,00', 'DESEMBOLSO REAL', '₡20.000,00',
-      '3 Cuotas programadas', '₡60.000,00', 'Volver al préstamo origen']) expect(html).toContain(text);
+    for (const text of ['Nuevas condiciones y plan de pagos', 'Capital anterior pendiente', '₡120.000',
+      'Interés anterior pendiente capitalizado', '₡30.000', 'Nuevo capital contractual', '₡170.000',
+      'Nuevo total a pagar', '₡180.000', 'DESEMBOLSO REAL', '₡20.000',
+      '3 Cuotas programadas', '₡60.000', 'Volver al préstamo origen']) expect(html).toContain(text);
     expect(html).toContain('aria-label="Continuar a confirmación"');
     expect(html).not.toContain('disabled="" aria-label="Continuar a confirmación"');
     expect(html).not.toContain('Seleccionar préstamo origen</h2>');

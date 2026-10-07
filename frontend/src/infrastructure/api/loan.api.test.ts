@@ -37,6 +37,17 @@ describe('loan list sorting', () => {
     expect(fetchMock.mock.calls[0][0]).toContain('/loans?page=2&pageSize=20&search=ana&frequencyId=frequency-1&fromDate=2026-01-01&toDate=2026-12-31&sortBy=pending&sortOrder=asc');
     fetchMock.mockRestore();
   });
+  it('uses dedicated assigned-loan list and detail endpoints', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true, status: 200, json: async () => ({ items: [], total: 0 }) } as Response);
+    try {
+      await loanApi.assignedList({ page: 2, pageSize: 20, search: 'Ana', status: 'UNCOLLECTIBLE', fromDate: '2026-01-01', sortBy: 'customer', sortOrder: 'asc' });
+      await loanApi.assignedDetail('loan/id');
+      const list = new URL(String(fetchMock.mock.calls[0][0]));
+      expect(list.pathname).toBe('/loans/assigned');
+      expect(Object.fromEntries(list.searchParams)).toEqual({ page: '2', pageSize: '20', search: 'Ana', status: 'UNCOLLECTIBLE', fromDate: '2026-01-01', sortBy: 'customer', sortOrder: 'asc' });
+      expect(new URL(String(fetchMock.mock.calls[1][0])).pathname).toBe('/loans/assigned/loan%2Fid');
+    } finally { fetchMock.mockRestore(); }
+  });
   it('passes the condition sort in both directions and returns the list-only boolean without additional requests', async () => {
     const payload = { items: [{ id: 'loan-1', isOverdue: true, pendingTotal: '60.00' }], total: 21 };
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true, status: 200, json: async () => payload } as Response);

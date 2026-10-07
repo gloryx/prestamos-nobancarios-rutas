@@ -242,18 +242,24 @@ export class PaymentContextUseCase {
     });
   }
    execute(loanId: string) {
-      return this.dataSource.query(`SELECT l.id AS "loanId", l.loan_number AS "loanNumber", l.status, c.identification, concat_ws(' ', c.first_name, c.middle_name, c.first_last_name, c.second_last_name) AS "customerName", l.total_amount AS "totalAmount", l.principal, l.interest_amount AS "interestAmount", l.preferred_payment_method_id AS "preferredMethodId", COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.loan_id = l.id AND p.status = 'VALID'), 0)::numeric(18,2)::text AS "paidAmount", COALESCE((SELECT SUM(e.pending_amount) FROM payment_plan_entries e WHERE e.loan_id = l.id AND e.pending_amount > 0), 0)::numeric(18,2)::text AS "pendingAmount" FROM loans l JOIN customers c ON c.id = l.customer_id WHERE l.id = $1`, [loanId]).then(async (summary) => {
+      return this.dataSource.query(`SELECT l.id AS "loanId", l.loan_number AS "loanNumber", l.status, c.identification, concat_ws(' ', c.first_name, c.middle_name, c.first_last_name, c.second_last_name) AS "customerName", l.total_amount AS "totalAmount", l.principal, l.interest_amount AS "interestAmount", l.preferred_payment_method_id AS "preferredMethodId", pf.interval_unit AS "intervalUnit", pf.interval_value AS "intervalValue", COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.loan_id = l.id AND p.status = 'VALID'), 0)::numeric(18,2)::text AS "paidAmount", COALESCE((SELECT SUM(e.pending_amount) FROM payment_plan_entries e WHERE e.loan_id = l.id AND e.pending_amount > 0), 0)::numeric(18,2)::text AS "pendingAmount" FROM loans l JOIN customers c ON c.id = l.customer_id JOIN payment_frequencies pf ON pf.id = l.payment_frequency_id WHERE l.id = $1`, [loanId]).then(async (summary) => {
       if (!summary[0]) throw new PaymentNotFoundError('The loan does not exist.');
        const payments = await this.dataSource.query(`SELECT id, amount, payment_date::text AS "paymentDate", status, created_at AS "createdAt" FROM payments WHERE loan_id = $1 ORDER BY payment_date, created_at, id`, [loanId]);
-       const combinedPlan = await this.dataSource.query(`SELECT id, due_date::text AS "dueDate", sequence, pending_amount AS "pendingAmount" FROM payment_plan_entries WHERE loan_id = $1 AND pending_amount > 0 ORDER BY due_date, sequence, id`, [loanId]);
-        const row = summary[0];
+       const planRows = await this.dataSource.query(`SELECT e.id, e.due_date::text AS "dueDate", e.sequence, e.pending_amount AS "pendingAmount", EXISTS (
+         SELECT 1 FROM payment_applications pa JOIN payments applied_payment ON applied_payment.id = pa.payment_id AND applied_payment.status = 'VALID'
+         WHERE pa.payment_plan_entry_id = e.id OR pa.carried_to_plan_entry_id = e.id
+       ) AS "isProtected" FROM payment_plan_entries e WHERE e.loan_id = $1 AND e.pending_amount > 0 ORDER BY e.due_date, e.sequence, e.id`, [loanId]) as Array<{ id: string; dueDate: string; sequence: number; pendingAmount: string; isProtected?: boolean }>;
+       const protectedPlanEntryIds = planRows.filter((entry) => entry.isProtected === true).map((entry) => entry.id);
+       const combinedPlan = planRows.map(({ id, dueDate, sequence, pendingAmount }) => ({ id, dueDate, sequence, pendingAmount }));
+         const row = summary[0];
+         const { intervalUnit, intervalValue, ...summaryRow } = row;
          const totals = await readPaymentTotals(this.totalsReader, this.dataSource, loanId);
         const balances = assertFinancialIntegrity(row, totals, combinedPlan.reduce((sum: bigint, entry: { pendingAmount: string }) => sum + cents(entry.pendingAmount), 0n));
        const methods = await this.dataSource.query(`SELECT id, name FROM payment_methods WHERE is_active = true ORDER BY name, id`);
         const collectors = await this.dataSource.query(`SELECT id, concat_ws(' ', first_name, first_last_name, second_last_name) AS name FROM collectors WHERE is_active = true ORDER BY name, id`);
        const preferredMethod = { id: row.preferredMethodId, activeMethods: methods, collectors };
       const projection = buildPaymentProjection(combinedPlan, payments, row.totalAmount, row.interestAmount);
-        return buildPaymentContext({ summary: { ...row, paidAmount: money(cents(totals.paidAmount)) }, balances: { financialBalance: money(balances.financialBalance), outstandingPrincipal: money(balances.outstandingPrincipal), outstandingInterest: money(balances.outstandingInterest) }, combinedPlan: projection.combinedPlan, validPayments: projection.validPayments, lastValidPayment: projection.lastValidPayment, refinanceEligibility: projection.refinanceEligibility, preferredMethod });
+          return buildPaymentContext({ summary: { ...summaryRow, paidAmount: money(cents(totals.paidAmount)) }, balances: { financialBalance: money(balances.financialBalance), outstandingPrincipal: money(balances.outstandingPrincipal), outstandingInterest: money(balances.outstandingInterest) }, combinedPlan: projection.combinedPlan, validPayments: projection.validPayments, lastValidPayment: projection.lastValidPayment, refinanceEligibility: projection.refinanceEligibility, preferredMethod, paymentFrequency: { intervalUnit, intervalValue }, protectedPlanEntryIds });
     });
   }
 }

@@ -19,7 +19,7 @@ export interface LoanManagementPort {
 const message = (cause: unknown) => cause instanceof Error ? cause.message : 'Unable to complete the request.';
 
 export class LoanManagementController {
-  private state: LoanManagementState = { activeTab: 'OVERDUE', search: '', startDate: '', endDate: '', page: 1, pageSize: 20,
+  private state: LoanManagementState = { activeTab: 'UNCOLLECTIBLE', search: '', startDate: '', endDate: '', page: 1, pageSize: 20,
     sorts: { OVERDUE: { sortBy: 'firstOverdueDueDate', sortDir: 'asc' }, UNCOLLECTIBLE: { sortBy: 'uncollectibleDate', sortDir: 'desc' } },
     items: [], summary: null, total: 0, dataPage: null, loading: false, refreshing: false, error: null, successMessage: null, actionAttempt: null };
   private readonly listeners = new Set<() => void>();

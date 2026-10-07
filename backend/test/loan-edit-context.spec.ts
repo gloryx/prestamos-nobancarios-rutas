@@ -1,6 +1,6 @@
 import type { DataSource } from 'typeorm';
 import { GetLoanEditContextUseCase, LoanEditContextConflictError, LoanEditContextNotFoundError,
-  type LoanEditContextLoan, type LoanEditOption } from '../src/application/loan/loan-edit-context.use-case';
+  type LoanEditContextLoan, type LoanEditFrequencyOption, type LoanEditOption } from '../src/application/loan/loan-edit-context.use-case';
 import { loanEditBaselineMatches, normalizeLoanEditCommand } from '../src/application/loan/loan-edit.command';
 import type { ValidPaymentTotals } from '../src/domain/loan/loan-financial-integrity';
 import { LoanEditContextTypeormReader } from '../src/infrastructure/database/typeorm/repositories/loan-edit-context.reader';
@@ -15,10 +15,10 @@ const plan = [{ id: id(11).toUpperCase(), dueDate: new Date(2026, 9, 1), pending
   { id: id(12), dueDate: '2026-10-02', pendingAmount: '0.00' }];
 const totals: ValidPaymentTotals = { paidAmount: '45.50', paidPrincipal: '40.00', paidInterest: '5.50', invalidCount: 0 };
 const frequencies = [
-  { id: id(8), name: 'Hidden', active: false, displayOrder: 0 },
-  { id: id(5), name: 'Weekly', active: true, displayOrder: 2 },
-  { id: id(2), name: 'Old frequency', active: false, displayOrder: 1 },
-  { id: id(6), name: 'Daily', active: true, displayOrder: 1 },
+  { id: id(8), name: 'Hidden', active: false, displayOrder: 0, intervalUnit: 'MONTH' as const, intervalValue: 1 },
+  { id: id(5), name: 'Weekly', active: true, displayOrder: 2, intervalUnit: 'WEEK' as const, intervalValue: 1 },
+  { id: id(2), name: 'Old frequency', active: false, displayOrder: 1, intervalUnit: 'DAY/15' as const, intervalValue: 1 },
+  { id: id(6), name: 'Daily', active: true, displayOrder: 1, intervalUnit: 'DAY' as const, intervalValue: 1 },
 ];
 const methods = [
   { id: id(9), name: 'Hidden', active: false, displayOrder: 0 },
@@ -26,11 +26,16 @@ const methods = [
   { id: id(3), name: 'Old method', active: false, displayOrder: 2 },
 ];
 
-function fixture(overrides: { loan?: LoanEditContextLoan | null; plan?: typeof plan; totals?: ValidPaymentTotals | null } = {}) {
+function fixture(overrides: { loan?: LoanEditContextLoan | null; plan?: typeof plan; totals?: ValidPaymentTotals | null;
+  protectedPlanEntryIds?: string[] } = {}) {
   const current = overrides.loan === undefined ? loan : overrides.loan;
   const rows = overrides.plan ?? plan;
   const paymentTotals = overrides.totals === undefined ? totals : overrides.totals;
-  const options = (catalog: typeof frequencies, selected: string): LoanEditOption[] => catalog
+  const frequencyOptions = (selected: string): LoanEditFrequencyOption[] => frequencies
+    .filter((entry) => entry.active || entry.id === selected)
+    .sort((a, b) => a.displayOrder - b.displayOrder || a.name.localeCompare(b.name) || a.id.localeCompare(b.id))
+    .map(({ id, name, active, intervalUnit, intervalValue }) => ({ id, name, active, intervalUnit, intervalValue }));
+  const methodOptions = (selected: string): LoanEditOption[] => methods
     .filter((entry) => entry.active || entry.id === selected)
     .sort((a, b) => a.displayOrder - b.displayOrder || a.name.localeCompare(b.name) || a.id.localeCompare(b.id))
     .map(({ id, name, active }) => ({ id, name, active }));
@@ -40,8 +45,9 @@ function fixture(overrides: { loan?: LoanEditContextLoan | null; plan?: typeof p
       identification: current.customer.identification, customerName: current.customer.fullName, customer: undefined }] : [];
     if (sql.includes('FROM payment_plan_entries')) return rows;
     if (sql.includes('FROM payments')) return paymentTotals ? [paymentTotals] : [];
-    if (sql.includes('FROM payment_frequencies WHERE')) return options(frequencies, parameters![0] as string);
-    if (sql.includes('FROM payment_methods WHERE')) return options(methods, parameters![0] as string);
+    if (sql.includes('FROM payment_frequencies WHERE')) return frequencyOptions(parameters![0] as string);
+    if (sql.includes('FROM payment_methods WHERE')) return methodOptions(parameters![0] as string);
+    if (sql.startsWith('SELECT DISTINCT protected.id')) return (overrides.protectedPlanEntryIds ?? []).map((entryId) => ({ id: entryId }));
     throw new Error(`Unexpected SQL: ${sql}`);
   });
   const transaction = jest.fn(async (_level: string, run: (manager: { query: typeof query }) => Promise<unknown>) => run({ query }));
@@ -58,12 +64,14 @@ describe('GET loan edit context snapshot and SQL', () => {
       preferredPaymentMethodId: id(3), observations: 'CURRENT', financialBalance: '74.50',
       plan: [{ id: id(11), dueDate: '2026-10-01', pendingAmount: '74.50' }] });
     expect(result.paymentFrequencyOptions).toEqual([
-      { id: id(6), name: 'Daily', active: true }, { id: id(2), name: 'Old frequency', active: false },
-      { id: id(5), name: 'Weekly', active: true },
+      { id: id(6), name: 'Daily', active: true, intervalUnit: 'DAY', intervalValue: 1 },
+      { id: id(2), name: 'Old frequency', active: false, intervalUnit: 'DAY/15', intervalValue: 1 },
+      { id: id(5), name: 'Weekly', active: true, intervalUnit: 'WEEK', intervalValue: 1 },
     ]);
     expect(result.preferredPaymentMethodOptions).toEqual([
       { id: id(7), name: 'Cash', active: true }, { id: id(3), name: 'Old method', active: false },
     ]);
+    expect(result.protectedPlanEntryIds).toEqual([]);
     expect(normalizeLoanEditCommand({ idempotencyKey: 'example', baseline: result.baseline,
       changes: { observations: 'Revised' } }, id(1), id(10)).baseline.financialBalance).toBe(7450n);
     expect(loanEditBaselineMatches(normalizeLoanEditCommand({ idempotencyKey: 'example', baseline: result.baseline,
@@ -71,7 +79,7 @@ describe('GET loan edit context snapshot and SQL', () => {
     { ...loan, financialBalance: result.baseline.financialBalance, plan })).toBe(true);
     expect(JSON.stringify(result)).not.toContain('bigint');
     expect(transaction).toHaveBeenCalledWith('REPEATABLE READ', expect.any(Function));
-    expect(query).toHaveBeenCalledTimes(6);
+    expect(query).toHaveBeenCalledTimes(7);
     expect(query.mock.calls[0][0]).toBe('SET TRANSACTION READ ONLY');
     const selects = query.mock.calls.slice(1);
     expect(selects.every(([sql]) => /^SELECT\b/.test(sql))).toBe(true);
@@ -84,6 +92,13 @@ describe('GET loan edit context snapshot and SQL', () => {
       expect(selects[index][1]).toEqual([currentId]);
     }
     expect(selects.every(([, args]) => (args as string[])[0] !== undefined)).toBe(true);
+  });
+
+  it('exposes positive obligations protected by VALID payment applications outside the PATCH baseline', async () => {
+    const protectedId = id(11);
+    const result = await fixture({ protectedPlanEntryIds: [protectedId] }).useCase.execute(id(1));
+    expect(result.protectedPlanEntryIds).toEqual([protectedId]);
+    expect(result.baseline.plan[0]).not.toHaveProperty('protected');
   });
 
   it('allows a valid fully paid ACTIVE loan with only zero historical plan entries', async () => {

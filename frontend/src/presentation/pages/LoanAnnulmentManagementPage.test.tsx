@@ -37,20 +37,24 @@ function setup(total = 3) {
   const click = (name: string) => (button(name).props as { onClick: () => void }).onClick();
   return { api, controller, view, tree, click };
 }
+async function loadCandidates(controller: LoanAnnulmentController) {
+  controller.setActiveTab('CANDIDATES');
+  await tick();
+}
 
 describe('loan annulment management', () => {
-  it('renders the hidden page with candidates selected and loads only their endpoint', async () => {
+  it('renders the hidden page with annulled loans first and selected, and loads only their endpoint', async () => {
     const { api, controller, view } = setup();
     const initial = renderToStaticMarkup(<AuthContext.Provider value={{ loading: false, can: () => false, canAll: () => false,
       login: async () => {}, logout: async () => {}, changePassword: async () => {} }}>
       <LoanAnnulmentManagementPage controller={controller} /></AuthContext.Provider>);
     expect(initial).toContain('Gestión de anulaciones');
-    expect(initial).toContain('role="tab" id="loan-annulment-candidates-tab"');
-    expect(initial).toContain('aria-selected="true"');
+    expect(initial).toMatch(/id="loan-annulment-annulled-tab"[^>]*aria-selected="true"/);
+    expect(initial.indexOf('>Anulados</button>')).toBeLessThan(initial.indexOf('>Candidatos</button>'));
     expect(initial).toContain('Cargando préstamos');
     await controller.load();
-    expect(api.getAnnullableLoans).toHaveBeenCalledWith({ page: 1, pageSize: 20, sortBy: 'loanNumber', sortDir: 'desc' });
-    expect(api.getAnnulledLoans).not.toHaveBeenCalled();
+    expect(api.getAnnulledLoans).toHaveBeenCalledWith({ page: 1, pageSize: 20, sortBy: 'annulledDate', sortDir: 'desc' });
+    expect(api.getAnnullableLoans).not.toHaveBeenCalled();
     expect(view()).toContain('#123');
     expect(view()).toContain('Ana López');
     expect(view()).toContain('101');
@@ -61,18 +65,17 @@ describe('loan annulment management', () => {
     const { controller, view } = setup(31); await controller.load();
     const html = view();
     expect(html).toContain('TOTAL</span><strong>3</strong>');
-    expect(html).toContain('CAPITAL</span><strong>₡300.000,00</strong>');
-    expect(html).toContain('INTERÉS</span><strong>₡60.000,00</strong>');
-    expect(html).toContain('TOTAL CONTRACTUAL</span><strong>₡360.000,00</strong>');
+    expect(html).toContain('CAPITAL</span><strong>₡300.000</strong>');
+    expect(html).toContain('INTERÉS</span><strong>₡60.000</strong>');
+    expect(html).toContain('TOTAL CONTRACTUAL</span><strong>₡360.000</strong>');
     expect(html).toContain('Página 1 de 2 · 31 préstamos');
     expect(html).toContain('loan-list__table-wrap');
   });
 
-  it('switches tabs without requesting both and displays the backend business date and both resolution labels', async () => {
+  it('displays annulled loan details and switches tabs without requesting both initially', async () => {
     const { api, controller, click, view } = setup(); await controller.load();
-    click('Anulados'); await tick();
     expect(api.getAnnulledLoans).toHaveBeenCalledWith({ page: 1, pageSize: 20, sortBy: 'annulledDate', sortDir: 'desc' });
-    expect(api.getAnnullableLoans).toHaveBeenCalledTimes(1);
+    expect(api.getAnnullableLoans).not.toHaveBeenCalled();
     const html = view();
     expect(html).toContain('role="tabpanel" aria-labelledby="loan-annulment-annulled-tab"');
     expect(html).toContain('Anulado');
@@ -82,10 +85,12 @@ describe('loan annulment management', () => {
     expect(html).toContain('Devuelto íntegramente');
     expect(html).toContain('No se entregó');
     expect(html).toContain('loan-management__reason">—</td>');
+    click('Candidatos'); await tick();
+    expect(api.getAnnullableLoans).toHaveBeenCalledWith({ page: 1, pageSize: 20, sortBy: 'loanNumber', sortDir: 'desc' });
   });
 
   it('sends filters, server sorting and page changes without sorting or filtering the rows locally', async () => {
-    const { api, controller, view, tree, click } = setup(31); await controller.load();
+    const { api, controller, view, tree, click } = setup(31); await loadCandidates(controller);
     const inputs = tree().filter((element) => element.type === 'input');
     for (const [index, value] of ['Ana', '2026-01-01', '2026-10-01'].entries()) {
       (inputs[index].props as { onChange: (event: ChangeEvent<HTMLInputElement>) => void }).onChange({ target: { value } } as ChangeEvent<HTMLInputElement>);
@@ -103,16 +108,16 @@ describe('loan annulment management', () => {
   });
 
   it('shows visible errors and keeps prior rows and cards during and after a failed refresh', async () => {
-    const { api, controller, view, click } = setup(); await controller.load();
+    const { api, controller, view, click } = setup(); await loadCandidates(controller);
     let reject!: (error: Error) => void;
     api.getAnnullableLoans.mockImplementationOnce(() => new Promise((_, no) => { reject = no; }));
     click('Refrescar préstamos');
     expect(view()).toContain('#123');
-    expect(view()).toContain('₡300.000,00');
+    expect(view()).toContain('₡300.000');
     reject(new Error('No se pudo actualizar.')); await tick();
     expect(view()).toContain('role="alert">No se pudo actualizar.');
     expect(view()).toContain('Se muestran datos anteriores');
     expect(view()).toContain('#123');
-    expect(view()).toContain('₡300.000,00');
+    expect(view()).toContain('₡300.000');
   });
 });

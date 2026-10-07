@@ -32,6 +32,8 @@ import { RetroactivePeriodGuard } from '../../application/financial-close/retroa
 import { FinancialCloseModule } from '../financial-close/financial-close.module';
 import { ExportActiveLoansUseCase, type ActiveLoanExportReader } from '../../application/loan/export-active-loans.use-case';
 import { ActiveLoanExportTypeormReader } from '../../infrastructure/database/typeorm/repositories/active-loan-export.reader';
+import { ASSIGNED_LOANS_READER, AssignedLoansUseCase, type AssignedLoansReader } from '../../application/loan/assigned-loans.use-case';
+import { AssignedLoansTypeormReader } from '../../infrastructure/database/typeorm/repositories/assigned-loans.reader';
 @Module({ imports: [CashMovementModule, FinancialCloseModule], controllers: [LoanController], providers: [{ provide: CreateLoanUseCase, inject: [DataSource, CASH_MOVEMENT_TRANSACTIONAL_RECORDER, RetroactivePeriodGuard], useFactory: (ds: DataSource, recorder: TransactionalCashMovementRecorder, guard: RetroactivePeriodGuard) => new CreateLoanUseCase(ds, recorder, guard) }, { provide: ListLoansUseCase, inject: [DataSource], useFactory: (ds: DataSource) => new ListLoansUseCase(ds) }, { provide: ListActiveLoanCustomersUseCase, inject: [DataSource], useFactory: (ds: DataSource) => new ListActiveLoanCustomersUseCase(ds) }, { provide: CANCELLED_LOANS_READER, inject: [DataSource], useFactory: (ds: DataSource) => new CancelledLoansTypeormReader(ds) }, { provide: ListCancelledLoansUseCase, inject: [CANCELLED_LOANS_READER], useFactory: (reader: CancelledLoansReader) => new ListCancelledLoansUseCase(reader) },
   { provide: LOAN_FINANCIAL_TOTALS_READER, useClass: LoanFinancialTotalsTypeormReader },
   { provide: EditLoanUseCase, inject: [DataSource, LOAN_FINANCIAL_TOTALS_READER], useFactory: (ds: DataSource, totals: LoanFinancialTotalsReader) => new EditLoanUseCase(new EditLoanTypeormWriter(ds), totals) },
@@ -52,4 +54,6 @@ import { ActiveLoanExportTypeormReader } from '../../infrastructure/database/typ
   { provide: ANNUL_LOAN_WRITER, inject: [DataSource], useFactory: (ds: DataSource) => new AnnulLoanTypeormWriter(ds) },
   { provide: AnnulLoanUseCase, inject: [ANNUL_LOAN_WRITER, LOAN_FINANCIAL_TOTALS_READER], useFactory: (writer: AnnulLoanWriter, totals: LoanFinancialTotalsReader) => new AnnulLoanUseCase(writer, totals) },
   { provide: ExportActiveLoansUseCase, inject: [DataSource], useFactory: (ds: DataSource) => new ExportActiveLoansUseCase(new ActiveLoanExportTypeormReader(ds) as ActiveLoanExportReader) },
+  { provide: ASSIGNED_LOANS_READER, inject: [DataSource], useFactory: (ds: DataSource) => new AssignedLoansTypeormReader(ds) },
+  { provide: AssignedLoansUseCase, inject: [ASSIGNED_LOANS_READER], useFactory: (reader: AssignedLoansReader) => new AssignedLoansUseCase(reader) },
 ] }) export class LoanModule {}

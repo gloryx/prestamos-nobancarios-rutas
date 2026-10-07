@@ -51,7 +51,7 @@ import { FinancialCloseModule } from './presentation/financial-close/financial-c
         synchronize: false,
       }),
     }),
-        TerritorialModule, PaymentMethodModule, PaymentFrequencyModule, RouteModule, CustomerModule, CustomerSiteModule, CollectorModule, SecurityModule, FinancialOpeningModule, FinancialCloseModule, CashMovementModule, LoanModule, PaymentModule, LoanRefinancingModule,
+        TerritorialModule, PaymentMethodModule, PaymentFrequencyModule, RouteModule, CustomerSiteModule, CustomerModule, CollectorModule, SecurityModule, FinancialOpeningModule, FinancialCloseModule, CashMovementModule, LoanModule, PaymentModule, LoanRefinancingModule,
   ],
   controllers: [HealthController],
 })

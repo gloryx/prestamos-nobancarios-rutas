@@ -165,6 +165,6 @@ describe('internal batch loan financial integrity', () => {
   it('retains existing loan routes when the uncollectible read endpoint is added', () => {
     const routes = Object.getOwnPropertyNames(LoanController.prototype).filter((method) => method !== 'constructor' &&
       Reflect.hasOwnMetadata(PATH_METADATA, LoanController.prototype[method as keyof LoanController]));
-    expect(routes).toEqual(['customerOptions', 'listLoans', 'activeLoanSummary', 'exportActiveLoans', 'cancelledLoans', 'overdueLoans', 'uncollectibleLoans', 'annullableLoans', 'annulledLoansList', 'createLoan', 'markAsUncollectible', 'reactivate', 'annulLoan', 'detail', 'editLoan', 'getEditContext']);
+    expect(routes).toEqual(['customerOptions', 'assignedLoans', 'assignedLoanDetail', 'listLoans', 'activeLoanSummary', 'exportActiveLoans', 'cancelledLoans', 'overdueLoans', 'uncollectibleLoans', 'annullableLoans', 'annulledLoansList', 'createLoan', 'markAsUncollectible', 'reactivate', 'annulLoan', 'detail', 'editLoan', 'getEditContext']);
   });
 });

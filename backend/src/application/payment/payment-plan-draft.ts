@@ -22,7 +22,14 @@ export async function applyPaymentPlanDraft(
 
   type PlanRow = PendingPlanEntry;
   const current = await executor.query(`SELECT id, due_date::text AS "dueDate", sequence, pending_amount AS "pendingAmount" FROM payment_plan_entries WHERE loan_id = $1 ORDER BY due_date, sequence, id FOR UPDATE`, [loanId]) as PlanRow[];
+  const protectedRows = await executor.query(`SELECT DISTINCT e.id FROM payment_plan_entries e
+    JOIN payment_applications pa ON pa.payment_plan_entry_id = e.id OR pa.carried_to_plan_entry_id = e.id
+    JOIN payments p ON p.id = pa.payment_id AND p.status = 'VALID'
+    WHERE e.loan_id = $1 AND e.pending_amount > 0`, [loanId]) as Array<{ id: string }>;
+  const protectedIds = new Set(protectedRows.map((row) => row.id.toLowerCase()));
   const byId = new Map(current.map((row) => [row.id.toLowerCase(), row]));
+  const currentPositive = current.filter((row) => MONEY.test(row.pendingAmount) && cents(row.pendingAmount) > 0n);
+  const lastPositiveId = currentPositive[currentPositive.length - 1]?.id.toLowerCase();
   const referenced = new Set<string>();
   for (const entry of entries) {
     if (entry.id === null) continue;
@@ -30,6 +37,18 @@ export async function applyPaymentPlanDraft(
     const existing = byId.get(entry.id.toLowerCase());
     if (!existing || !MONEY.test(existing.pendingAmount) || cents(existing.pendingAmount) <= 0n) throw new PaymentValidationError('The payment plan entry is not an active obligation of this loan.');
     referenced.add(entry.id.toLowerCase());
+  }
+  for (const protectedId of protectedIds) {
+    const existing = byId.get(protectedId);
+    const proposed = entries.find((entry) => entry.id?.toLowerCase() === protectedId);
+    if (!existing || !proposed) {
+      throw new PaymentValidationError('Una cuota con aplicaciones de pagos válidos no puede eliminarse del plan.');
+    }
+    const amountChanged = !MONEY.test(proposed.pendingAmount) || cents(proposed.pendingAmount) !== cents(existing.pendingAmount);
+    const frozenDateChanged = protectedId !== lastPositiveId && proposed.dueDate !== existing.dueDate;
+    if (amountChanged || frozenDateChanged) {
+      throw new PaymentValidationError('Una cuota con aplicaciones de pagos válidos debe conservar exactamente su fecha y monto pendiente.');
+    }
   }
   try { if (targetPendingAmount > 0n) validatePlanCustomization(entries, loanStartDate, money(targetPendingAmount)); }
   catch (error) {

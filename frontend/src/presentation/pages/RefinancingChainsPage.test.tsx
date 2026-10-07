@@ -49,11 +49,11 @@ describe('refinancing chain presentation', () => {
   it('renders the ordered capital-first history and every authoritative transition amount', () => {
     const html = renderToStaticMarkup(<MemoryRouter><RefinancingChainDetail chain={chain()} canViewLoans /></MemoryRouter>);
     for (const text of ['PRÉSTAMO INICIAL', 'PRÉSTAMO TERMINAL', 'REFINANCIAMIENTO', 'REFINANCIADO', 'CANCELADO',
-      'Pagado', '₡72.000,00', 'Capital recuperado', 'Interés recuperado', '₡0,00', 'Capital pendiente', '₡28.000,00',
-      'Interés pendiente', '₡20.000,00', 'Saldo financiero', 'Saldo trasladado al siguiente refinanciamiento.',
-      'Capital trasladado', 'Interés capitalizado', 'Dinero nuevo', '₡52.000,00', 'Principal nuevo',
-      'Interés nuevo', 'Total nuevo', 'Desembolso inicial', 'Efectivo desembolsado', '₡152.000,00',
-      'Pagos recibidos', '₡192.000,00', 'Capital aplicado', '₡172.000,00', 'Interés aplicado']) expect(html).toContain(text);
+      'Pagado', '₡72.000', 'Capital recuperado', 'Interés recuperado', '₡0', 'Capital pendiente', '₡28.000',
+      'Interés pendiente', '₡20.000', 'Saldo financiero', 'Saldo trasladado al siguiente refinanciamiento.',
+      'Capital trasladado', 'Interés capitalizado', 'Dinero nuevo', '₡52.000', 'Principal nuevo',
+      'Interés nuevo', 'Total nuevo', 'Desembolso inicial', 'Efectivo desembolsado', '₡152.000',
+      'Pagos recibidos', '₡192.000', 'Capital aplicado', '₡172.000', 'Interés aplicado']) expect(html).toContain(text);
     expect(html.indexOf('Préstamo #100')).toBeLessThan(html.indexOf('REFINANCIAMIENTO'));
     expect(html.indexOf('REFINANCIAMIENTO')).toBeLessThan(html.indexOf('Préstamo #101'));
     expect(html).toContain('href="/loans/loan-1"');
@@ -69,7 +69,7 @@ describe('refinancing chain presentation', () => {
       newMoneyDisbursed: '0.00', newContractualPrincipal: '123.45', newContractualTotal: '987.65' };
     const html = renderToStaticMarkup(<MemoryRouter><RefinancingChainDetail chain={authoritative} canViewLoans={false} /></MemoryRouter>);
     for (const amount of ['₡999,99', '₡888,88', '₡777,77', '₡123,45', '₡987,65']) expect(html).toContain(amount);
-    expect(html.match(/₡0,00/g)?.length).toBeGreaterThanOrEqual(2);
+    expect(html.match(/₡0/g)?.length).toBeGreaterThanOrEqual(2);
     expect(html).not.toContain('href="/loans/');
   });
 
@@ -93,11 +93,11 @@ describe('refinancing chain presentation', () => {
     await controller.loadCustomer(customer.id);
     const html = view();
     expect(html).toContain('Resumen del cliente');
-    expect(html).toContain('₡56.000,00');
-    expect(html).toContain('₡40.000,00');
-    expect(html).toContain('₡104.000,00');
-    expect(html).toContain('₡384.000,00');
-    expect(html).toContain('₡304.000,00');
+    expect(html).toContain('₡56.000');
+    expect(html).toContain('₡40.000');
+    expect(html).toContain('₡104.000');
+    expect(html).toContain('₡384.000');
+    expect(html).toContain('₡304.000');
     expect(html).toContain('href="/loan-refinancings/chains/loan/loan-1"');
     expect(html).toContain('href="/loan-refinancings/chains/loan/loan-1-b"');
     expect(html.match(/CADENA DE REFINANCIAMIENTO/g)).toHaveLength(2);

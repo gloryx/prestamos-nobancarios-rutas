@@ -5,6 +5,7 @@ import { CollectionAgendaController, type CollectionAgendaState } from '../../ap
 import type { CollectionAgendaCustomer, CollectionAgendaFilterStatus, CollectionAgendaObligation, CollectionAgendaPeriod, CollectionAgendaProblemRoute, CollectionAgendaRoute as AgendaRoute, CollectionAgendaStatus } from '../../domain/entities/collection-agenda';
 import { formatDateOnlyForDisplay } from '../../shared/utils/date';
 import { formatCRCAggregate } from '../../shared/utils/money';
+import { useAuth } from '../hooks/auth-context';
 
 const statusMeta: Record<CollectionAgendaStatus, { label: string; section: string; icon: typeof AlertTriangle }> = {
   OVERDUE: { label: 'Vencido', section: 'Vencidos', icon: AlertTriangle },
@@ -19,10 +20,11 @@ const warningLabels = {
 } as const;
 
 export function CollectionAgendaPage({ controller: supplied }: { controller?: CollectionAgendaController } = {}): ReactElement {
+  const { user } = useAuth();
   const [controller] = useState(() => supplied ?? createCollectionAgenda());
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
   useEffect(() => { void controller.load(); return () => controller.dispose(); }, [controller]);
-  return <CollectionAgendaView state={state} controller={controller} />;
+  return <CollectionAgendaView state={state} controller={controller} collectorView={user?.role.code === 'COLLECTOR' && !user.role.isSuperAdmin} />;
 }
 
 function Summary({ state }: { state: CollectionAgendaState }): ReactElement {
@@ -104,8 +106,8 @@ function Pager({ state, controller }: { state: CollectionAgendaState; controller
   return <nav className="collection-agenda__pagination" aria-label="Páginas de agenda"><button type="button" disabled={pagination.page <= 1 || state.loading} onClick={() => controller.setPage(pagination.page - 1)}>Anterior</button><span>Página {pagination.page} de {Math.max(1, pagination.totalPages)} · {pagination.totalObligations} obligaciones</span><button type="button" disabled={pagination.page >= pagination.totalPages || state.loading} onClick={() => controller.setPage(pagination.page + 1)}>Siguiente</button></nav>;
 }
 
-export function CollectionAgendaView({ state, controller }: { state: CollectionAgendaState; controller: CollectionAgendaController }): ReactElement {
-  return <section className="page-section collection-agenda" aria-labelledby="collection-agenda-title"><header className="collection-agenda__heading"><div><span className="eyebrow">COBRADORES</span><h1 id="collection-agenda-title">Agenda de cobros</h1><p>Consulta los clientes y obligaciones pendientes según las rutas asignadas.</p></div><button className="button button--secondary" type="button" disabled={state.loading} onClick={() => controller.retry()}><RefreshCw aria-hidden="true" />Actualizar</button></header>
+export function CollectionAgendaView({ state, controller, collectorView = false }: { state: CollectionAgendaState; controller: CollectionAgendaController; collectorView?: boolean }): ReactElement {
+  return <section className="page-section collection-agenda" aria-labelledby="collection-agenda-title"><header className="collection-agenda__heading"><div><span className="eyebrow">COBRADORES</span><h1 id="collection-agenda-title">{collectorView ? 'Mi agenda de cobros' : 'Agenda de cobros'}</h1><p>Consulta los clientes y obligaciones pendientes según las rutas asignadas.</p></div><button className="button button--secondary" type="button" disabled={state.loading} onClick={() => controller.retry()}><RefreshCw aria-hidden="true" />Actualizar</button></header>
     <Filters state={state} controller={controller} />
     <Summary state={state} />
     {state.loading && <div className="collection-agenda__loading" role="status" aria-label="Cargando agenda de cobros">{[1, 2, 3].map((item) => <div className="collection-agenda__skeleton" key={item} />)}</div>}

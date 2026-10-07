@@ -41,6 +41,7 @@ describe('Cobros del día', () => {
     const html = renderToStaticMarkup(<MemoryRouter><AuthContext.Provider value={{ loading: false, can: () => true, canAll: () => true,
       login: async () => {}, logout: async () => {}, changePassword: async () => {} }}><DailyCollectionsPage controller={controller} /></AuthContext.Provider></MemoryRouter>);
     expect(html).toContain('Cobros del día'); expect(html).toContain('PAGOS');
+    expect(html).not.toContain('Mis cobros del día');
     await controller.load();
     expect(api.summary).toHaveBeenCalledWith(date);
     expect(api.due).toHaveBeenCalledWith({ date, page: 1, pageSize: 20 });
@@ -70,10 +71,22 @@ describe('Cobros del día', () => {
     const { controller, view } = setup(); await controller.load();
     const html = view();
     for (const fragment of ['POR COBRAR</span><strong>14', 'PAGARON</span><strong>3',
-      'MONTO POR COBRAR</span><strong>₡3.418.000,00', 'MONTO RECIBIDO</span><strong>₡450.000,00',
-      'Juan Pérez', '503520108 · 8888 8888', '#4548', '01/10/2026', '₡950.000,00',
-      'PAGOS RECIBIDOS', '₡5.000,00', 'Efectivo', 'Página 1 de 2 · 32 registros']) expect(html).toContain(fragment);
+      'MONTO POR COBRAR</span><strong>₡3.418.000', 'MONTO RECIBIDO</span><strong>₡450.000',
+      'Juan Pérez', '503520108 · 8888 8888', '#4548', '01/10/2026', '₡950.000',
+      'PAGOS RECIBIDOS', '₡5.000', 'Efectivo', 'Página 1 de 2 · 32 registros']) expect(html).toContain(fragment);
     expect(html).toContain('<td>—</td>');
+  });
+
+  it('keeps the collector view on today and exposes only scoped loan reading', async () => {
+    const { controller, props } = (() => { const value = setup(); return { ...value, props: { state: value.controller.getSnapshot(), controller: value.controller,
+      can: (permission: string) => ['daily-collections.assigned.view', 'loans.assigned.view'].includes(permission), onCustomize: vi.fn(), onPrint: vi.fn(), today: date, assigned: true } }; })();
+    await controller.load();
+    const html = renderToStaticMarkup(<MemoryRouter><DailyCollectionsView {...props} state={controller.getSnapshot()} /></MemoryRouter>);
+    expect(html).toContain('Mis cobros del día');
+    expect(html).toContain('Hoy · 01/10/2026');
+    expect(html).not.toContain('Día anterior'); expect(html).not.toContain('Día siguiente'); expect(html).not.toContain('type="date"');
+    expect(html).toContain(`href="/collector/loans/${due.loan.id}"`);
+    for (const action of ['Registrar pago', 'Personalizar plan', 'Imprimir plan']) expect(html).not.toContain(action);
   });
 
   it('uses compact actions and centralized permissions for view, register, personalize and print', async () => {

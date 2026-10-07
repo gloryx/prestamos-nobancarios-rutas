@@ -46,15 +46,20 @@ const tree = (controller: LoanManagementController, options: Parameters<typeof p
 const button = (nodes: ReactElement[], label: string) => nodes.find((element) => element.type === 'button' &&
   (element.props as { children?: ReactNode }).children === label)!;
 const click = (element: ReactElement) => (element.props as { onClick: () => void }).onClick();
+async function loadOverdue(controller: LoanManagementController) {
+  controller.setActiveTab('OVERDUE');
+  await tick();
+}
 
 describe('loan management page', () => {
-  it('starts on overdue and renders an initial placeholder before mount-only loading', () => {
+  it('starts on uncollectible and renders an initial placeholder before mount-only loading', () => {
     const { controller, api } = setup();
     const user = { ...identity, permissions: ['loans.status.uncollectible'] };
     const html = renderToStaticMarkup(<AuthContext.Provider value={{ user, loading: false, can: (code) => canAccess(user, code), canAll: (codes) => codes.every((code) => canAccess(user, code)),
       login: async () => {}, logout: async () => {}, changePassword: async () => {} }}><LoanManagementPage controller={controller} /></AuthContext.Provider>);
     expect(html).toContain('Gestión de incobrables');
-    expect(html).toContain('role="tab" id="loan-management-overdue-tab"');
+    expect(html).toMatch(/id="loan-management-uncollectible-tab"[^>]*aria-selected="true"/);
+    expect(html.indexOf('>Incobrables</button>')).toBeLessThan(html.indexOf('>Candidatos a vencerse</button>'));
     expect(html).toContain('aria-selected="true"');
     expect(html).toContain('role="tabpanel"');
     expect(html).toContain('Cargando préstamos');
@@ -63,10 +68,10 @@ describe('loan management page', () => {
   });
 
   it('keeps both tabs visible with loans.view alone while hiding separate status actions', async () => {
-    const { controller } = setup(); await controller.load();
+    const { controller } = setup(); await loadOverdue(controller);
     const overdueHtml = view(controller, { permissions: ['loans.view'] });
     expect(overdueHtml).toContain('aria-selected="true"');
-    expect(overdueHtml).toContain('>Vencidos</button>');
+    expect(overdueHtml).toContain('>Candidatos a vencerse</button>');
     expect(overdueHtml).toContain('>Incobrables</button>');
     expect(overdueHtml).not.toContain('aria-label="Marcar préstamo 42 como incobrable"');
     controller.setActiveTab('UNCOLLECTIBLE'); await tick();
@@ -76,14 +81,14 @@ describe('loan management page', () => {
   });
 
   it('uses only backend summary for four cards, and shows every overdue field with seven server-sortable columns', async () => {
-    const { controller } = setup(); await controller.load();
+    const { controller } = setup(); await loadOverdue(controller);
     const html = view(controller, { permissions: ['loans.status.uncollectible'] });
     expect(html).toMatch(/TOTAL<\/span><strong>31<\/strong>/);
     expect(html).toContain('PRESTADO</span><strong>₡99.999.999.999.999.999,01</strong>');
     expect(html).toContain('RECUPERADO</span><strong>₡700,02</strong>');
     expect(html).toContain('PENDIENTE</span><strong>₡999,03</strong>');
     expect([...html.matchAll(/aria-sort=/g)]).toHaveLength(7);
-    for (const value of ['#42', 'Ana López', '101', '02/01/2026', '03/02/2026', '₡20,50', '₡1.000,00', '₡10,00', '₡990,00']) expect(html).toContain(value);
+    for (const value of ['#42', 'Ana López', '101', '02/01/2026', '03/02/2026', '₡20,50', '₡1.000', '₡10', '₡990']) expect(html).toContain(value);
     expect(html).toContain('Página 1 de 2 · 31 préstamos');
     expect(html).toContain('loan-list__table-wrap');
     expect(html).toContain('title="Marcar como incobrable" aria-label="Marcar préstamo 42 como incobrable"');
@@ -92,7 +97,7 @@ describe('loan management page', () => {
   });
 
   it('gates compact mutation actions through central permissions including superadmin, without removing either capability', async () => {
-    const { controller } = setup(); await controller.load();
+    const { controller } = setup(); await loadOverdue(controller);
     expect(view(controller)).not.toContain('aria-label="Marcar préstamo 42 como incobrable"');
     expect(view(controller, { superAdmin: true })).toContain('aria-label="Marcar préstamo 42 como incobrable"');
     expect(view(controller, { permissions: ['loans.status.reactivate'] })).not.toContain('aria-label="Marcar préstamo 42 como incobrable"');
@@ -111,7 +116,7 @@ describe('loan management page', () => {
   });
 
   it('changes only the active tab, preserves controller filters, shows backend business date, and handles null or long reasons', async () => {
-    const { controller, api } = setup(); await controller.load(); controller.setSearch('Ana'); await tick();
+    const { controller, api } = setup(); await loadOverdue(controller); controller.setSearch('Ana'); await tick();
     click(button(tree(controller), 'Incobrables'));
     expect(controller.getSnapshot()).toMatchObject({ activeTab: 'UNCOLLECTIBLE', search: 'Ana', page: 1, items: [], dataPage: null });
     expect(view(controller)).not.toContain('#42</td>');
@@ -128,7 +133,7 @@ describe('loan management page', () => {
   });
 
   it('wires exactly seven supported sort keys per tab to the controller, never sorting amount, reason, or action', async () => {
-    const { controller } = setup(); await controller.load();
+    const { controller } = setup(); await loadOverdue(controller);
     const overdueSort = vi.spyOn(controller, 'sortOverdue');
     const headers = tree(controller).filter((element) => typeof element.type === 'function' && element.type.name === 'SortHeader');
     expect(headers).toHaveLength(7);
@@ -143,7 +148,7 @@ describe('loan management page', () => {
   });
 
   it('wires search, date-only inputs, paging, size, and manual refresh without local query or calculation', async () => {
-    const { controller, api } = setup(); await controller.load();
+    const { controller, api } = setup(); await loadOverdue(controller);
     const nodes = tree(controller);
     const inputs = nodes.filter((element) => element.type === 'input');
     expect(inputs.map((element) => (element.props as { id: string }).id)).toEqual(['loan-management-search', 'loan-management-start', 'loan-management-end']);
@@ -160,7 +165,7 @@ describe('loan management page', () => {
   });
 
   it('keeps previous rows/cards on refresh failure, clearly labels stale filter data, and only reports valid empty responses', async () => {
-    const { controller, api } = setup(); await controller.load();
+    const { controller, api } = setup(); await loadOverdue(controller);
     let reject!: (error: Error) => void;
     api.getOverdueLoans.mockImplementationOnce(() => new Promise((_, no) => { reject = no; }));
     const refreshing = controller.refresh();
@@ -190,12 +195,12 @@ describe('loan management page', () => {
   });
 
   it('reuses a single accessible dialog for both operations; failed attempt stays open and success follows controller refetch', async () => {
-    const { controller, api } = setup(); await controller.load();
+    const { controller, api } = setup(); await loadOverdue(controller);
     controller.beginAttempt('MARK', overdue);
     let html = view(controller, { permissions: ['loans.status.uncollectible'], row: overdue });
     expect(html).toContain('role="dialog" aria-modal="true" aria-labelledby="loan-management-dialog-title"');
     expect(html).toContain('Marcar préstamo #42 como incobrable');
-    expect(html).toContain('Ana López'); expect(html).toContain('Saldo pendiente: ₡990,00');
+    expect(html).toContain('Ana López'); expect(html).toContain('Saldo pendiente: ₡990');
     expect(html).toContain('Primer vencimiento: 03/02/2026'); expect(html).toContain('Cuota vencida: ₡20,50');
     expect(html).toContain('no condona la deuda');
     expect(html).toMatch(/type="submit" disabled=""/);
@@ -232,7 +237,7 @@ describe('loan management page', () => {
   });
 
   it('disables cancel and confirmation during submission, and exposes scoped table/refresh hooks', async () => {
-    const { controller, api } = setup(); await controller.load(); controller.beginAttempt('MARK', overdue); controller.setReason('Review');
+    const { controller, api } = setup(); await loadOverdue(controller); controller.beginAttempt('MARK', overdue); controller.setReason('Review');
     let resolve!: (reply: Awaited<ReturnType<LoanManagementPort['markLoanUncollectible']>>) => void;
     api.markLoanUncollectible.mockImplementationOnce(() => new Promise((yes) => { resolve = yes; }));
     const submit = controller.submit();
@@ -256,13 +261,13 @@ describe('loan management page', () => {
     const keyDown = (tabs.props as { onKeyDown: (event: { key: string; preventDefault(): void }) => void }).onKeyDown;
     const preventDefault = vi.fn();
     keyDown({ key: 'ArrowRight', preventDefault });
-    expect(controller.getSnapshot().activeTab).toBe('UNCOLLECTIBLE'); expect(preventDefault).toHaveBeenCalledOnce();
-    keyDown({ key: 'Home', preventDefault }); expect(controller.getSnapshot().activeTab).toBe('OVERDUE');
+    expect(controller.getSnapshot().activeTab).toBe('OVERDUE'); expect(preventDefault).toHaveBeenCalledOnce();
+    keyDown({ key: 'Home', preventDefault }); expect(controller.getSnapshot().activeTab).toBe('UNCOLLECTIBLE');
     await tick();
     const html = view(controller, { state: { error: 'Loan page changed during refresh. Try again.' } });
     expect(html).toContain('La página cambió durante la actualización. Intente nuevamente.');
     expect(controller.getSnapshot().error).toBeNull();
-    controller.beginAttempt('MARK', overdue);
+    await loadOverdue(controller); controller.beginAttempt('MARK', overdue);
     expect(view(controller, { permissions: ['loans.status.uncollectible'], state: { actionAttempt: { ...controller.getSnapshot().actionAttempt!, error: 'A reason is required.' } } })).toContain('Indique el motivo.');
   });
 });

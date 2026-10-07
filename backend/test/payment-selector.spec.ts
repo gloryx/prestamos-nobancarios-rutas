@@ -40,13 +40,13 @@ describe('payment selector and context', () => {
 
   it('returns valid payments separately from only positive current obligations', async () => {
     const query = jest.fn().mockImplementation(async (sql: string) => {
-      if (sql.includes('FROM loans l JOIN customers c')) return [{ loanId: 'loan-1', loanNumber: '7', customerName: 'Ana', identification: '101', totalAmount: '100.00', principal: '70.00', interestAmount: '30.00', paidAmount: '40.00', pendingAmount: '60.00', preferredMethodId: 'method-1' }];
+      if (sql.includes('FROM loans l JOIN customers c')) return [{ loanId: 'loan-1', loanNumber: '7', customerName: 'Ana', identification: '101', totalAmount: '100.00', principal: '70.00', interestAmount: '30.00', paidAmount: '40.00', pendingAmount: '60.00', preferredMethodId: 'method-1', intervalUnit: 'DAY', intervalValue: 14 }];
       if (sql.includes('SUM(principal_applied)')) return [{ paidAmount: '40.00', paidPrincipal: '40.00', paidInterest: '0.00', invalidCount: 0 }];
       if (sql.includes('FROM payments WHERE loan_id')) return [
         { id: 'p1', paymentDate: '2026-01-02', amount: '40.00', status: 'VALID' },
         { id: 'p2', paymentDate: '2026-01-03', amount: '10.00', status: 'ANNULLED' },
       ];
-      if (sql.includes('FROM payment_plan_entries')) return [{ id: 'e1', dueDate: '2026-01-01', sequence: 1, pendingAmount: '60.00' }];
+       if (sql.includes('FROM payment_plan_entries')) return [{ id: 'e1', dueDate: '2026-01-01', sequence: 1, pendingAmount: '60.00', isProtected: true }];
       if (sql.includes('FROM payment_methods')) return [{ id: 'method-1', name: 'Cash' }];
       if (sql.includes('FROM collectors')) return [];
       throw new Error(`Unexpected query: ${sql}`);
@@ -56,13 +56,20 @@ describe('payment selector and context', () => {
     expect(context.balances).toEqual({ outstandingPrincipal: '30.00', outstandingInterest: '30.00', financialBalance: '60.00' });
     expect(context.validPayments).toEqual([{ id: 'p1', paymentDate: '2026-01-02', amount: '40.00', status: 'VALID' }]);
     expect(context.combinedPlan).toEqual([{ id: 'e1', dueDate: '2026-01-01', sequence: 1, pendingAmount: '60.00' }]);
+    expect(context.protectedPlanEntryIds).toEqual(['e1']);
     expect(context.firstOperationalRow).toEqual(context.combinedPlan[0]);
     expect(context.lastValidPayment).toMatchObject({ id: 'p1' });
     expect(context.firstOperationalRow?.dueDate).toBe('2026-01-01');
     expect(context.validPayments[0].paymentDate).toBe('2026-01-02');
     expect(context.lastValidPayment).toMatchObject({ paymentDate: '2026-01-02' });
     expect(context.preferredMethod).toMatchObject({ activeMethods: [{ id: 'method-1', name: 'Cash' }] });
-    expect(query.mock.calls.find(([sql]) => String(sql).includes('FROM payment_plan_entries WHERE'))![0]).toContain('due_date::text AS "dueDate"');
+    expect(context.paymentFrequency).toEqual({ intervalUnit: 'DAY', intervalValue: 14 });
+    expect(context.summary).not.toHaveProperty('intervalUnit');
+    expect(query.mock.calls.find(([sql]) => String(sql).includes('FROM loans l JOIN customers c'))![0]).toContain('JOIN payment_frequencies pf ON pf.id = l.payment_frequency_id');
+    const planSql = query.mock.calls.find(([sql]) => String(sql).startsWith('SELECT e.id, e.due_date::text'))![0];
+    expect(planSql).toContain('e.due_date::text AS "dueDate"');
+    expect(planSql).toContain("applied_payment.status = 'VALID'");
+    expect(planSql).toContain('pa.carried_to_plan_entry_id = e.id');
     expect(query.mock.calls.find(([sql]) => String(sql).includes('FROM payments WHERE loan_id'))![0]).toContain('payment_date::text AS "paymentDate"');
   });
 });

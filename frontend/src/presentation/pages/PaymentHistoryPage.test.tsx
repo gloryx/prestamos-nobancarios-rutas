@@ -56,8 +56,8 @@ describe('payment history page', () => {
     const { controller, props, view, onSelect } = setup(); await controller.load(); await controller.loadOptions();
     const html = view();
     for (const fragment of ['Historial de pagos', 'Consulta operativa y auditable de pagos históricos.',
-      'PAGOS VÁLIDOS</span><strong>8', 'TOTAL RECIBIDO</span><strong>₡500.000,00',
-      'CAPITAL APLICADO</span><strong>₡420.000,00', 'INTERÉS APLICADO</span><strong>₡80.000,00',
+      'PAGOS VÁLIDOS</span><strong>8', 'TOTAL RECIBIDO</span><strong>₡500.000',
+      'CAPITAL APLICADO</span><strong>₡420.000', 'INTERÉS APLICADO</span><strong>₡80.000',
       '02/10/2026', 'Ana Pérez', '503520108 · 8888', '#4548', '<td>1, 2</td>', '<td>—</td>',
       'Anulado', 'Transferencia', 'Página 1 de 2 · 25 registros']) expect(html).toContain(fragment);
     const action = elements(PaymentHistoryView(props())).find((element) => element.type === TableActions)!;
@@ -65,7 +65,7 @@ describe('payment history page', () => {
     expect(actions.map((item) => item.key)).toEqual(['view']); actions[0].onClick?.();
     expect(onSelect).toHaveBeenCalledWith(payment);
     expect(view(payment)).toContain('Detalle del pago');
-    for (const value of ['₡500.000,00', '₡420.000,00', '₡80.000,00', 'Transferencia', 'Bea Solís', 'Válido'])
+    for (const value of ['₡500.000', '₡420.000', '₡80.000', 'Transferencia', 'Bea Solís', 'Válido'])
       expect(view(payment)).toContain(value);
     expect(view({ ...payment, status: 'ANNULLED', collector: null })).toContain('<dd>—</dd>');
     expect(view({ ...payment, status: 'ANNULLED', collector: null })).toContain('<dd>Anulado</dd>');

@@ -1,13 +1,17 @@
 import type { CustomerSiteUpdateAuthorization, SiteUpdateScope } from '../../domain/customer-site/customer-site.types';
 export type AssignmentInput = { customerId: string; routeId: string; collectorUserId?: string };
-export type AssignedCustomer = { id: string; identification: string; fullName: string; isActive: boolean; latitude: number | null; longitude: number | null; hasPropertyPhoto: boolean; siteDataUpdatedAt: Date | null; route: { id: string; name: string } };
+export type AssignedCustomerQuery = { search?: string; routeId?: string; page: number; pageSize: 10 | 20 | 50 };
+export type AssignedCustomer = { id: string; identification: string; fullName: string; primaryPhone: string; latitude: number | null; longitude: number | null; hasPropertyPhoto: boolean; siteDataUpdatedAt: Date | null; route: { id: string; name: string } };
+export type AssignedCustomerPage = { items: AssignedCustomer[]; total: number; routes: Array<{ id: string; name: string }> };
+export type CollectorAccess = { collectorId: string; routeAllowed: boolean };
 export type AssignedCollector = { id: string; fullName: string; username: string };
 export type RouteAssignmentOptions = {
   customers: Array<{ id: string; fullName: string; identification: string }>;
   routes: Array<{ id: string; name: string }>;
   collectors: Array<{ id: string; fullName: string; username: string }>;
 };
-export type AssignmentWorkspaceQuery = { search?: string; cantonCode?: number; districtCode?: number; page: number; pageSize: 10 | 20 | 50 };
+export type ActiveLoanFilter = 'ALL' | 'WITH_ACTIVE' | 'WITHOUT_ACTIVE';
+export type AssignmentWorkspaceQuery = { search?: string; cantonCode?: number; districtCode?: number; activeLoanFilter?: ActiveLoanFilter; page: number; pageSize: 10 | 20 | 50 };
 export type AssignmentWorkspaceCustomer = { customerId: string; name: string; identification: string; phone: string; cantonName?: string; districtName?: string; customerRouteAssignmentId?: string };
 export type AssignmentWorkspaceRoute = { routeId: string; routeName: string; collectorAssignmentId?: string; customers: AssignmentWorkspaceCustomer[] };
 export type AssignmentWorkspace = {
@@ -25,6 +29,9 @@ export type AssignmentBatchOperation =
   | { type: 'UNASSIGN_CUSTOMER_FROM_ROUTE'; customerId: string; expectedAssignmentId: string };
 export type AssignmentBatchInput = { snapshotToken: string; operations: AssignmentBatchOperation[]; actorId: string };
 export type CustomerSiteData = {
+  customer: { id: string; fullName: string; identification: string; primaryPhone: string; secondaryPhone: string | null };
+  route: { id: string; name: string } | null;
+  address: { province: string; canton: string; district: string; exactAddress: string };
   latitude: number | null;
   longitude: number | null;
   hasPropertyPhoto: boolean;
@@ -33,8 +40,9 @@ export type CustomerSiteData = {
   activeAuthorization?: CustomerSiteUpdateAuthorization & { status: 'ACTIVE' };
 };
 export interface CustomerSiteRepository {
+  resolveCollectorAccess(collectorUserId: string, routeId?: string): Promise<CollectorAccess | null>;
   hasCollectorAccess(customerId: string, collectorUserId: string): Promise<boolean>;
-  listAssignedCustomers(collectorUserId: string): Promise<AssignedCustomer[]>;
+  listAssignedCustomers(collectorUserId: string, query: AssignedCustomerQuery): Promise<AssignedCustomerPage>;
   listAssignedCollectors(customerId: string): Promise<AssignedCollector[]>;
   listRouteAssignmentOptions(): Promise<RouteAssignmentOptions>;
   readAssignmentWorkspace(query: AssignmentWorkspaceQuery): Promise<AssignmentWorkspace>;
@@ -48,6 +56,7 @@ export interface CustomerSiteRepository {
   listAuthorizations(customerId: string): Promise<CustomerSiteUpdateAuthorization[]>;
   revokeAuthorization(id: string, customerId: string): Promise<void>;
   readSite(customerId: string, collectorUserId?: string): Promise<CustomerSiteData | null>;
-  updateSiteAtomically(customerId: string, patch: { latitude?: number; longitude?: number; propertyPhotoFileKey?: string }, actorId: string, authorizationScopes: SiteUpdateScope[], at: Date): Promise<{ oldPropertyPhotoKey?: string }>;
+  readPropertyPhotoKey(customerId: string, collectorUserId?: string): Promise<string | null | undefined>;
+  updateSiteAtomically(customerId: string, patch: { latitude?: number; longitude?: number; propertyPhotoFileKey?: string }, actorId: string, authorizationScopes: SiteUpdateScope[], at: Date, enforceCollectorScope: boolean): Promise<{ oldPropertyPhotoKey?: string }>;
 }
 export const CUSTOMER_SITE_REPOSITORY = Symbol('CUSTOMER_SITE_REPOSITORY');

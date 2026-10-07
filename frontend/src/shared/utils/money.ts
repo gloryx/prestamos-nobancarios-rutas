@@ -3,6 +3,8 @@ export type MoneyParseResult =
   | { kind: 'intermediate'; raw: string }
   | { kind: 'invalid'; raw: string };
 
+export type MoneyValue = number | string | null | undefined;
+
 const MONEY_PATTERN = /^(?:0|[1-9]\d{0,15})(?:\.\d{0,2})?$/;
 
 /** Converts user-entered CRC text to the application's raw decimal-string form. */
@@ -59,26 +61,42 @@ export function moneyFromCents(value: bigint): string {
   return `${value < 0n ? '-' : ''}${absolute / 100n}.${(absolute % 100n).toString().padStart(2, '0')}`;
 }
 
-export function formatCRC(value: string): string {
-  const normalized = normalizeMoney(value);
-  if (!normalized) return '₡0.00';
-  const [integerPart, decimalPart = ''] = normalized.split('.');
-  const grouped = integerPart.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
-  return `₡${grouped},${decimalPart.padEnd(2, '0')}`;
+function displayParts(value: MoneyValue): { negative: boolean; whole: string; decimals: string } | null {
+  if (value === null || value === undefined) return null;
+  const raw = typeof value === 'number'
+    ? Number.isFinite(value) ? value.toLocaleString('en-US', { useGrouping: false, maximumFractionDigits: 2 }) : ''
+    : value.trim();
+  const match = /^([+-]?)(\d+)(?:\.(\d{1,2}))?$/.exec(raw);
+  if (!match) return null;
+  const whole = match[2].replace(/^0+(?=\d)/, '');
+  const decimals = (match[3] ?? '').padEnd(2, '0');
+  const zero = /^0+$/.test(whole) && (!decimals || /^0+$/.test(decimals));
+  return { negative: match[1] === '-' && !zero, whole, decimals };
+}
+
+function formatMoney(value: MoneyValue, symbol: '₡' | '¢'): string {
+  const parts = displayParts(value);
+  if (!parts) return '—';
+  const grouped = parts.whole.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  const decimals = parts.decimals && !/^0+$/.test(parts.decimals) ? `,${parts.decimals}` : '';
+  return `${parts.negative ? '-' : ''}${symbol}${grouped}${decimals}`;
+}
+
+export function formatCRC(value: MoneyValue): string {
+  return formatMoney(value, '₡');
 }
 
 /** Formats read-only aggregate decimals without the input control's 16-digit limit. */
-export function formatCRCAggregate(value: string): string {
-  if (typeof value !== 'string' || !/^(?:0|[1-9]\d*)(?:\.\d{1,2})?$/.test(value)) return '₡0,00';
-  const [integer, fraction = ''] = value.split('.');
-  return `₡${integer.replace(/\B(?=(\d{3})+(?!\d))/g, '.')},${fraction.padEnd(2, '0')}`;
+export function formatCRCAggregate(value: MoneyValue): string {
+  return formatCRC(value);
 }
 
 /** Formats CRC for PDF presentation using the same centralized money rules. */
-export function formatCRCForPdf(value: string): string {
-  return formatCRC(value).replace(/^₡/, '¢');
+export function formatCRCForPdf(value: MoneyValue): string {
+  return formatMoney(value, '¢');
 }
 
 export function signedCRC(amount: string, direction: 'INFLOW' | 'OUTFLOW'): string {
-  return `${direction === 'INFLOW' ? '+' : '-'}${formatCRC(amount)}`;
+  const formatted = formatCRC(amount.replace(/^-/, ''));
+  return formatted === '—' ? formatted : `${direction === 'INFLOW' ? '+' : '-'}${formatted}`;
 }

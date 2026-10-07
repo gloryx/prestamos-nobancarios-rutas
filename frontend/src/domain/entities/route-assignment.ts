@@ -35,7 +35,8 @@ export type AssignmentWorkspace = {
   unassignedRoutes: AssignmentWorkspaceRoute[];
   unassignedCustomers: { items: AssignmentWorkspaceCustomer[]; total: number; totalUnassigned: number; page: number; pageSize: 10 | 20 | 50 };
 };
-export type AssignmentWorkspaceQuery = { search?: string; cantonCode?: number; districtCode?: number; page: number; pageSize: 10 | 20 | 50 };
+export type ActiveLoanFilter = 'ALL' | 'WITH_ACTIVE' | 'WITHOUT_ACTIVE';
+export type AssignmentWorkspaceQuery = { search?: string; cantonCode?: number; districtCode?: number; activeLoanFilter?: ActiveLoanFilter; page: number; pageSize: 10 | 20 | 50 };
 export type AssignmentBatchOperation =
   | { type: 'ASSIGN_ROUTE_TO_COLLECTOR'; routeId: string; collectorUserId: string }
   | { type: 'MOVE_ROUTE_TO_COLLECTOR'; routeId: string; collectorUserId: string; expectedAssignmentId: string }

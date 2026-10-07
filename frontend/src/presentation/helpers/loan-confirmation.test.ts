@@ -10,12 +10,12 @@ describe("loan confirmation helpers", () => {
       planCount: 6,
       disbursementMethod: "Transferencia",
     })).toEqual([
-      ["Capital", "₡125.000,00"],
-      ["Interés", "₡12.500,00"],
-      ["Total a pagar", "₡137.500,00"],
+      ["Capital", "₡125.000"],
+      ["Interés", "₡12.500"],
+      ["Total a pagar", "₡137.500"],
       ["Cuotas programadas", "6"],
       ["Forma de desembolso", "Transferencia"],
-      ["Desembolso real", "₡125.000,00"],
+      ["Desembolso real", "₡125.000"],
     ]);
   });
 

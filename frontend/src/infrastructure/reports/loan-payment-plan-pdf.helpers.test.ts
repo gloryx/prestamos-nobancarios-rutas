@@ -3,10 +3,10 @@ import { getPdfMoneyColor, getPdfMoneyText, PDF_MONEY_ROLES } from './loan-payme
 
 describe('loan payment-plan PDF helpers', () => {
   it('uses the PDF-safe currency symbol in the complete money text', () => {
-    expect(getPdfMoneyText('120000')).toBe('¢120.000,00');
-    expect(getPdfMoneyText('240000')).toBe('¢240.000,00');
-    expect(getPdfMoneyText('0')).toBe('¢0,00');
-    expect(getPdfMoneyText('2000000')).toBe('¢2.000.000,00');
+    expect(getPdfMoneyText('120000')).toBe('¢120.000');
+    expect(getPdfMoneyText('240000')).toBe('¢240.000');
+    expect(getPdfMoneyText('0')).toBe('¢0');
+    expect(getPdfMoneyText('2000000')).toBe('¢2.000.000');
     expect(getPdfMoneyText('120000')).not.toMatch(/[€₡$¡]|CRC/);
   });
 

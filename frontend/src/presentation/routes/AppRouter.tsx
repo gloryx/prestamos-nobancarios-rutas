@@ -24,7 +24,7 @@ import { AuthProvider } from '../hooks/useAuth';
 import { RouteGuard } from '../components/auth/RouteGuard';
 import { FinancialOpeningPage } from '../pages/FinancialOpeningPage';
 import { CashMovementsPage } from '../pages/CashMovementsPage';
-import { LoansPage } from '../pages/LoansPage';
+import { LoansPageRoute } from '../pages/LoansPage';
 import { CancelledLoansPage } from '../pages/CancelledLoansPage';
 import { LoanManagementPage } from '../pages/LoanManagementPage';
 import { LoanAnnulmentManagementPage } from '../pages/LoanAnnulmentManagementPage';
@@ -43,6 +43,10 @@ import { FinancialClosePage } from '../pages/FinancialClosePage';
 import { RouteAssignmentsPage } from '../pages/RouteAssignmentsPage';
 import { PaymentCollectorReportPage } from '../pages/PaymentCollectorReportPage';
 import { CollectionAgendaPage } from '../pages/CollectionAgendaPage';
+import { CollectorLoansPage } from '../pages/CollectorLoansPage';
+import { CollectorDailyCollectionsPage } from '../pages/DailyCollectionsPage';
+import { CollectorFinancialSummaryPage } from '../pages/CollectorFinancialSummaryPage';
+import { CustomerAgendaPage } from '../pages/CustomerAgendaPage';
 
 export function AppRouter(): ReactElement {
   return <BrowserRouter><AuthProvider><Routes><Route path="/login" element={<LoginPage />} /><Route element={<RouteGuard><AppLayout /></RouteGuard>}>
@@ -58,8 +62,13 @@ export function AppRouter(): ReactElement {
     <Route path="/customers/:id" element={<RouteGuard permission="customers.view"><CustomerDetailPage /></RouteGuard>} />
      <Route path="/customers" element={<RouteGuard permission="customers.view"><CustomersPage /></RouteGuard>} />
      <Route path="/collector/customers" element={<RouteGuard permission="customers.assigned.view"><CollectorCustomersPage /></RouteGuard>} />
+     <Route path="/collector/loans/:id" element={<RouteGuard permission="loans.assigned.view"><LoanDetailPage assigned /></RouteGuard>} />
+     <Route path="/collector/loans" element={<RouteGuard permission="loans.assigned.view"><CollectorLoansPage /></RouteGuard>} />
+     <Route path="/collector/financial-summary" element={<RouteGuard permission="collectors.financial-summary.view"><CollectorFinancialSummaryPage /></RouteGuard>} />
+     <Route path="/collector/daily-collections" element={<RouteGuard permission="daily-collections.assigned.view"><CollectorDailyCollectionsPage /></RouteGuard>} />
       <Route path="/collectors/statistics" element={<RouteGuard permission="payments.view"><CollectorStatisticsPage /></RouteGuard>} />
       <Route path="/collectors/route-assignments" element={<RouteGuard permission="collectors.view"><RouteAssignmentsPage /></RouteGuard>} />
+       <Route path="/collectors/customer-agenda" element={<RouteGuard anyPermissions={['customers.view', 'customers.assigned.view']}><CustomerAgendaPage /></RouteGuard>} />
       <Route path="/collectors/collection-agenda" element={<RouteGuard permission="collection-agenda.view"><CollectionAgendaPage /></RouteGuard>} />
       <Route path="/collectors" element={<RouteGuard permission="collectors.view"><CollectorsPage /></RouteGuard>} />
     <Route path="/settings/provinces" element={<RouteGuard permission="territorial.view"><ProvincesPage /></RouteGuard>} />
@@ -77,7 +86,7 @@ export function AppRouter(): ReactElement {
       <Route path="/loans/uncollectible-management" element={<RouteGuard permission="loans.view"><LoanManagementPage /></RouteGuard>} />
       <Route path="/loans/annulments" element={<RouteGuard permission="loans.view"><LoanAnnulmentManagementPage /></RouteGuard>} />
      <Route path="/loans/:id" element={<RouteGuard permission="loans.view"><LoanDetailPage /></RouteGuard>} />
-       <Route path="/loans" element={<RouteGuard permission="loans.view"><LoansPage /></RouteGuard>} />
+       <Route path="/loans" element={<RouteGuard permission="loans.view"><LoansPageRoute /></RouteGuard>} />
           <Route path="/loan-refinancings" element={<RouteGuard permission="loans.refinance.view"><RefinancingsPage /></RouteGuard>} />
           <Route path="/loan-refinancings/new" element={<RouteGuard permission="loans.refinance.view"><NewRefinancingPage /></RouteGuard>} />
           <Route path="/loan-refinancings/chains" element={<RouteGuard permission="loans.refinance.view"><RefinancingChainsPage /></RouteGuard>} />

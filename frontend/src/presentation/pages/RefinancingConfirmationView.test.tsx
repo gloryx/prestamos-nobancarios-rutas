@@ -67,16 +67,16 @@ describe('refinancing confirmation presentation', () => {
       'Capital pendiente', 'Interés pendiente', 'Saldo financiero', 'Capital anterior pendiente',
       'Interés anterior capitalizado', 'Dinero nuevo desembolsado', 'Principal contractual nuevo', 'Interés nuevo',
       'Total contractual nuevo', 'Diaria', 'Cantidad de pagos', 'Efectivo', 'Transferencia', 'Detalle',
-      '₡120.000,00', '₡30.000,00', '₡20.000,00', '₡170.000,00', '₡10.000,00', '₡180.000,00',
-      '02/10/2026', '03/10/2026', '₡90.000,00', 'Total del plan', 'Total contractual', 'Diferencia',
+      '₡120.000', '₡30.000', '₡20.000', '₡170.000', '₡10.000', '₡180.000',
+      '02/10/2026', '03/10/2026', '₡90.000', 'Total del plan', 'Total contractual', 'Diferencia',
       'Volver a nuevas condiciones', 'Confirmar refinanciamiento']) expect(html).toContain(text);
     expect(html).toContain('<th>#</th><th>Fecha</th><th>Monto</th>');
-    expect(html).toContain('Diferencia</dt><dd>₡0,00');
-    expect(html).toContain('una salida de Caja únicamente por el dinero nuevo: ₡20.000,00');
+    expect(html).toContain('Diferencia</dt><dd>₡0');
+    expect(html).toContain('una salida de Caja únicamente por el dinero nuevo: ₡20.000');
     expect(html).not.toContain('Interés pagado');
     expect(html).not.toContain('+ Agregar cuota');
     expect(html).not.toContain('type="date"');
-    expect(html).not.toContain('₡170.000,00.</p>'); // Principal is never described as a cash outflow.
+    expect(html).not.toContain('₡170.000.</p>'); // Principal is never described as a cash outflow.
   });
 
   it('explains zero new money, without an invented disbursement method or cash outflow', () => {
@@ -126,10 +126,10 @@ describe('refinancing confirmation presentation', () => {
     const html = withIdentity(<RefinancingResultView result={result} onNew={() => {}} />,
       { ...user, permissions: [...user.permissions, 'loans.view'] });
     for (const text of ['REFINANCIAMIENTO CREADO', 'ref-1', '01/10/2026', 'Ana Solís', '12345',
-      'Préstamo #101', 'REFINANCED', 'Préstamo #102', 'ACTIVE', '₡119.000,00', '₡31.000,00',
-      '₡20.000,00', '₡170.000,00', '₡15.000,00', '₡185.000,00', 'DESEMBOLSO', 'Transferencia',
+      'Préstamo #101', 'REFINANCED', 'Préstamo #102', 'ACTIVE', '₡119.000', '₡31.000',
+      '₡20.000', '₡170.000', '₡15.000', '₡185.000', 'DESEMBOLSO', 'Transferencia',
       'Ver cadena', 'Ver nuevo préstamo', 'Ver detalle del refinanciamiento', 'Nuevo refinanciamiento', 'Volver a préstamos']) expect(html).toContain(text);
-    expect(html).not.toContain('₡120.000,00');
+    expect(html).not.toContain('₡120.000');
     expect(html).toContain('href="/loans/new-2"');
     expect(html).toContain('href="/loan-refinancings/ref-1"');
     expect(html).toContain('href="/loan-refinancings/chains/loan/origin-1"');

@@ -134,7 +134,7 @@ describe('economic capital bulk reader', () => {
     expect(query).toHaveBeenCalledTimes(4);
     expect(query.mock.calls[1][0]).toContain('FROM loans l');
     expect(query.mock.calls[1][0]).toContain('status_at_cutoff');
-    expect(query.mock.calls[1][0]).toContain('event_sequence DESC');
+    expect(query.mock.calls[1][0]).toContain('candidate.event_sequence DESC');
     expect(query.mock.calls[2][0]).toContain('FROM loan_refinancings');
     expect(query.mock.calls[3][0]).toContain('p.principal_applied::text AS "principalApplied"');
     expect(query.mock.calls.slice(1).map((call) => call[1][0])).toEqual(['2026-09-30', '2026-09-30', '2026-09-30']);

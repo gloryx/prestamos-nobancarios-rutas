@@ -15,7 +15,7 @@ const mocks = vi.hoisted(() => ({
     startDate: '2026-01-01', principal: '100.00', interestAmount: '0.00', totalAmount: '100.00', pendingTotal: '100.00',
     financialBalance: '100.00', frequencyName: 'Diaria', preferredPaymentMethod: 'Efectivo', disbursementPaymentMethod: 'Efectivo',
     status: 'ACTIVE', intervalUnit: 'DAY', intervalValue: 1, createdByName: 'Staff', updatedAt: '2026-01-01T00:00:00Z',
-    plan: [], validPayments: [],
+    plan: [], validPayments: [], collectionProjection: { overdueAmount: '0.00', scheduledAmount: '0.00', totalSuggestedAmount: '0.00', operationalDate: null, operationalDateKind: null },
   } as LoanOperationalDetail,
 }));
 const initialLoan = { ...mocks.stale };

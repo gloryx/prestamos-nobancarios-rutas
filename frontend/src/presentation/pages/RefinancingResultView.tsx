@@ -3,10 +3,12 @@ import { Link } from 'react-router-dom';
 import type { RefinancingResult } from '../../domain/entities/loan-refinancing';
 import { formatDateOnlyForDisplay } from '../../shared/utils/date';
 import { formatCRCAggregate } from '../../shared/utils/money';
+import { Icon } from '../components/layout/Icon';
 import { useAuth } from '../hooks/auth-context';
 
-export function RefinancingResultView({ result, onNew, headingRef }: {
+export function RefinancingResultView({ result, onNew, headingRef, onDownload, downloading = false, downloadError = '' }: {
   result: RefinancingResult; onNew?: () => void; headingRef?: RefObject<HTMLHeadingElement | null>;
+  onDownload?: () => void; downloading?: boolean; downloadError?: string;
 }): ReactElement {
   const { can } = useAuth();
   const money = result.financialComposition;
@@ -19,6 +21,17 @@ export function RefinancingResultView({ result, onNew, headingRef }: {
         <p>Refinanciamiento {result.refinancingId} · {formatDateOnlyForDisplay(result.refinancingDate)}</p>
         <p>{result.customer.fullName} · {result.customer.identification}</p>
       </header>
+      <nav className="dialog-actions refinancing-result__actions" aria-label="Acciones del refinanciamiento">
+        <Link className="button button--primary" to={`/loan-refinancings/chains/loan/${encodeURIComponent(result.originLoan.id)}`}>Ver cadena</Link>
+        {can('loans.view') && <Link className="button button--primary" to={`/loans/${encodeURIComponent(result.newLoan.id)}`}>Ver nuevo préstamo</Link>}
+        {onDownload && can('loans.view') && can('loans.export') && <button className="button button--secondary" type="button"
+          disabled={downloading} aria-busy={downloading} onClick={onDownload}><Icon name="download" />{downloading ? 'Descargando…' : 'Descargar plan de pagos'}</button>}
+        {onNew && <Link className="button button--secondary" to={`/loan-refinancings/${encodeURIComponent(result.refinancingId)}`}>Ver detalle del refinanciamiento</Link>}
+        {onNew ? <button className="button button--secondary" type="button" onClick={onNew}>Nuevo refinanciamiento</button> :
+          <Link className="button button--secondary" to="/loan-refinancings/new">Nuevo refinanciamiento</Link>}
+        {can('loans.view') && <Link className="button button--secondary" to="/loans">Volver a préstamos</Link>}
+      </nav>
+      {downloadError && <p className="catalog-message catalog-message--error" role="alert">{downloadError}</p>}
       <div className="refinancing-result__loans">
         <section className="loan-confirmation__section" aria-label="Préstamo origen">
           <h2>PRÉSTAMO ORIGEN</h2><p>Préstamo #{result.originLoan.loanNumber}</p>
@@ -56,14 +69,6 @@ export function RefinancingResultView({ result, onNew, headingRef }: {
           <div><dt>Fecha</dt><dd>{formatDateOnlyForDisplay(result.refinancingDate)}</dd></div>
         </dl>
       </section> : <p className="loan-confirmation__section">Este refinanciamiento no generó un nuevo desembolso.</p>}
-      <nav className="dialog-actions refinancing-result__actions" aria-label="Acciones del refinanciamiento">
-        <Link className="button button--primary" to={`/loan-refinancings/chains/loan/${encodeURIComponent(result.originLoan.id)}`}>Ver cadena</Link>
-        {can('loans.view') && <Link className="button button--primary" to={`/loans/${encodeURIComponent(result.newLoan.id)}`}>Ver nuevo préstamo</Link>}
-        {onNew && <Link className="button button--secondary" to={`/loan-refinancings/${encodeURIComponent(result.refinancingId)}`}>Ver detalle del refinanciamiento</Link>}
-        {onNew ? <button className="button button--secondary" type="button" onClick={onNew}>Nuevo refinanciamiento</button> :
-          <Link className="button button--secondary" to="/loan-refinancings/new">Nuevo refinanciamiento</Link>}
-        {can('loans.view') && <Link className="button button--secondary" to="/loans">Volver a préstamos</Link>}
-      </nav>
     </div>
   </section>;
 }

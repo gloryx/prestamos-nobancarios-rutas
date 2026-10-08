@@ -6,6 +6,7 @@ import { ACTIVE_LOAN_OVERDUE_SQL } from './active-loan-condition.sql';
 import { paymentPlanDateIssue } from '../../domain/payment/payment-plan-dates';
 import type { RetroactivePeriodGuard } from '../financial-close/retroactive-period.guard';
 import { ClosedFinancialPeriodError } from '../../domain/financial-close/financial-close.errors';
+import { buildCollectionProjection } from '../../domain/payment/payment-projection';
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const MONEY = /^(?:0|[1-9]\d{0,15})(?:\.\d{1,2})?$/;
@@ -107,9 +108,14 @@ export class CreateLoanUseCase {
   async get(id: string) {
     return this.dataSource.transaction('REPEATABLE READ', async (manager) => {
       const loan = await this.detail(manager, id, true);
-      const validPayments: Array<{ id: string; amount: string; paymentDate: string; status: 'VALID' }> = await manager.query('SELECT id, amount::text AS amount, payment_date::text AS "paymentDate", status FROM payments WHERE loan_id=$1 AND status=\'VALID\' ORDER BY payment_date, id', [id]);
+      const validPayments: Array<{ id: string; amount: string; paymentDate: string; status: 'VALID' }> = await manager.query('SELECT id, amount::text AS amount, payment_date::text AS "paymentDate", status FROM payments WHERE loan_id=$1 AND status=\'VALID\' ORDER BY payment_date, created_at, id', [id]);
+      const applications = await manager.query(`SELECT pa.payment_plan_entry_id AS "planEntryId", pa.amount_applied AS "amountApplied", pa.carried_forward_amount AS "carriedForwardAmount", pa.carried_to_plan_entry_id AS "carriedToPlanEntryId", source.due_date::text AS "sourceDueDate", pa.created_at AS "createdAt"
+        FROM payment_applications pa JOIN payments p ON p.id = pa.payment_id AND p.status = 'VALID'
+        JOIN payment_plan_entries source ON source.id = pa.payment_plan_entry_id
+        WHERE p.loan_id = $1 AND (pa.amount_applied > 0 OR pa.carried_to_plan_entry_id IS NOT NULL) ORDER BY pa.created_at, pa.payment_plan_entry_id`, [id]);
       const paid = validPayments.reduce((sum, payment) => sum + cents(payment.amount), 0n);
-      return { ...loan, financialBalance: moneyFromCents(cents(loan.totalAmount) - paid), validPayments };
+      return { ...loan, financialBalance: moneyFromCents(cents(loan.totalAmount) - paid), validPayments,
+        collectionProjection: buildCollectionProjection(loan.plan, today(), applications) };
     });
   }
 }

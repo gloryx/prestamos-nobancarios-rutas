@@ -71,7 +71,12 @@ export function LoanDetailPage({ assigned = false }: { assigned?: boolean } = {}
         </dl>
       </section>
 
-      <LoanPaymentPlanTable plan={loan.plan} total={loan.totalAmount} showCondition />
+      {loan.collectionProjection.operationalDate && <section className="payment-selected__collection" aria-label="Próximo cobro consolidado">
+        <div><span>{loan.collectionProjection.operationalDateKind === 'TODAY' ? 'COBRO PENDIENTE HOY' : 'PRÓXIMO COBRO'}</span><strong>{formatCRC(loan.collectionProjection.totalSuggestedAmount)}</strong><small>{formatDateOnlyForDisplay(loan.collectionProjection.operationalDate)}</small></div>
+        <dl><div><dt>Saldo vencido</dt><dd>{formatCRC(loan.collectionProjection.overdueAmount)}</dd></div><div><dt>Próximo monto programado</dt><dd>{formatCRC(loan.collectionProjection.scheduledAmount)}</dd></div><div><dt>Total sugerido a cobrar</dt><dd>{formatCRC(loan.collectionProjection.totalSuggestedAmount)}</dd></div></dl>
+      </section>}
+
+      <LoanPaymentPlanTable plan={loan.plan} total={loan.financialBalance} showCondition />
       {!assigned && editing && can('loans.update') && <LoanEditDialog loanId={id} api={loanApi} onSaved={refreshDetail} onUnavailable={refreshUnavailable} onClose={closeEdit} />}
     </section>
   );

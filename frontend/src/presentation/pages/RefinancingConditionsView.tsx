@@ -27,6 +27,12 @@ export function RefinancingConditionsView({ state, controller, onBack, onContinu
         'No se pudieron cargar las opciones de pago. Intenta nuevamente.'}
       <button type="button" className="button button--secondary" onClick={() => { void controller.loadOptions(); }}>Reintentar</button>
     </div>}
+    {state.loadingHistoricalPreview && <p role="status" className="loan-list__message">Actualizando saldo histórico y plan…</p>}
+    {state.historicalPreviewError !== null && <div role="alert" className="loan-list__message loan-list__message--error">
+      No se pudo calcular el saldo para la fecha seleccionada. Revisa la fecha o vuelve al préstamo origen.
+      <button type="button" className="button button--secondary"
+        onClick={() => { void controller.setRefinancingDate(conditions.refinancingDate); }}>Reintentar</button>
+    </div>}
     {preview && <section className="loan-confirmation__section" aria-label="Composición de la nueva obligación">
       <h3>COMPOSICIÓN DE LA NUEVA OBLIGACIÓN</h3>
       <dl className="loan-confirmation__summary">
@@ -42,7 +48,7 @@ export function RefinancingConditionsView({ state, controller, onBack, onContinu
     <div className="loan-wizard__form refinancing-conditions__form">
       <label>Fecha de refinanciamiento
         <input className="loan-wizard__control" type="date" min={preview?.startDate} max={today} value={conditions.refinancingDate}
-          onChange={(event) => controller.setConditions({ refinancingDate: event.target.value })} />
+          onChange={(event) => { void controller.setRefinancingDate(event.target.value); }} />
       </label>
       <label>Dinero nuevo
         <MoneyInput className="loan-wizard__control" aria-label="Dinero nuevo" value={conditions.newMoney}

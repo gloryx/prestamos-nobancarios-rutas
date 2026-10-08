@@ -15,6 +15,10 @@ export class ListLoanRefinancingsDto extends SearchLoanRefinancingsDto {
   @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}$/) dateTo?: string;
 }
 
+export class PreviewLoanRefinancingDto {
+  @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}$/) refinancingDate?: string;
+}
+
 class RefinancingPlanEntryDto {
   @IsInt() @Min(1) sequence!: number;
   @Matches(/^\d{4}-\d{2}-\d{2}$/) dueDate!: string;

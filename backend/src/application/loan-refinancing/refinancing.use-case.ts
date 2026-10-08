@@ -1,6 +1,6 @@
 import { createHash } from 'crypto';
 import { cents } from '../../domain/loan/loan-financial-integrity';
-import { evaluateRefinancing, money, refinancingAmounts, type RefinancingSnapshot } from '../../domain/loan-refinancing/refinancing-finance';
+import { evaluateRefinancing, evaluateRefinancingAtPaymentCutoff, money, refinancingAmounts, type RefinancingSnapshot } from '../../domain/loan-refinancing/refinancing-finance';
 import type { RefinancingAmounts, RefinancingOperation, RefinancingStore, RefinancingSearchQuery, RefinancingListQuery, RefinancingChainGraph } from './refinancing.port';
 import { buildRefinancingChains, RefinancingChainIntegrityError } from './refinancing-chain';
 import { paymentPlanDateIssue } from '../../domain/payment/payment-plan-dates';
@@ -44,7 +44,7 @@ export function refinancingBaseline(snapshot: RefinancingSnapshot): string {
   });
 }
 
-function checkedSnapshot(snapshot: RefinancingSnapshot) {
+function assertSnapshotShape(snapshot: RefinancingSnapshot) {
   if (![snapshot.principal, snapshot.interestAmount, snapshot.totalAmount, snapshot.totals.paidAmount,
     snapshot.totals.paidPrincipal, snapshot.totals.paidInterest].every((value) => typeof value === 'string' && /^-?\d+(?:\.\d{1,2})?$/.test(value))
     || !Number.isSafeInteger(snapshot.totals.invalidCount) || !Array.isArray(snapshot.plan)
@@ -52,11 +52,19 @@ function checkedSnapshot(snapshot: RefinancingSnapshot) {
       typeof row.pendingAmount !== 'string' || !MONEY.test(row.pendingAmount))) {
     throw new RefinancingConflictError('Loan financial data is unavailable.', 'FINANCIAL_INTEGRITY_ERROR');
   }
+}
+
+function checkedSnapshot(snapshot: RefinancingSnapshot) {
+  assertSnapshotShape(snapshot);
   return evaluateRefinancing(snapshot);
 }
 
-function previewResponse(snapshot: RefinancingSnapshot) {
-  const result = checkedSnapshot(snapshot);
+function checkedHistoricalSnapshot(snapshot: RefinancingSnapshot) {
+  assertSnapshotShape(snapshot);
+  return evaluateRefinancingAtPaymentCutoff(snapshot);
+}
+
+function previewResponse(snapshot: RefinancingSnapshot, result = checkedSnapshot(snapshot), baselineSnapshot = snapshot) {
   const remaining = result.minimumRequiredPayment - result.integrity.validPaidAmount;
   const reasonCode = result.reasons[0] ?? null;
   return { loanId: snapshot.id, loanNumber: snapshot.loanNumber, customer: { id: snapshot.customerId,
@@ -68,7 +76,7 @@ function previewResponse(snapshot: RefinancingSnapshot) {
     pendingPlanAmount: money(result.integrity.pendingPlanAmount), minimumRequiredPayment: money(result.minimumRequiredPayment),
     remainingToMinimum: money(remaining > 0n ? remaining : 0n),
     eligible: result.eligible, reasonCode, reason: reasonCode ? reasonMessages[reasonCode] : null,
-    reasons: result.reasons, baseline: refinancingBaseline(snapshot) };
+    reasons: result.reasons, baseline: refinancingBaseline(baselineSnapshot) };
 }
 
 function normalize(input: RefinancingRequest): RefinancingRequest {
@@ -154,8 +162,27 @@ export class LoanRefinancingUseCase {
     return { items, total, page: query.page, pageSize: query.pageSize };
   }
 
-  async preview(originLoanId: string) {
-    if (!UUID.test(originLoanId)) throw new RefinancingValidationError('The loan identifier is invalid.');
+  async preview(originLoanId: string, refinancingDate?: string) {
+    if (!UUID.test(originLoanId) || refinancingDate !== undefined && !validDate(refinancingDate)) {
+      throw new RefinancingValidationError('The loan preview request is invalid.');
+    }
+    if (refinancingDate) {
+      const state = await this.store.previewAt(originLoanId, refinancingDate);
+      if (!state) throw new RefinancingNotFoundError('The loan does not exist.');
+      const current = checkedSnapshot(state.current);
+      if (!current.integrity.valid) {
+        throw new RefinancingConflictError('The loan financial amounts do not reconcile.', 'FINANCIAL_INTEGRITY_ERROR');
+      }
+      if (refinancingDate < state.current.startDate || refinancingDate > new Date().toISOString().slice(0, 10)) {
+        throw new RefinancingValidationError('The refinancing date is outside the loan period.');
+      }
+      if (state.historicalPayments.laterPaymentCount !== 0) {
+        throw new RefinancingConflictError('The loan has payments after the refinancing date.', 'HISTORICAL_STATE_CONFLICT');
+      }
+      const historical = { ...state.current, totals: state.historicalPayments.totals,
+        lastValidPaymentDate: state.historicalPayments.lastValidPaymentDate };
+      return previewResponse(historical, checkedHistoricalSnapshot(historical), state.current);
+    }
     const snapshot = await this.store.preview(originLoanId);
     if (!snapshot) throw new RefinancingNotFoundError('The loan does not exist.');
     return previewResponse(snapshot);
@@ -177,15 +204,25 @@ export class LoanRefinancingUseCase {
       }
       try { await this.closedPeriods?.assertDateAllowed(input.refinancingDate, tx.context); }
       catch (error) { if (error instanceof ClosedFinancialPeriodError) throw new RefinancingConflictError(error.message, 'CLOSED_FINANCIAL_PERIOD'); throw error; }
-      const check = checkedSnapshot(origin);
+      const currentCheck = checkedSnapshot(origin);
       if (origin.status === 'ACTIVE' && refinancingBaseline(origin) !== input.baseline) {
         throw new RefinancingConflictError('The loan changed since the preview. Refresh and retry.', 'STALE_DATA');
       }
+      if (!currentCheck.integrity.valid) {
+        throw new RefinancingConflictError('The origin loan is not eligible: FINANCIAL_INTEGRITY_ERROR.', 'FINANCIAL_INTEGRITY_ERROR');
+      }
+      const historicalPayments = await tx.readHistoricalPayments(origin.id, input.refinancingDate);
+      if (historicalPayments.laterPaymentCount !== 0) {
+        throw new RefinancingConflictError('The loan has payments after the refinancing date.', 'HISTORICAL_STATE_CONFLICT');
+      }
+      const historicalOrigin = { ...origin, totals: historicalPayments.totals,
+        lastValidPaymentDate: historicalPayments.lastValidPaymentDate };
+      const check = checkedHistoricalSnapshot(historicalOrigin);
       if (!check.eligible) throw new RefinancingConflictError(`The origin loan is not eligible: ${check.reasons.join(', ')}.`,
         origin.status === 'REFINANCED' ? 'ALREADY_REFINANCED' : check.reasons[0]);
       const opening = await tx.openingDate();
       if (!opening || input.refinancingDate < opening || input.refinancingDate < origin.startDate ||
-        input.refinancingDate < (origin.lastValidPaymentDate ?? origin.startDate) ||
+        input.refinancingDate < (historicalOrigin.lastValidPaymentDate ?? origin.startDate) ||
         input.refinancingDate > new Date().toISOString().slice(0, 10)) {
         throw new RefinancingValidationError('The refinancing date is outside the operational period.');
       }
@@ -195,8 +232,17 @@ export class LoanRefinancingUseCase {
       }
       const amounts = refinancingAmounts(check.integrity.outstandingPrincipal, check.integrity.outstandingInterest,
         cents(input.newMoney), cents(input.newInterestAmount));
+      const planTotal = input.plan.reduce((sum, row) => sum + cents(row.pendingAmount), 0n);
+      if (planTotal !== cents(amounts.newContractualTotal)) {
+        const currentAmounts = refinancingAmounts(currentCheck.integrity.outstandingPrincipal,
+          currentCheck.integrity.outstandingInterest, cents(input.newMoney), cents(input.newInterestAmount));
+        if (planTotal === cents(currentAmounts.newContractualTotal)) {
+          throw new RefinancingConflictError('The selected refinancing date has a different historical balance.',
+            'HISTORICAL_BALANCE_CONFLICT');
+        }
+      }
       if (cents(amounts.newContractualTotal) > MAX_CENTS || cents(amounts.newContractualPrincipal) <= 0n ||
-        input.plan.reduce((sum, row) => sum + cents(row.pendingAmount), 0n) !== cents(amounts.newContractualTotal)) {
+        planTotal !== cents(amounts.newContractualTotal)) {
         throw new RefinancingValidationError('The new loan and payment plan do not reconcile.');
       }
       const newLoan = await tx.insertLoan({ customerId: origin.customerId, refinancingDate: input.refinancingDate,

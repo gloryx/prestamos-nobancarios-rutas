@@ -116,7 +116,8 @@ describe('refinancing confirmation', () => {
     expect(newKey).toHaveBeenCalledOnce();
   });
 
-  it.each(['STALE_DATA', 'ALREADY_REFINANCED', 'IDEMPOTENCY_CONFLICT', 'CONCURRENT_REFINANCING'] as const)(
+  it.each(['STALE_DATA', 'ALREADY_REFINANCED', 'IDEMPOTENCY_CONFLICT', 'CONCURRENT_REFINANCING',
+    'HISTORICAL_BALANCE_CONFLICT'] as const)(
     'classifies %s without an automatic retry or a replacement key', async (code) => {
       const { controller, operations, newKey } = setup();
       controller.prepare(review());

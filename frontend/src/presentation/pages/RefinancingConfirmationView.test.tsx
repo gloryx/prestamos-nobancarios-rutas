@@ -11,6 +11,7 @@ import { AuthContext, type AuthContextValue } from '../hooks/auth-context';
 import { RefinancingConfirmationView } from './RefinancingConfirmationView';
 import { RefinancingResultView } from './RefinancingResultView';
 import { RefinancingStepOneView } from './NewRefinancingPage';
+import { refinancingFailureMessage } from '../helpers/refinancing-errors';
 
 const preview: RefinancingPreview = {
   loanId: 'origin-1', loanNumber: '101', customer: { id: 'customer-1', name: 'Ana Solís', identification: '12345' },
@@ -87,6 +88,14 @@ describe('refinancing confirmation presentation', () => {
     expect(html).not.toContain('Transferencia');
   });
 
+  it('shows a specific nontechnical message for a historical balance conflict', () => {
+    const controller = prepared();
+    const state = { ...controller.getSnapshot(), failure: 'HISTORICAL_BALANCE_CONFLICT' as const };
+    const html = withIdentity(<RefinancingConfirmationView state={state} onBack={() => {}} onConfirm={() => {}} />);
+    expect(html).toContain(refinancingFailureMessage('HISTORICAL_BALANCE_CONFLICT'));
+    expect(html).not.toContain('HISTORICAL_BALANCE_CONFLICT');
+  });
+
   it('keeps view-only users on review without a submit action and honors superadmin bypass', () => {
     const controller = prepared();
     const view = <RefinancingConfirmationView state={controller.getSnapshot()} onBack={() => {}} onConfirm={() => {}} />;
@@ -146,5 +155,20 @@ describe('refinancing confirmation presentation', () => {
     expect(html).not.toContain('Ver nuevo préstamo');
     expect(html).toContain('Ver cadena');
     expect(html).toContain('href="/loan-refinancings/new"');
+  });
+
+  it('shows the successor plan download action only with existing loan permissions', () => {
+    const action = vi.fn();
+    const allowed = withIdentity(<RefinancingResultView result={result} onDownload={action} downloading />,
+      { ...user, permissions: ['loans.view', 'loans.export'] });
+    expect(allowed).toMatch(/Acciones del refinanciamiento[\s\S]*Descargando…[\s\S]*PRÉSTAMO ORIGEN/);
+    expect(allowed).toContain('aria-busy="true"');
+    expect(allowed).toContain('<svg');
+    for (const permissions of [[], ['loans.view'], ['loans.export']]) {
+      expect(withIdentity(<RefinancingResultView result={result} onDownload={action} />,
+        { ...user, permissions })).not.toContain('Descargar plan de pagos');
+    }
+    expect(withIdentity(<RefinancingResultView result={result} onDownload={action} />,
+      { ...user, permissions: [], role: { ...user.role, isSuperAdmin: true } })).toContain('Descargar plan de pagos');
   });
 });

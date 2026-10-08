@@ -18,6 +18,7 @@ describe('loan detail operational read contract', () => {
       if (sql.startsWith('SELECT l.id')) return [loan];
       if (sql.includes('FROM payment_plan_entries')) return plan;
       if (sql.includes('FROM payments WHERE')) return facts;
+      if (sql.includes('FROM payment_applications pa')) return [];
       throw new Error(`Unexpected query: ${sql}`);
     });
     const unboundQuery = jest.fn(() => { throw new Error('A read escaped the transaction.'); });
@@ -34,15 +35,16 @@ describe('loan detail operational read contract', () => {
     expect(Reflect.getMetadata(PERMISSIONS_KEY, PaymentController.prototype.detail)).toEqual(['payments.view']);
   });
 
-  it('reads the loan once, the plan once and VALID payments once, without a payments endpoint', async () => {
+  it('reads the loan, plan, VALID payments and carry provenance in one transaction', async () => {
     const { query, transaction, unboundQuery, useCase } = reader();
     const controller = new LoanController(useCase, {} as never, {} as never, {} as never, {} as never, {} as never);
     expect(await controller.detail('loan-1')).toMatchObject({ ...loan, plan, validPayments: facts, financialBalance: '95.00' });
-    expect(query).toHaveBeenCalledTimes(3);
+    expect(query).toHaveBeenCalledTimes(4);
     expect(transaction).toHaveBeenCalledTimes(1);
     expect(unboundQuery).not.toHaveBeenCalled();
     expect(query.mock.calls[1][0]).toContain('SELECT id, sequence, due_date::text');
     expect(query.mock.calls[2][0]).toContain("status='VALID'");
+    expect(query.mock.calls[3][0]).toContain('FROM payment_applications pa');
     expect(query.mock.calls.every(([sql]) => !/\b(INSERT|UPDATE|DELETE)\b/.test(sql))).toBe(true);
     expect(query.mock.calls[0][0]).toContain('pf.id AS "paymentFrequencyId", pf.name AS "frequencyName"');
     expect(query.mock.calls[0][0]).toContain('pm.id AS "preferredPaymentMethodId", pm.name AS "preferredPaymentMethod"');
@@ -65,7 +67,7 @@ describe('loan detail operational read contract', () => {
         outside = { header: { ...loan, status: 'CANCELLED' }, plan: [], payments: [{ ...facts[0], amount: '120.00' }] };
         return [before.header];
       }
-      return sql.includes('FROM payment_plan_entries') ? before.plan : before.payments;
+      return sql.includes('FROM payment_plan_entries') ? before.plan : sql.includes('FROM payment_applications pa') ? [] : before.payments;
     });
     const unboundQuery = jest.fn(async (sql: string) => sql.includes('FROM payment_plan_entries') ? outside.plan : outside.payments);
     const transaction = jest.fn(async (isolation: string, callback: (manager: { query: typeof query }) => Promise<unknown>) => {
@@ -74,7 +76,7 @@ describe('loan detail operational read contract', () => {
     });
     const useCase = new CreateLoanUseCase({ transaction, manager: { query: unboundQuery } } as unknown as DataSource, {} as never);
     expect(await useCase.get('loan-1')).toMatchObject({ status: 'ACTIVE', plan, validPayments: facts, financialBalance: '95.00' });
-    expect(query).toHaveBeenCalledTimes(3);
+    expect(query).toHaveBeenCalledTimes(4);
     expect(unboundQuery).not.toHaveBeenCalled();
   });
 

@@ -13,6 +13,15 @@ describe('loan schedule', () => {
       { sequence: 3, dueDate: '2026-10-06', pendingAmount: '3.34' },
     ]);
   });
+  it('generates 30 reconciled daily installments after a historical refinancing date without Sundays', () => {
+    const plan = automaticPlan('2026-09-26', 'DAY', 1, 30, '600000.00');
+    expect(plan).toHaveLength(30);
+    expect(plan[0]).toEqual({ sequence: 1, dueDate: '2026-09-28', pendingAmount: '20000.00' });
+    expect(plan.reduce((sum, row) => sum + BigInt(row.pendingAmount.replace('.', '')), 0n)).toBe(60000000n);
+    expect(plan.every((row, index) => row.sequence === index + 1 &&
+      new Date(`${row.dueDate}T00:00:00Z`).getUTCDay() !== 0 &&
+      (index === 0 || row.dueDate > plan[index - 1].dueDate))).toBe(true);
+  });
   it('classifies Sundays, duplicates and out-of-order manual dates', () => {
     const row = (dueDate: string) => ({ dueDate });
     expect(paymentPlanDateIssue('2026-10-01', [row('2026-10-04')])).toBe('sunday');

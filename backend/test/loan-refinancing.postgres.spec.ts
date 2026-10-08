@@ -54,11 +54,11 @@ suite('refinancing on an isolated PostgreSQL 18 cluster', () => {
       { sequence: 2, dueDate: later(2), pendingAmount: String(Number(total) / 2) }],
     baseline, idempotencyKey: key,
   });
-  async function newOrigin(customerId = ids.customer) {
+  async function newOrigin(customerId = ids.customer, startDate = day) {
     const [loan]: [{ id: string }] = await db.query(`INSERT INTO loans (customer_id, payment_frequency_id,
       preferred_payment_method_id, start_date, principal, interest_amount, total_amount, status, created_by_user_id)
       VALUES ($1,$2,$3,$4,150000,30000,180000,'ACTIVE',$5) RETURNING id`,
-    [customerId, ids.frequency, ids.method, day, ids.actor]);
+    [customerId, ids.frequency, ids.method, startDate, ids.actor]);
     await db.query(`INSERT INTO loan_status_history (loan_id,event_sequence,event_kind,from_status,to_status,changed_at,changed_by_user_id)
       VALUES ($1,1,'CREATED',NULL,'ACTIVE',now(),$2)`, [loan.id, ids.actor]);
     for (const [index, due] of [later(1), later(2)].entries()) await db.query(
@@ -104,7 +104,7 @@ suite('refinancing on an isolated PostgreSQL 18 cluster', () => {
     const [state] = await db.query(`SELECT (SELECT COUNT(*)::int FROM migrations) AS migrations,
       (SELECT COUNT(*)::int FROM loans) AS loans, (SELECT COUNT(*)::int FROM payments) AS payments,
       (SELECT COUNT(*)::int FROM customers) AS customers, (SELECT COUNT(*)::int FROM loan_refinancings) AS refinancings`);
-    if (Object.entries(state).some(([name, count]) => count !== (name === 'migrations' ? 21 : 0))) {
+    if (Object.entries(state).some(([name, count]) => count !== (name === 'migrations' ? 24 : 0))) {
       throw new Error('Refinancing tests require all migrations and zero business rows.');
     }
     cash = new CashMovementTypeOrmRepository(db.getRepository(CashMovementOrmEntity), db);
@@ -289,6 +289,41 @@ suite('refinancing on an isolated PostgreSQL 18 cluster', () => {
     expect(origin.status).toBe('ACTIVE');
   });
 
+  it('includes a payment annulled after the cutoff and excludes it at the annulment cutoff', async () => {
+    const { id, paymentId } = await paidOrigin();
+    await db.query(`UPDATE payments SET status='ANNULLED' WHERE id=$1`, [paymentId]);
+    await db.query(`INSERT INTO payment_annulments
+      (payment_id,reason,annulled_at,created_by_user_id,idempotency_key,idempotency_fingerprint)
+      VALUES ($1,'TEST HISTORICAL CUTOFF',$2::timestamptz,$3,$4,'test')`,
+    [paymentId, `${later(1)}T12:00:00-06:00`, ids.actor, randomUUID()]);
+    const store = new LoanRefinancingTypeormStore(db, totals, cash);
+    await store.transaction(async (tx) => {
+      expect(await tx.readHistoricalPayments(id, day)).toMatchObject({
+        totals: { paidAmount: '30000.00', paidPrincipal: '30000.00', paidInterest: zero, invalidCount: 0 },
+      });
+    });
+    await db.query(`UPDATE payment_annulments SET annulled_at=$2::timestamptz WHERE payment_id=$1`,
+      [paymentId, `${day}T12:00:00-06:00`]);
+    await store.transaction(async (tx) => {
+      const historical = await tx.readHistoricalPayments(id, day);
+      expect(historical.totals.invalidCount).toBe(0);
+      expect(cents(historical.totals.paidAmount)).toBe(0n);
+      expect(cents(historical.totals.paidPrincipal)).toBe(0n);
+      expect(cents(historical.totals.paidInterest)).toBe(0n);
+    });
+  });
+
+  it('rejects a payment economically after the refinancing date without partial writes', async () => {
+    const { id, paymentId } = await paidOrigin();
+    await db.query(`UPDATE payments SET payment_date=$2::date WHERE id=$1`, [paymentId, later(1)]);
+    const baseline = (await refinancing.preview(id)).baseline;
+    const before = await counts();
+    await expect(refinancing.confirm(invoice(id, baseline, randomUUID()), ids.actor))
+      .rejects.toMatchObject({ reasonCode: 'HISTORICAL_STATE_CONFLICT' });
+    expect(await counts()).toEqual(before);
+    expect((await db.query('SELECT status FROM loans WHERE id=$1', [id]))[0].status).toBe('ACTIVE');
+  });
+
   it('serializes two real PostgreSQL transactions on one origin and writes one successor only', async () => {
     const { id } = await paidOrigin();
     const baseline = (await refinancing.preview(id)).baseline;
@@ -381,12 +416,52 @@ suite('refinancing on an isolated PostgreSQL 18 cluster', () => {
     const before = await db.query('SELECT row_to_json(p)::text AS value FROM payments p WHERE id=$1', [caseB.paymentId]);
     const applications = await db.query(`SELECT row_to_json(pa)::text AS value FROM payment_applications pa WHERE payment_id=$1`, [caseB.paymentId]);
     const successor = await db.query('SELECT row_to_json(l)::text AS value FROM loans l WHERE id=$1', [caseB.successor]);
-    await expect(payment.annul(caseB.paymentId, 'TEST forbidden historical annulment', randomUUID(), ids.actor))
+    await expect(payment.annul(caseB.paymentId, 'TEST forbidden historical annulment', randomUUID(), ids.actor, 'CASH_REFUND'))
       .rejects.toBeInstanceOf(PaymentConflictError);
     const edit = new GetLoanEditContextUseCase(new LoanEditContextTypeormReader(db, totals));
     await expect(edit.execute(caseB.origin)).rejects.toBeInstanceOf(LoanEditContextConflictError);
     expect(await db.query('SELECT row_to_json(p)::text AS value FROM payments p WHERE id=$1', [caseB.paymentId])).toEqual(before);
     expect(await db.query(`SELECT row_to_json(pa)::text AS value FROM payment_applications pa WHERE payment_id=$1`, [caseB.paymentId])).toEqual(applications);
     expect(await db.query('SELECT row_to_json(l)::text AS value FROM loans l WHERE id=$1', [caseB.successor])).toEqual(successor);
+  });
+
+  it('persists correction reversals on the original date and cash refunds on the real date', async () => {
+    const historicalDate = later(-2);
+    await db.query(`UPDATE financial_openings SET opening_date = $1`, [historicalDate]);
+    const payer = new RegisterPaymentUseCase(db, totals);
+    for (const type of ['DATA_CORRECTION', 'CASH_REFUND'] as const) {
+      const loanId = await newOrigin(ids.customer, historicalDate);
+      const receipt = await payer.execute({ loanId, amount: '30000.00', paymentDate: historicalDate,
+        methodId: ids.method, collectorId: ids.collector, idempotencyKey: randomUUID() }, ids.actor);
+      const key = randomUUID();
+      await payer.annul(receipt.id as string, `TEST ${type}`, key, ids.actor, type);
+      await expect(payer.annul(receipt.id as string, `TEST ${type}`, key, ids.actor, type))
+        .resolves.toMatchObject({ id: receipt.id, status: 'ANNULLED' });
+      const [row] = await db.query(`SELECT a.annulment_type AS type,
+        (a.annulled_at AT TIME ZONE 'America/Costa_Rica')::date::text AS "annulledDate",
+        reversal.movement_date::text AS "reversalDate"
+        FROM payment_annulments a JOIN cash_movements original ON original.payment_id = a.payment_id
+        JOIN cash_movements reversal ON reversal.reversed_movement_id = original.id WHERE a.payment_id = $1`, [receipt.id]);
+      expect(row).toMatchObject({ type, reversalDate: type === 'DATA_CORRECTION' ? historicalDate : day, annulledDate: day });
+    }
+  });
+
+  it('defaults migrated historical annulments to cash refunds and enforces the discriminator check', async () => {
+    const runner = db.createQueryRunner();
+    await runner.connect(); await runner.startTransaction();
+    try {
+      const [column] = await runner.query(`SELECT character_maximum_length AS length, column_default AS "default"
+        FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'payment_annulments'
+          AND column_name = 'annulment_type'`);
+      expect(column).toMatchObject({ length: 24 });
+      expect(column.default).toContain('CASH_REFUND');
+      const [inserted] = await runner.query(`INSERT INTO payment_annulments
+        (payment_id,reason,created_by_user_id,idempotency_key,idempotency_fingerprint)
+        VALUES ($1,'TEST historical default',$2,$3,'test') RETURNING annulment_type AS type`,
+      [caseB.paymentId, ids.actor, randomUUID()]);
+      expect(inserted.type).toBe('CASH_REFUND');
+      await expect(runner.query(`UPDATE payment_annulments SET annulment_type = 'UNSUPPORTED' WHERE payment_id = $1`,
+        [caseB.paymentId])).rejects.toMatchObject({ driverError: { constraint: 'CHK_payment_annulment_type' } });
+    } finally { await runner.rollbackTransaction(); await runner.release(); }
   });
 });

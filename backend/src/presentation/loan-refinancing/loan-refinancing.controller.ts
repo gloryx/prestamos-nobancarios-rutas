@@ -2,7 +2,7 @@ import { BadRequestException, ConflictException, Controller, Get, HttpCode, Http
 import { LoanRefinancingUseCase, RefinancingConflictError, RefinancingNotFoundError, RefinancingValidationError } from '../../application/loan-refinancing/refinancing.use-case';
 import { CurrentUser, RequirePermissions } from '../security/security.decorators';
 import type { CurrentIdentity } from '../../domain/security/security.types';
-import { ConfirmLoanRefinancingDto, ListLoanRefinancingsDto, SearchLoanRefinancingsDto } from './loan-refinancing.dto';
+import { ConfirmLoanRefinancingDto, ListLoanRefinancingsDto, PreviewLoanRefinancingDto, SearchLoanRefinancingsDto } from './loan-refinancing.dto';
 import { refinancingResponse } from './loan-refinancing.response';
 
 @Controller('loan-refinancings')
@@ -25,8 +25,8 @@ export class LoanRefinancingController {
   }
 
   @Get('loans/:loanId/preview') @RequirePermissions('loans.refinance.view')
-  async preview(@Param('loanId', ParseUUIDPipe) id: string) {
-    try { return await this.useCase.preview(id); } catch (error) { return this.map(error); }
+  async preview(@Param('loanId', ParseUUIDPipe) id: string, @Query() query: PreviewLoanRefinancingDto) {
+    try { return await this.useCase.preview(id, query.refinancingDate); } catch (error) { return this.map(error); }
   }
 
   @Get('loans/:loanId/chain') @RequirePermissions('loans.refinance.view')

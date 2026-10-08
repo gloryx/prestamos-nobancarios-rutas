@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { RefreshCw } from 'lucide-react';
 import { loanApi } from '../../infrastructure/api/loan.api';
-import { paymentApi, type PaymentContext, type PaymentLoan, type PendingPaymentEntry, type PlanBaseline, type ValidPayment } from '../../infrastructure/api/payment.api';
+import { paymentApi, type PaymentAnnulmentType, type PaymentContext, type PaymentLoan, type PendingPaymentEntry, type PlanBaseline, type ValidPayment } from '../../infrastructure/api/payment.api';
 import { generateLoanPaymentPlanReport } from '../../infrastructure/reports/loan-payment-plan-report.service';
 import { formatDateOnlyForDisplay } from '../../shared/utils/date';
 import { formatCRC, moneyFromCents, parseMoneyCents } from '../../shared/utils/money';
@@ -12,7 +12,7 @@ import { TableActions } from '../components/TableActions';
 import { Icon } from '../components/layout/Icon';
 import { PAGE_SIZE, refreshPaymentLoanPage, reusePendingLoanPage, type LoanList } from '../helpers/payment-loan-selector';
 import { loadActivePaymentContext, paymentLoanIdFromSearch, paymentSearchWithLoan, selectPaymentLoanFromDialog } from '../helpers/payment-loan-link';
-import { appendAutomaticPlanObligation, localDateOnly, paymentTimeline, persistPlanAndRefresh, planBaselineFromContext, planDraftFromEntries, planSaveAttempt, PlanRefreshError, reviewPlanDraft, type PlanDraftEntry } from '../helpers/payment-plan';
+import { appendAutomaticPlanObligation, chronologicalPaymentAccumulation, localDateOnly, paymentSuggestion, paymentTimeline, paymentTimelineForDisplay, persistPlanAndRefresh, planBaselineFromContext, planDraftFromEntries, planSaveAttempt, PlanRefreshError, reviewPlanDraft, type PlanDraftEntry } from '../helpers/payment-plan';
 import { useAuth } from '../hooks/auth-context';
 
 const errorMessage = (cause: unknown) => cause instanceof Error ? cause.message : 'No se pudo completar la solicitud.';
@@ -41,8 +41,9 @@ export function annulmentTarget(context: PaymentContext): ValidPayment | null {
   return context.validPayments.filter((payment) => payment.status === 'VALID').at(-1) ?? null;
 }
 
-export function annulmentAttempt(previous: CaptureAttempt | null, paymentId: string, reason: string, generateKey: () => string = () => crypto.randomUUID()): CaptureAttempt {
-  const fingerprint = JSON.stringify({ paymentId, reason: reason.trim() });
+export function annulmentAttempt(previous: CaptureAttempt | null, paymentId: string, reason: string,
+  annulmentType: PaymentAnnulmentType, generateKey: () => string = () => crypto.randomUUID()): CaptureAttempt {
+  const fingerprint = JSON.stringify({ paymentId, reason: reason.trim(), annulmentType });
   return previous?.fingerprint === fingerprint ? previous : { fingerprint, key: generateKey() };
 }
 
@@ -52,8 +53,9 @@ export async function runAnnulOnce<T>(lock: { current: boolean }, action: () => 
   try { return await action(); } finally { lock.current = false; }
 }
 
-export async function submitAnnulment(loanId: string, paymentId: string, reason: string, key: string, api: Pick<typeof paymentApi, 'annul' | 'context'>) {
-  try { await api.annul(paymentId, { reason, idempotencyKey: key }); }
+export async function submitAnnulment(loanId: string, paymentId: string, reason: string, annulmentType: PaymentAnnulmentType,
+  key: string, api: Pick<typeof paymentApi, 'annul' | 'context'>) {
+  try { await api.annul(paymentId, { reason, annulmentType, idempotencyKey: key }); }
   catch (error) {
     let context: PaymentContext | null = null;
     try { context = await api.context(loanId); } catch { /* Keep the original rejection visible. */ }
@@ -157,9 +159,10 @@ export function PaymentCaptureDialog({ context, entry, visibleNumber, amount, pa
   onAmount: (value: string) => void; onDate: (value: string) => void; onMethod: (value: string) => void; onCollector: (value: string) => void;
   onSubmit: () => void; onClose: () => void; dialogRef: RefObject<HTMLDivElement | null>; dateRef: RefObject<HTMLInputElement | null>; today: string;
 }) {
+  const suggestion = paymentSuggestion(context, entry.id);
   return <div className="dialog-backdrop"><div className="dialog payment-capture-dialog" role="dialog" aria-modal="true" aria-labelledby="payment-capture-title" ref={dialogRef}>
     <header className="payment-capture-dialog__header"><h2 id="payment-capture-title">Registrar pago</h2></header>
-    <div className="payment-capture-dialog__context"><strong>Cuota operativa N.º {visibleNumber}</strong><span>Vencimiento: {formatDateOnlyForDisplay(entry.dueDate)}</span><span>Pendiente: {formatCRC(entry.pendingAmount)}</span></div>
+    <div className="payment-capture-dialog__context"><strong>Cobro operativo · obligación N.º {visibleNumber}</strong><span>Fecha de referencia: {formatDateOnlyForDisplay(entry.dueDate)}</span><span>Total vencido: {formatCRC(context.collectionProjection.overdueAmount)}</span><span>Cuota sugerida: {suggestion ? formatCRC(suggestion.amount) : '—'}</span></div>
     <form onSubmit={(event) => { event.preventDefault(); onSubmit(); }}>
       <div className="payment-capture-dialog__fields">
         <label>Fecha del pago<input ref={dateRef} type="date" value={paymentDate} max={today} onChange={(event) => onDate(event.target.value)} required /></label>
@@ -174,32 +177,38 @@ export function PaymentCaptureDialog({ context, entry, visibleNumber, amount, pa
   </div></div>;
 }
 
-export function PaymentAnnulDialog({ context, payment, reason, busy, eligible, error, onReason, onSubmit, onClose, dialogRef, reasonRef }: {
-  context: PaymentContext; payment: ValidPayment; reason: string; busy: boolean; eligible: boolean; error: string;
-  onReason: (value: string) => void; onSubmit: () => void; onClose: () => void;
+export function PaymentAnnulDialog({ context, payment, annulmentType, reason, busy, eligible, error, onType, onReason, onSubmit, onClose, dialogRef, reasonRef }: {
+  context: PaymentContext; payment: ValidPayment; annulmentType: PaymentAnnulmentType | ''; reason: string; busy: boolean; eligible: boolean; error: string;
+  onType: (value: PaymentAnnulmentType) => void; onReason: (value: string) => void; onSubmit: () => void; onClose: () => void;
   dialogRef: RefObject<HTMLDivElement | null>; reasonRef: RefObject<HTMLTextAreaElement | null>;
 }) {
   return <div className="dialog-backdrop"><div className="dialog payment-capture-dialog" role="dialog" aria-modal="true" aria-labelledby="payment-annul-title" tabIndex={-1} ref={dialogRef} aria-busy={busy}>
     <header className="payment-capture-dialog__header"><h2 id="payment-annul-title">Anular pago</h2></header>
     <div className="payment-capture-dialog__context"><strong>Préstamo #{context.summary.loanNumber} · {context.summary.customerName}</strong><span>Identificación: {context.summary.identification}</span><span>Fecha del pago: {formatDateOnlyForDisplay(payment.paymentDate)}</span><span>Monto: {formatCRC(payment.amount)}</span></div>
-    <p>Esta acción anula el pago y recalcula el saldo y el plan de pagos. No elimina el registro.</p>
-    <form onSubmit={(event) => { event.preventDefault(); if (!busy && eligible && reason.trim()) onSubmit(); }}>
-      <label htmlFor="payment-annul-reason">Motivo<textarea id="payment-annul-reason" ref={reasonRef} value={reason} required disabled={busy} onChange={(event) => onReason(event.target.value)} /></label>
+    <p>Esta acción conserva el registro y recalcula el saldo y el plan de pagos.</p>
+    <form onSubmit={(event) => { event.preventDefault(); if (!busy && eligible && annulmentType && reason.trim()) onSubmit(); }}>
+      <fieldset className="payment-annulment__type" disabled={busy}><legend>Motivo de la anulación</legend>
+        <label><input type="radio" name="payment-annulment-type" value="DATA_CORRECTION" checked={annulmentType === 'DATA_CORRECTION'} onChange={() => onType('DATA_CORRECTION')} />Error de registro</label>
+        <label><input type="radio" name="payment-annulment-type" value="CASH_REFUND" checked={annulmentType === 'CASH_REFUND'} onChange={() => onType('CASH_REFUND')} />Devolución de dinero</label>
+      </fieldset>
+      <label htmlFor="payment-annul-reason">Observaciones<textarea id="payment-annul-reason" ref={reasonRef} value={reason} required disabled={busy} onChange={(event) => onReason(event.target.value)} /></label>
       {error && <p className="form-error" role="alert">{error}</p>}
-      <footer className="payment-capture-dialog__footer"><button className="button button--secondary" type="button" disabled={busy} onClick={onClose}>Cancelar</button><button className="button button--danger" type="submit" disabled={busy || !eligible || !reason.trim()}>{busy ? 'Anulando…' : 'Anular pago'}</button></footer>
+      <footer className="payment-capture-dialog__footer"><button className="button button--secondary" type="button" disabled={busy} onClick={onClose}>Cancelar</button><button className="button button--danger" type="submit" disabled={busy || !eligible || !annulmentType || !reason.trim()}>{busy ? 'Anulando…' : 'Anular pago'}</button></footer>
     </form>
   </div></div>;
 }
 
 export function SelectedPaymentDetails({ context, canCreate, canCustomize, canAnnul, canExport, canRefinance, annulBusy, downloadBusy, onPay, onCustomize, onAnnul, onDownload, onChangeLoan, onCloseLoan, triggerRef, paymentTriggerRef, planTriggerRef, annulTriggerRef }: {
-  context: PaymentContext; canCreate: boolean; canCustomize: boolean; canAnnul: boolean; canExport: boolean; canRefinance: boolean; annulBusy: boolean; downloadBusy: boolean; onPay: () => void; onCustomize: () => void; onAnnul: (paymentId: string) => void; onDownload: () => void;
+  context: PaymentContext; canCreate: boolean; canCustomize: boolean; canAnnul: boolean; canExport: boolean; canRefinance: boolean; annulBusy: boolean; downloadBusy: boolean; onPay: (entry: PendingPaymentEntry) => void; onCustomize: () => void; onAnnul: (paymentId: string) => void; onDownload: () => void;
   onChangeLoan: () => void; onCloseLoan: () => void;
   triggerRef: RefObject<HTMLButtonElement | null>; paymentTriggerRef: RefObject<HTMLButtonElement | null>; planTriggerRef: RefObject<HTMLButtonElement | null>; annulTriggerRef: RefObject<HTMLButtonElement | null>;
 }) {
   const today = localDateOnly();
-  const rows = paymentTimeline(context);
+  const timeline = paymentTimeline(context);
+  const rows = paymentTimelineForDisplay(context);
   const lastValid = annulmentTarget(context);
-  const isOverdue = rows.some((row) => row.kind === 'PLAN_ENTRY' && row.date < today);
+  const isOverdue = timeline.some((row) => row.kind === 'PLAN_ENTRY' && row.date < today);
+  const accumulation = chronologicalPaymentAccumulation(context);
 
   return <div className="payment-selected">
     <section className="payment-selected__summary" aria-labelledby="payment-selected-loan">
@@ -230,7 +239,8 @@ export function SelectedPaymentDetails({ context, canCreate, canCustomize, canAn
           const paid = row.kind === 'PAYMENT';
           const overdue = !paid && row.date < today;
           const number = index + 1;
-           return <tr key={`${row.kind}:${row.id}`}><td>{number}</td><td>{formatDateOnlyForDisplay(row.date)}</td><td>{paid ? '—' : formatCRC(row.amount)}</td><td>{paid ? formatCRC(row.amount) : '—'}</td><td><span className={`status-badge ${paid ? 'status-badge--active' : overdue ? 'payment-selected__overdue' : 'payment-selected__pending'}`}>{paid ? 'PAGADA' : overdue ? 'VENCIDA' : 'PENDIENTE'}</span></td><td>{paid && canAnnul && row.id === lastValid?.id ? <TableActions ariaLabel={`Acciones del pago del ${formatDateOnlyForDisplay(row.date)}`} actions={[{ key: 'annul', icon: 'reverse', label: 'Anular pago', title: 'Anular último pago válido', ariaLabel: `Anular pago del ${formatDateOnlyForDisplay(row.date)} por ${formatCRC(row.amount)} del préstamo ${context.summary.loanNumber}`, buttonRef: annulTriggerRef, disabled: annulBusy, onClick: () => onAnnul(row.id) }]} /> : !paid && canCreate && row.id === context.firstOperationalRow?.id ? <TableActions ariaLabel={`Acciones de la obligación ${number}`} actions={[{ key: 'pay', icon: 'payment', label: 'Pagar', title: `Pagar cuota ${number}`, ariaLabel: `Pagar cuota ${number}`, buttonRef: paymentTriggerRef, onClick: onPay }]} /> : '—'}</td></tr>;
+          const entry = paid ? null : context.combinedPlan.find((item) => item.id === row.id) ?? null;
+          return <tr key={`${row.kind}:${row.id}`}><td>{number}</td><td>{formatDateOnlyForDisplay(row.date)}</td><td>{paid ? '—' : formatCRC(row.amount)}</td><td>{paid ? formatCRC(row.amount) : '—'}</td><td><span className={`status-badge ${paid ? 'status-badge--active' : overdue ? 'payment-selected__overdue' : 'payment-selected__pending'}`}>{paid ? 'PAGADA' : overdue ? 'VENCIDA' : 'PENDIENTE'}</span></td><td>{paid && canAnnul && row.id === lastValid?.id ? <TableActions ariaLabel={`Acciones del pago del ${formatDateOnlyForDisplay(row.date)}`} actions={[{ key: 'annul', icon: 'reverse', label: 'Anular pago', title: 'Anular último pago válido', ariaLabel: `Anular pago del ${formatDateOnlyForDisplay(row.date)} por ${formatCRC(row.amount)} del préstamo ${context.summary.loanNumber}`, buttonRef: annulTriggerRef, disabled: annulBusy, onClick: () => onAnnul(row.id) }]} /> : entry && canCreate ? <TableActions ariaLabel={`Acciones de la obligación ${number}`} actions={[{ key: 'pay', icon: 'payment', label: 'Pagar', title: `Pagar cuota ${number}`, ariaLabel: `Pagar cuota ${number}`, buttonRef: row.id === (accumulation?.receiverEntryId ?? context.firstOperationalRow?.id) ? paymentTriggerRef : undefined, onClick: () => onPay(entry) }]} /> : '—'}</td></tr>;
         })}</tbody>
       </table></div>
       {!rows.length && <p>No hay pagos válidos ni cuotas pendientes.</p>}
@@ -297,6 +307,7 @@ export function PaymentsPage() {
   const returnAnnulFocus = useRef(false);
   const [annulTarget, setAnnulTarget] = useState<{ loanId: string; payment: ValidPayment } | null>(null);
   const [showAnnul, setShowAnnul] = useState(false);
+  const [annulmentType, setAnnulmentType] = useState<PaymentAnnulmentType | ''>('');
   const [annulReason, setAnnulReason] = useState('');
   const [annulError, setAnnulError] = useState('');
   const [annulSaving, setAnnulSaving] = useState(false);
@@ -305,6 +316,7 @@ export function PaymentsPage() {
   const captureLocked = useRef(false);
   const captureAttempt = useRef<CaptureAttempt | null>(null);
   const [showPayment, setShowPayment] = useState(false);
+  const [paymentEntryId, setPaymentEntryId] = useState<string | null>(null);
   const [paymentDate, setPaymentDate] = useState('');
   const [collectorId, setCollectorId] = useState('');
   const [selecting, setSelecting] = useState(false);
@@ -319,7 +331,7 @@ export function PaymentsPage() {
   const closePayment = useCallback(() => {
     if (captureLocked.current) return;
     returnPaymentFocus.current = true;
-    setError(''); setShowPayment(false);
+    setError(''); setShowPayment(false); setPaymentEntryId(null);
   }, []);
   const closePlan = useCallback(() => {
     if (planLocked.current) return;
@@ -331,7 +343,7 @@ export function PaymentsPage() {
     if (annulLocked.current) return;
     ++annulOpenToken.current;
     returnAnnulFocus.current = true;
-    setShowAnnul(false); setAnnulTarget(null); setAnnulReason(''); setAnnulError(''); setAnnulRetryUncertain(false); annulAttempt.current = null;
+    setShowAnnul(false); setAnnulTarget(null); setAnnulmentType(''); setAnnulReason(''); setAnnulError(''); setAnnulRetryUncertain(false); annulAttempt.current = null;
   }, []);
   useEffect(() => {
     if (!showSelector || !isNewPayment) return;
@@ -365,7 +377,7 @@ export function PaymentsPage() {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') { event.preventDefault(); if (!annulLocked.current) closeAnnul(); return; }
       if (event.key !== 'Tab' || !annulDialogRef.current) return;
-      const focusable = Array.from(annulDialogRef.current.querySelectorAll<HTMLElement>('button:not([disabled]), textarea:not([disabled])'));
+      const focusable = Array.from(annulDialogRef.current.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), textarea:not([disabled])'));
       const first = focusable[0]; const last = focusable[focusable.length - 1];
       if (!first || !last) { event.preventDefault(); annulDialogRef.current.focus(); return; }
       if (!annulDialogRef.current.contains(document.activeElement)) { event.preventDefault(); first.focus(); }
@@ -455,9 +467,9 @@ export function PaymentsPage() {
   const select = useCallback(async (loanId: string) => {
     const token = ++selectionToken.current;
     selectedLoanId.current = null;
-    ++annulOpenToken.current; setShowAnnul(false); setAnnulTarget(null); setAnnulError(''); annulAttempt.current = null;
+    ++annulOpenToken.current; setShowAnnul(false); setAnnulTarget(null); setAnnulmentType(''); setAnnulError(''); annulAttempt.current = null;
     ++planOpenToken.current; setShowPlan(false); setPlanBase(null); setPlanDraft([]); planAttempt.current = null;
-    setShowPayment(false); captureAttempt.current = null;
+    setShowPayment(false); setPaymentEntryId(null); captureAttempt.current = null;
     setSelected(null); setSelecting(true); setError(''); setSelectionError(null); setMethodId(''); setCollectorId(''); setPlanSuccess('');
     try {
       const context = await loadActivePaymentContext(loanId, () => token === selectionToken.current);
@@ -478,7 +490,7 @@ export function PaymentsPage() {
     ++selectionToken.current; ++planOpenToken.current;
     selectedLoanId.current = null;
     setSelected(null); setSelecting(false); setSelectionError(null); setError(''); setPlanSuccess('');
-    setShowPayment(false); setShowPlan(false); setPlanBase(null); setPlanDraft([]);
+    setShowPayment(false); setPaymentEntryId(null); setShowPlan(false); setPlanBase(null); setPlanDraft([]);
     setSearchParams(paymentSearchWithLoan(searchParams.toString(), null));
   };
   const download = async () => {
@@ -502,11 +514,14 @@ export function PaymentsPage() {
     } catch (cause) { setError(errorMessage(cause)); }
     finally { setBusy(false); }
   };
-  const openPayment = () => {
-    if (!selected?.firstOperationalRow || !can('payments.create')) return;
+  const openPayment = (requestedEntry?: PendingPaymentEntry) => {
+    if (!selected || !can('payments.create')) return;
+    const suggestion = paymentSuggestion(selected, requestedEntry?.id);
+    if (!suggestion) return;
     const today = new Date().toISOString().slice(0, 10);
-    setPaymentDate(defaultPaymentDate(selected.firstOperationalRow.dueDate, today));
-    setAmount(selected.firstOperationalRow.pendingAmount);
+    setPaymentEntryId(suggestion.entry.id);
+    setPaymentDate(defaultPaymentDate(suggestion.entry.dueDate, today));
+    setAmount(suggestion.amount);
     setMethodId(selected.preferredMethod.activeMethods.some((method) => method.id === selected.preferredMethod.id) ? selected.preferredMethod.id ?? '' : '');
     setCollectorId(''); setError(''); setShowPayment(true);
   };
@@ -525,7 +540,7 @@ export function PaymentsPage() {
       const refreshed = await paymentApi.context(selected.summary.loanId);
       if (selection !== selectionToken.current) return;
       setSelected(refreshed);
-      setAmount(''); captureAttempt.current = null; returnPaymentFocus.current = true; setShowPayment(false);
+      setAmount(''); setPaymentEntryId(null); captureAttempt.current = null; returnPaymentFocus.current = true; setShowPayment(false);
     } catch (cause) { if (selection === selectionToken.current) setError(errorMessage(cause)); }
     finally { captureLocked.current = false; setBusy(false); }
   };
@@ -563,23 +578,24 @@ export function PaymentsPage() {
     ++planOpenToken.current;
     ++annulOpenToken.current;
     annulFocusPaymentId.current = paymentId;
-    setAnnulTarget({ loanId: selected.summary.loanId, payment }); setAnnulReason(''); setAnnulError(''); setAnnulRetryUncertain(false); annulAttempt.current = null;
+    setAnnulTarget({ loanId: selected.summary.loanId, payment }); setAnnulmentType(''); setAnnulReason(''); setAnnulError(''); setAnnulRetryUncertain(false); annulAttempt.current = null;
     setPlanSuccess(''); setShowAnnul(true);
   };
   const confirmAnnul = async () => {
     if (annulLocked.current || !showAnnul || !annulTarget || !selected || selected.summary.loanId !== annulTarget.loanId || !can('payments.annul')) return;
     const reason = annulReason.trim();
+    if (!annulmentType) { setAnnulError('Selecciona el motivo de la anulación.'); return; }
     if (!reason) { setAnnulError('Indica el motivo de la anulación.'); return; }
     const eligible = annulmentTarget(selected)?.id === annulTarget.payment.id;
-    const retry = annulRetryUncertain && annulAttempt.current?.fingerprint === JSON.stringify({ paymentId: annulTarget.payment.id, reason });
+    const retry = annulRetryUncertain && annulAttempt.current?.fingerprint === JSON.stringify({ paymentId: annulTarget.payment.id, reason, annulmentType });
     if (!eligible && !retry) return;
-    const attempt = annulmentAttempt(annulAttempt.current, annulTarget.payment.id, reason);
+    const attempt = annulmentAttempt(annulAttempt.current, annulTarget.payment.id, reason, annulmentType);
     annulAttempt.current = attempt;
     const selection = selectionToken.current; const open = annulOpenToken.current;
     await runAnnulOnce(annulLocked, async () => {
       setAnnulSaving(true); setAnnulError('');
       try {
-        const result = await submitAnnulment(annulTarget.loanId, annulTarget.payment.id, reason, attempt.key, paymentApi);
+        const result = await submitAnnulment(annulTarget.loanId, annulTarget.payment.id, reason, annulmentType, attempt.key, paymentApi);
         if (selection !== selectionToken.current || open !== annulOpenToken.current) return;
         if (!result.accepted) {
           if (result.context) setSelected(result.context);
@@ -587,14 +603,14 @@ export function PaymentsPage() {
           setAnnulError(errorMessage(result.error));
           return;
         }
-        setSelected(result.context); setAnnulTarget(null); setAnnulReason(''); annulAttempt.current = null;
+        setSelected(result.context); setAnnulTarget(null); setAnnulmentType(''); setAnnulReason(''); annulAttempt.current = null;
         setAnnulRetryUncertain(false); returnAnnulFocus.current = true; setShowAnnul(false);
         setPlanSuccess('Pago anulado correctamente. El saldo y el plan de pagos se actualizaron.');
       } finally { setAnnulSaving(false); }
     });
   };
   const annulEligible = Boolean(annulTarget && selected && selected.summary.loanId === annulTarget.loanId && (annulmentTarget(selected)?.id === annulTarget.payment.id
-    || (annulRetryUncertain && annulAttempt.current?.fingerprint === JSON.stringify({ paymentId: annulTarget.payment.id, reason: annulReason.trim() }))));
+    || (annulRetryUncertain && annulAttempt.current?.fingerprint === JSON.stringify({ paymentId: annulTarget.payment.id, reason: annulReason.trim(), annulmentType }))));
   return <main className="page-content">{isNewPayment ? (<>
     <div className="payments-intro">
       <header className="payments-intro__heading"><p className="eyebrow">PAGOS</p><h1>Registrar pago</h1></header>
@@ -616,17 +632,17 @@ export function PaymentsPage() {
       ? <SelectedPaymentDetails context={selected} canCreate={can('payments.create')} canCustomize={can('payments.plan.customize')} canAnnul={can('payments.annul')} canExport={canDownloadPaymentPlan(can)} canRefinance={can('loans.refinance.view')} annulBusy={annulSaving} downloadBusy={downloadingSelection === selectionToken.current} onPay={openPayment} onCustomize={() => { void openPlan(); }} onAnnul={openAnnul} onDownload={() => { void download(); }} onChangeLoan={() => { if (annulLocked.current) return; clearLoan(); setShowSelector(true); }} onCloseLoan={() => { if (annulLocked.current) return; if (showAnnul) closeAnnul(); clearLoan(); setShowSelector(false); }} triggerRef={triggerRef} paymentTriggerRef={paymentTriggerRef} planTriggerRef={planTriggerRef} annulTriggerRef={annulTriggerRef} />
       : <><button type="button" onClick={() => { selectionToken.current += 1; setSelected(null); setError(''); }}>Cerrar préstamo</button><PaymentDetails context={selected} canCreate={can('payments.create')} amount={amount} methodId={methodId} collectorId={collectorId} busy={busy} onAmount={setAmount} onMethod={setMethodId} onCollector={setCollectorId} onSubmit={() => { void register(); }} /></>}
     </div>}
-    {isNewPayment && showPayment && selected?.firstOperationalRow && can('payments.create') && <PaymentCaptureDialog
-      context={selected} entry={selected.firstOperationalRow} visibleNumber={paymentTimeline(selected).findIndex((row) => row.kind === 'PLAN_ENTRY' && row.id === selected.firstOperationalRow?.id) + 1} amount={amount} paymentDate={paymentDate} methodId={methodId} collectorId={collectorId} busy={busy} error={error}
+    {isNewPayment && showPayment && selected && paymentEntryId && can('payments.create') && (() => { const entry = selected.combinedPlan.find((item) => item.id === paymentEntryId); return entry ? <PaymentCaptureDialog
+      context={selected} entry={entry} visibleNumber={paymentTimelineForDisplay(selected).findIndex((row) => row.kind === 'PLAN_ENTRY' && row.id === entry.id) + 1} amount={amount} paymentDate={paymentDate} methodId={methodId} collectorId={collectorId} busy={busy} error={error}
       onAmount={setAmount} onDate={setPaymentDate} onMethod={setMethodId} onCollector={setCollectorId} onSubmit={() => { void registerSelectedPayment(); }} onClose={closePayment}
-      dialogRef={captureDialogRef} dateRef={paymentDateRef} today={new Date().toISOString().slice(0, 10)} />}
+      dialogRef={captureDialogRef} dateRef={paymentDateRef} today={new Date().toISOString().slice(0, 10)} /> : null; })()}
     {isNewPayment && showPlan && selected && planBase && can('payments.plan.customize') && <PaymentPlanEditorDialog
       draft={planDraft} balance={planBase.financialBalance} busy={planSaving} error={planError}
       protectedEntryIds={selected.protectedPlanEntryIds} reschedulableProtectedEntryId={planBase.entries.at(-1)?.id ?? null}
       onChange={(draft) => { setPlanDraft(draft); setPlanError(''); }} onAdd={() => { setPlanDraft((draft) => appendAutomaticPlanObligation(draft, selected.paymentFrequency)); setPlanError(''); }}
       onSave={() => { void savePlan(); }} onClose={closePlan} dialogRef={planDialogRef} dateRef={planDateRef} />}
     {isNewPayment && showAnnul && selected && annulTarget && selected.summary.loanId === annulTarget.loanId && can('payments.annul') && <PaymentAnnulDialog
-      context={selected} payment={annulTarget.payment} reason={annulReason} busy={annulSaving} eligible={annulEligible} error={annulError}
-      onReason={setAnnulReason} onSubmit={() => { void confirmAnnul(); }} onClose={closeAnnul} dialogRef={annulDialogRef} reasonRef={annulReasonRef} />}
+      context={selected} payment={annulTarget.payment} annulmentType={annulmentType} reason={annulReason} busy={annulSaving} eligible={annulEligible} error={annulError}
+      onType={setAnnulmentType} onReason={setAnnulReason} onSubmit={() => { void confirmAnnul(); }} onClose={closeAnnul} dialogRef={annulDialogRef} reasonRef={annulReasonRef} />}
   </main>;
 }

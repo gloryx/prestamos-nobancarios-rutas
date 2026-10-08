@@ -42,20 +42,20 @@ describe('payment capture transport', () => {
 });
 
 describe('payment annulment transport', () => {
-  it('POSTs the selected payment path with only trimmed reason and idempotency key', async () => {
+  it('POSTs the selected payment path with annulment type, trimmed reason and idempotency key', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true, status: 201, json: async () => ({ status: 'ANNULLED' }) } as Response);
     try {
-      await paymentApi.annul('payment-1', { reason: '  Corrección  '.trim(), idempotencyKey: 'retry-key' });
+      await paymentApi.annul('payment-1', { reason: '  Corrección  '.trim(), annulmentType: 'DATA_CORRECTION', idempotencyKey: 'retry-key' });
       const [url, options] = fetchMock.mock.calls[0];
       expect(url).toContain('/payments/payment-1/annul');
       expect(options).toMatchObject({ method: 'POST', credentials: 'include' });
-      expect(JSON.parse(options!.body as string)).toEqual({ reason: 'Corrección', idempotencyKey: 'retry-key' });
+      expect(JSON.parse(options!.body as string)).toEqual({ reason: 'Corrección', annulmentType: 'DATA_CORRECTION', idempotencyKey: 'retry-key' });
     } finally { fetchMock.mockRestore(); }
   });
 
   it('exposes a controlled 409 response instead of swallowing it', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: false, status: 409, json: async () => ({ message: 'Solo se puede anular el último pago válido.' }) } as Response);
-    try { await expect(paymentApi.annul('old', { reason: 'Corrección', idempotencyKey: 'key' })).rejects.toThrow('Solo se puede anular el último pago válido.'); }
+    try { await expect(paymentApi.annul('old', { reason: 'Corrección', annulmentType: 'CASH_REFUND', idempotencyKey: 'key' })).rejects.toThrow('Solo se puede anular el último pago válido.'); }
     finally { fetchMock.mockRestore(); }
   });
 });

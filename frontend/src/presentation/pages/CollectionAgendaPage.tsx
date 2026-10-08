@@ -43,7 +43,7 @@ function ObligationCard({ obligation }: { obligation: CollectionAgendaObligation
   const Icon = meta.icon;
   return <article className={`collection-agenda__obligation collection-agenda__obligation--${obligation.collectionStatus.toLowerCase()}`}>
     <header><span className={`collection-agenda__status collection-agenda__status--${obligation.collectionStatus.toLowerCase()}`}><Icon aria-hidden="true" />{meta.label}</span><strong>Préstamo #{obligation.loanNumber}</strong></header>
-    <dl><div><dt>Fecha</dt><dd>{formatDateOnlyForDisplay(obligation.dueDate)}</dd></div><div><dt>Pendiente</dt><dd>{formatCRCAggregate(obligation.pendingAmount)}</dd></div></dl>
+    <dl><div><dt>Fecha operativa</dt><dd>{formatDateOnlyForDisplay(obligation.dueDate)}</dd></div><div><dt>Total a cobrar</dt><dd>{formatCRCAggregate(obligation.pendingAmount)}</dd></div><div><dt>Atrasado</dt><dd>{formatCRCAggregate(obligation.overdueAmount)}</dd></div><div><dt>Programado</dt><dd>{formatCRCAggregate(obligation.scheduledAmount)}</dd></div></dl>
   </article>;
 }
 

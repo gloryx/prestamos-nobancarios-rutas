@@ -17,7 +17,8 @@ const data: PortfolioTrackingResult = {
     validPayments: [{ id: 'payment-1', paymentDate: '2026-01-20', amount: '40.00', status: 'VALID' }],
     firstOperationalRow: { id: 'entry-1', sequence: 2, dueDate: '2099-12-20', pendingAmount: '60.00' },
     lastValidPayment: { id: 'payment-1', paymentDate: '2026-01-20', amount: '40.00', status: 'VALID' }, refinanceEligibility: true,
-    preferredMethod: { id: null, activeMethods: [], collectors: [] }, paymentFrequency: { intervalUnit: 'WEEK', intervalValue: 1 } } },
+    preferredMethod: { id: null, activeMethods: [], collectors: [] }, paymentFrequency: { intervalUnit: 'WEEK', intervalValue: 1 },
+    collectionProjection: { overdueAmount: '10.00', scheduledAmount: '50.00', totalSuggestedAmount: '60.00', operationalDate: '2099-12-20', operationalDateKind: 'SCHEDULED' } } },
 };
 const state = (changes: Partial<PortfolioTrackingState> = {}): PortfolioTrackingState => ({
   filters: { search: '', status: 'ALL', collectionStatus: 'ALL' }, position: 3, data, loading: false, error: null, ...changes,

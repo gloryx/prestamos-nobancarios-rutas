@@ -49,6 +49,7 @@ describe('payment selector and context', () => {
        if (sql.includes('FROM payment_plan_entries')) return [{ id: 'e1', dueDate: '2026-01-01', sequence: 1, pendingAmount: '60.00', isProtected: true }];
       if (sql.includes('FROM payment_methods')) return [{ id: 'method-1', name: 'Cash' }];
       if (sql.includes('FROM collectors')) return [];
+      if (sql.includes('FROM payment_applications pa')) return [];
       throw new Error(`Unexpected query: ${sql}`);
     });
     const context = await new PaymentContextUseCase({ query } as unknown as DataSource, totalsReader).execute('loan-1');

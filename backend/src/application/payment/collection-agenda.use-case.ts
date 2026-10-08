@@ -35,6 +35,8 @@ export type CollectionAgendaRow = {
   sequence: number;
   dueDate: string;
   pendingAmount: string;
+  overdueAmount: string;
+  scheduledAmount: string;
   collectionStatus: CollectionAgendaStatus;
   assignmentStatus: CollectionAgendaAssignmentStatus;
   customerId: string;
@@ -79,7 +81,7 @@ export const COLLECTION_AGENDA_READER = Symbol('COLLECTION_AGENDA_READER');
 export class CollectionAgendaValidationError extends Error {}
 export class CollectionAgendaForbiddenError extends Error {}
 
-type AgendaObligation = Pick<CollectionAgendaRow, 'loanId' | 'loanNumber' | 'paymentPlanEntryId' | 'sequence' | 'dueDate' | 'pendingAmount' | 'collectionStatus'>;
+type AgendaObligation = Pick<CollectionAgendaRow, 'loanId' | 'loanNumber' | 'paymentPlanEntryId' | 'sequence' | 'dueDate' | 'pendingAmount' | 'overdueAmount' | 'scheduledAmount' | 'collectionStatus'>;
 type AgendaCustomer = {
   customerId: string;
   customerName: string;
@@ -127,6 +129,8 @@ const obligationFrom = (row: CollectionAgendaRow): AgendaObligation => ({
   sequence: row.sequence,
   dueDate: row.dueDate,
   pendingAmount: row.pendingAmount,
+  overdueAmount: row.overdueAmount,
+  scheduledAmount: row.scheduledAmount,
   collectionStatus: row.collectionStatus,
 });
 const addCustomer = (customers: AgendaCustomer[], row: CollectionAgendaRow) => {

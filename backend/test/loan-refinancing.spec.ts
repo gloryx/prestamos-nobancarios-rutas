@@ -1,6 +1,6 @@
 import { LoanRefinancingUseCase, RefinancingConflictError, RefinancingValidationError, refinancingBaseline,
   type RefinancingRequest } from '../src/application/loan-refinancing/refinancing.use-case';
-import type { NewRefinancing, RefinancingChainGraph, RefinancingListItem, RefinancingListQuery, RefinancingOperation, RefinancingStore, RefinancingTransaction } from '../src/application/loan-refinancing/refinancing.port';
+import type { HistoricalRefinancingPayments, NewRefinancing, RefinancingChainGraph, RefinancingListItem, RefinancingListQuery, RefinancingOperation, RefinancingStore, RefinancingTransaction } from '../src/application/loan-refinancing/refinancing.port';
 import type { RefinancingSnapshot } from '../src/domain/loan-refinancing/refinancing-finance';
 import { cents } from '../src/domain/loan/loan-financial-integrity';
 import { money } from '../src/domain/loan-refinancing/refinancing-finance';
@@ -26,6 +26,7 @@ class FakeStore implements RefinancingStore {
   state: State = { loans: { [origin]: baselineLoan() }, operations: {}, cash: [], disbursements: [], history: [],
     payments: [{ loanId: origin, amount: '30000.00' }] };
   fail?: 'plan' | 'cash' | 'history';
+  historicalPayments?: HistoricalRefinancingPayments;
   rollbacks = 0;
   private queue: Promise<void> = Promise.resolve();
   async list(_query: RefinancingListQuery): Promise<{ items: RefinancingListItem[]; total: number }> {
@@ -44,6 +45,12 @@ class FakeStore implements RefinancingStore {
     })), total: loans.length };
   }
   async preview(id: string) { return structuredClone(this.state.loans[id]); }
+  async previewAt(id: string) {
+    const current = this.state.loans[id];
+    return current ? { current: structuredClone(current), historicalPayments: this.historicalPayments ?? {
+      totals: structuredClone(current.totals), lastValidPaymentDate: current.lastValidPaymentDate, laterPaymentCount: 0,
+    } } : undefined;
+  }
   async detail(id: string) { return this.state.operations[id] ? this.operation(this.state, id) : undefined; }
   async chainsForCustomer(customerId: string): Promise<RefinancingChainGraph | undefined> {
     const customer = Object.values(this.state.loans).find((loan) => loan.customerId === customerId);
@@ -90,6 +97,10 @@ class FakeStore implements RefinancingStore {
           return found ? { id: found.id, fingerprint: found.fingerprint } : undefined; },
         lockOrigin: async (id) => draft.loans[id] && structuredClone(draft.loans[id]),
         readSnapshot: async (id) => draft.loans[id] && structuredClone(draft.loans[id]),
+        readHistoricalPayments: async (id) => this.historicalPayments ?? {
+          totals: structuredClone(draft.loans[id].totals), lastValidPaymentDate: draft.loans[id].lastValidPaymentDate,
+          laterPaymentCount: 0,
+        },
         openingDate: async () => '2026-01-01',
         activeReferences: async () => true,
         insertLoan: async (input) => { const id = uuid(Object.keys(draft.loans).length + 100);
@@ -223,6 +234,57 @@ describe('loan refinancing financial operation', () => {
     expect(store.state.history).toEqual([{ loanId: origin, from: 'ACTIVE', to: 'REFINANCED' },
       { loanId: created.newLoanId, from: null, to: 'ACTIVE' }]);
     expect(await useCase.detail(created.id)).toMatchObject({ id: created.id, capitalizedOutstandingInterest: '30000.00' });
+  });
+
+  it('uses a payment annulled later when confirming at the earlier economic date', async () => {
+    const { store, useCase } = setup();
+    store.historicalPayments = { totals: { paidAmount: '30040.00', paidPrincipal: '30040.00',
+      paidInterest: '0.00', invalidCount: 0 }, lastValidPaymentDate: '2026-09-10', laterPaymentCount: 0 };
+    const body = request((await useCase.preview(origin)).baseline);
+    body.plan[0].pendingAmount = '239960.00';
+    const created = await useCase.confirm(body, actor);
+    expect(created).toMatchObject({ outstandingPrincipalTransferred: '119960.00',
+      capitalizedOutstandingInterest: '30000.00', newContractualPrincipal: '199960.00',
+      newContractualTotal: '239960.00' });
+  });
+
+  it('distinguishes a current-balance plan from malformed input and accepts the last payment date', async () => {
+    const { store, useCase } = setup();
+    store.state.loans[origin] = { ...baselineLoan(), principal: '500000.00', interestAmount: '100000.00',
+      totalAmount: '600000.00', lastValidPaymentDate: '2026-09-26',
+      totals: { paidAmount: '440000.00', paidPrincipal: '440000.00', paidInterest: '0.00', invalidCount: 0 },
+      plan: [{ id: uuid(7), sequence: 1, dueDate: '2026-10-01', pendingAmount: '160000.00' }] };
+    store.historicalPayments = { totals: { paidAmount: '440040.00', paidPrincipal: '440040.00',
+      paidInterest: '0.00', invalidCount: 0 }, lastValidPaymentDate: '2026-09-26', laterPaymentCount: 0 };
+    const preview = await useCase.preview(origin);
+    const historicalPreview = await useCase.preview(origin, '2026-09-26');
+    expect(historicalPreview).toMatchObject({ paidAmount: '440040.00', paidPrincipal: '440040.00',
+      outstandingPrincipal: '59960.00', outstandingInterest: '100000.00', financialBalance: '159960.00',
+      pendingPlanAmount: '159960.00', baseline: preview.baseline });
+    const body = { ...request(preview.baseline, '340000.00'), refinancingDate: '2026-09-26',
+      newInterestAmount: '100000.00', plan: [{ sequence: 1, dueDate: '2026-09-28', pendingAmount: '600000.00' }] };
+    await expect(useCase.confirm(body, actor)).rejects.toMatchObject({ reasonCode: 'HISTORICAL_BALANCE_CONFLICT' });
+    body.plan[0].pendingAmount = '599960.00';
+    await expect(useCase.confirm(body, actor)).resolves.toMatchObject({ outstandingPrincipalTransferred: '59960.00',
+      capitalizedOutstandingInterest: '100000.00', newMoneyDisbursed: '340000.00',
+      newContractualPrincipal: '499960.00', newContractualTotal: '599960.00' });
+  });
+
+  it('rejects a retroactive refinancing when the origin has later economic payments', async () => {
+    const { store, useCase } = setup();
+    store.historicalPayments = { totals: structuredClone(store.state.loans[origin].totals),
+      lastValidPaymentDate: '2026-09-10', laterPaymentCount: 1 };
+    await expect(useCase.preview(origin, '2026-09-30'))
+      .rejects.toMatchObject({ reasonCode: 'HISTORICAL_STATE_CONFLICT' });
+    await expect(useCase.confirm(request((await useCase.preview(origin)).baseline), actor))
+      .rejects.toMatchObject({ reasonCode: 'HISTORICAL_STATE_CONFLICT' });
+    expect(store.state.loans[origin].status).toBe('ACTIVE');
+  });
+
+  it('rejects malformed or out-of-range historical preview dates before confirmation', async () => {
+    const { useCase } = setup();
+    await expect(useCase.preview(origin, '2026-02-30')).rejects.toBeInstanceOf(RefinancingValidationError);
+    await expect(useCase.preview(origin, '2026-08-31')).rejects.toBeInstanceOf(RefinancingValidationError);
   });
 
   it('permits zero new money without a disbursement or cash entry', async () => {

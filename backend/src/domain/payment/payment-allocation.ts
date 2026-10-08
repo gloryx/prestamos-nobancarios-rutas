@@ -48,77 +48,23 @@ export function allocatePayment(amount: string, entries: PaymentAllocationEntry[
   let interestApplied = 0n;
   const applications: PaymentApplicationResult[] = [];
 
-  const firstPositive = ordered.find((entry) => cents(entry.principalPending) + cents(entry.interestPending) > 0n);
-  if (firstPositive && remainingAmount >= cents(firstPositive.principalPending) + cents(firstPositive.interestPending)) {
-    const principalPending = ordered.reduce((sum, entry) => sum + cents(entry.principalPending), 0n);
-    principalApplied = remainingAmount < principalPending ? remainingAmount : principalPending;
-    interestApplied = remainingAmount - principalApplied;
-    for (const entry of ordered) {
-      if (remaining === 0n) break;
-      const pendingBefore = cents(entry.principalPending) + cents(entry.interestPending);
-      if (pendingBefore === 0n) continue;
-      const amountApplied = remaining < pendingBefore ? remaining : pendingBefore;
-      applications.push({
-        planEntryId: entry.id, amountApplied: money(amountApplied), pendingBefore: money(pendingBefore),
-        pendingAfter: money(pendingBefore - amountApplied), carriedForwardAmount: '0.00', carriedToPlanEntryId: null,
-      });
-      remaining -= amountApplied;
-    }
-    return { principalApplied: money(principalApplied), interestApplied: money(interestApplied), applications };
-  }
-
-  if (firstPositive) {
-    const next = ordered.slice(ordered.indexOf(firstPositive) + 1).find((entry) => cents(entry.principalPending) + cents(entry.interestPending) > 0n);
-    if (next) {
-      const firstPending = cents(firstPositive.principalPending) + cents(firstPositive.interestPending);
-      const nextPending = cents(next.principalPending) + cents(next.interestPending);
-      const carry = firstPending - remainingAmount;
-      const principalPending = ordered.reduce((sum, entry) => sum + cents(entry.principalPending), 0n);
-      principalApplied = remainingAmount < principalPending ? remainingAmount : principalPending;
-      interestApplied = remainingAmount - principalApplied;
-      return { principalApplied: money(principalApplied), interestApplied: money(interestApplied), applications: [
-        { planEntryId: firstPositive.id, amountApplied: money(remainingAmount), pendingBefore: money(firstPending), pendingAfter: '0.00', carriedForwardAmount: money(carry), carriedToPlanEntryId: next.id },
-        { planEntryId: next.id, amountApplied: '0.00', pendingBefore: money(nextPending), pendingAfter: money(nextPending + carry), carriedForwardAmount: '0.00', carriedToPlanEntryId: null },
-      ] };
-    }
-  }
-
-  const appliedPrincipal = new Map<string, bigint>();
-  const appliedInterest = new Map<string, bigint>();
+  const principalPending = ordered.reduce((sum, entry) => sum + cents(entry.principalPending), 0n);
+  principalApplied = remainingAmount < principalPending ? remainingAmount : principalPending;
+  interestApplied = remainingAmount - principalApplied;
   for (const entry of ordered) {
     if (remaining === 0n) break;
-    const available = cents(entry.principalPending);
-    const applied = available < remaining ? available : remaining;
-    appliedPrincipal.set(entry.id, applied);
-    principalApplied += applied;
-    remaining -= applied;
-  }
-  for (const entry of ordered) {
-    if (remaining === 0n) break;
-    const available = cents(entry.interestPending);
-    const applied = available < remaining ? available : remaining;
-    appliedInterest.set(entry.id, applied);
-    interestApplied += applied;
-    remaining -= applied;
-  }
-  for (let index = 0; index < ordered.length; index += 1) {
-    const entry = ordered[index];
-    const principal = cents(entry.principalPending);
-    const interest = cents(entry.interestPending);
-    const pendingBefore = principal + interest;
-    const appliedToPrincipal = appliedPrincipal.get(entry.id) ?? 0n;
-    const appliedToInterest = appliedInterest.get(entry.id) ?? 0n;
-    const amountApplied = appliedToPrincipal + appliedToInterest;
-    const pendingAfter = pendingBefore - amountApplied;
-    const carriedForward = pendingAfter === 0n ? remaining : 0n;
+    const pendingBefore = cents(entry.principalPending) + cents(entry.interestPending);
+    if (pendingBefore === 0n) continue;
+    const amountApplied = remaining < pendingBefore ? remaining : pendingBefore;
     applications.push({
       planEntryId: entry.id,
       amountApplied: money(amountApplied),
       pendingBefore: money(pendingBefore),
-      pendingAfter: money(pendingAfter),
-      carriedForwardAmount: money(carriedForward),
-      carriedToPlanEntryId: carriedForward > 0n ? ordered[index + 1]?.id ?? null : null,
+      pendingAfter: money(pendingBefore - amountApplied),
+      carriedForwardAmount: '0.00',
+      carriedToPlanEntryId: null,
     });
+    remaining -= amountApplied;
   }
 
   return { principalApplied: money(principalApplied), interestApplied: money(interestApplied), applications };

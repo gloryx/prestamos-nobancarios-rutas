@@ -9,7 +9,7 @@ const result = (position = 3, total = 7): PortfolioTrackingResult => ({
     context: { summary: { loanId: 'loan-1', loanNumber: '9', status: 'ACTIVE', identification: '101', customerName: 'Ana', principal: '70.00', interestAmount: '30.00', totalAmount: '100.00' },
       balances: { outstandingPrincipal: '40.00', outstandingInterest: '20.00', financialBalance: '60.00' }, combinedPlan: [], protectedPlanEntryIds: [], validPayments: [], firstOperationalRow: null,
       lastValidPayment: null, refinanceEligibility: false, preferredMethod: { id: null, activeMethods: [], collectors: [] },
-      paymentFrequency: { intervalUnit: 'WEEK', intervalValue: 1 } }, },
+      paymentFrequency: { intervalUnit: 'WEEK', intervalValue: 1 }, collectionProjection: { overdueAmount: '0.00', scheduledAmount: '0.00', totalSuggestedAmount: '0.00', operationalDate: null, operationalDateKind: null } }, },
 });
 
 describe('PortfolioTrackingController', () => {

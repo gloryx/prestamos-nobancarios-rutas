@@ -1,4 +1,5 @@
 import type { CustomerCreated } from './customer';
+import type { CollectionProjection } from './payment';
 
 export type LoanPlanEntry = { sequence: number; dueDate: string; pendingAmount: string };
 export type LoanListItem = { id: string; loanNumber: string; startDate: string; principal: string; interestAmount: string; totalAmount: string; customerName: string; identification: string; frequencyName: string; pendingTotal: string };
@@ -14,7 +15,7 @@ export type ActiveLoanSummary = { totalActiveLoans: number; capitalPlaced: strin
   outstandingInterest: string; financialBalance: string };
 export type ActiveLoanExport = { items: ActiveLoanExportItem[]; summary: ActiveLoanSummary };
 export type LoanDetail = LoanListItem & { status: string; customerId: string; intervalUnit: 'DAY' | 'WEEK' | 'DAY/15' | 'MONTH'; intervalValue: number; preferredPaymentMethod: string; disbursementPaymentMethod: string; createdByName: string; observations?: string | null; updatedAt: string; plan: LoanPlanEntry[] };
-export type LoanOperationalDetail = Omit<LoanDetail, 'plan'> & { plan: Array<LoanPlanEntry & { id: string }>; financialBalance: string; validPayments: Array<{ id: string; paymentDate: string; amount: string; status: 'VALID' }> };
+export type LoanOperationalDetail = Omit<LoanDetail, 'plan'> & { plan: Array<LoanPlanEntry & { id: string }>; financialBalance: string; validPayments: Array<{ id: string; paymentDate: string; amount: string; status: 'VALID' }>; collectionProjection: CollectionProjection };
 export type LoanEditBaseline = { interestAmount: string; paymentFrequencyId: string; preferredPaymentMethodId: string; observations: string | null; financialBalance: string; plan: Array<{ id: string; dueDate: string; pendingAmount: string }> };
 export type LoanEditContext = {
   loan: { id: string; loanNumber: string; customer: { id: string; identification: string; fullName: string }; status: string; principal: string; interestAmount: string; totalAmount: string; startDate: string; paymentFrequencyId: string; paymentFrequencyName: string; preferredPaymentMethodId: string; preferredPaymentMethodName: string; observations: string | null };

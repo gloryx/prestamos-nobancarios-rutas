@@ -9,7 +9,7 @@ import { MoneyInput } from '../components/MoneyInput';
 import { PaymentPlanEditorDialog } from '../components/PaymentPlanEditorDialog';
 import { PaymentPlanDraftFields } from '../components/PaymentPlanDraftFields';
 import { TableActions, type TableAction } from '../components/TableActions';
-import { appendAutomaticPlanObligation, localDateOnly, paymentTimeline, persistPlanAndRefresh, planBaselineFromContext, planDraftFromEntries, orderedPlanDraft, planSaveAttempt, PlanRefreshError, reviewPlanDraft, type PlanDraftEntry } from '../helpers/payment-plan';
+import { appendAutomaticPlanObligation, chronologicalPaymentAccumulation, localDateOnly, paymentSuggestion, paymentTimeline, paymentTimelineForDisplay, persistPlanAndRefresh, planBaselineFromContext, planDraftFromEntries, orderedPlanDraft, planSaveAttempt, PlanRefreshError, reviewPlanDraft, type PlanDraftEntry } from '../helpers/payment-plan';
 import { canAccess } from '../hooks/auth-permissions';
 import { loadActivePaymentContext, paymentLoanIdFromSearch } from '../helpers/payment-loan-link';
 import type { AuthIdentity } from '../../domain/entities/auth';
@@ -28,6 +28,7 @@ const context: PaymentContext = {
   refinanceEligibility: true,
   preferredMethod: { id: 'cash', activeMethods: [{ id: 'cash', name: 'Efectivo' }, { id: 'card', name: 'Tarjeta' }], collectors: [{ id: 'collector-1', name: 'María' }] },
   paymentFrequency: { intervalUnit: 'WEEK', intervalValue: 1 },
+  collectionProjection: { overdueAmount: '40.00', scheduledAmount: '20.00', totalSuggestedAmount: '60.00', operationalDate: '2020-01-01', operationalDateKind: 'TODAY' },
 };
 const noop = vi.fn();
 const elements = (node: ReactNode): ReactElement[] => Array.isArray(node)
@@ -412,23 +413,19 @@ describe('payment selection presentation', () => {
     expect(empty).toContain('No hay pagos válidos ni cuotas pendientes.');
   });
 
-  it('combines valid payments and positive obligations into dated, numbered rows while preserving history', () => {
+  it('combines valid payments and positive obligations into the existing columns while preserving history', () => {
     const markup = selected({ context: { ...context, combinedPlan: [context.combinedPlan[0], { id: 'future', sequence: 3, dueDate: '9999-12-31', pendingAmount: '12.50' }] } });
     const body = markup.split('<tbody>')[1].split('</tbody>')[0];
     const rows = body.match(/<tr>.*?<\/tr>/g) ?? [];
     expect([...markup.matchAll(/<th scope="col">(.*?)<\/th>/g)].map((match) => match[1])).toEqual(['N.º', 'Fecha', 'Monto pendiente', 'Monto pagado', 'Estado', 'Acción']);
-    expect(rows).toHaveLength(3);
-    expect(rows[0]).toContain('<td>1</td><td>01/01/2020</td><td>₡60</td><td>—</td>');
-    expect(rows[0]).toContain('>VENCIDA</span>');
-    expect(rows[0]).toContain('aria-label="Pagar cuota 1"');
-    expect(rows[0]).toContain('title="Pagar cuota 1"');
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toContain('<td>1</td><td>02/01/2020</td><td>—</td><td>₡40</td>');
+    expect(rows[0]).toContain('>PAGADA</span>');
+    expect(rows[0]).not.toContain('Pagar cuota');
+    expect(rows[1]).toContain('<td>2</td><td>31/12/9999</td><td>₡72,50</td><td>—</td>');
+    expect(rows[1]).toContain('>PENDIENTE</span>');
+    expect(rows[1]).toContain('aria-label="Pagar cuota 2"');
     expect(body.match(/aria-label="Pagar cuota/g)).toHaveLength(1);
-    expect(rows[1]).toContain('<td>2</td><td>02/01/2020</td><td>—</td><td>₡40</td>');
-    expect(rows[1]).toContain('>PAGADA</span>');
-    expect(rows[1]).not.toContain('Pagar cuota');
-    expect(rows[2]).toContain('<td>3</td><td>31/12/9999</td><td>₡12,50</td><td>—</td>');
-    expect(rows[2]).toContain('>PENDIENTE</span>');
-    expect(rows[2]).not.toContain('Pagar cuota');
     expect(markup).toContain('<summary>Pagos válidos</summary>');
     expect(markup).toContain('02/01/2020 · Pago válido: ₡40');
     expect(selected({ canCreate: false })).not.toContain('Pagar cuota');
@@ -450,17 +447,17 @@ describe('payment selection presentation', () => {
     expect(actions.actions).toMatchObject([{ icon: 'payment', ariaLabel: 'Pagar cuota 1', buttonRef: paymentTriggerRef }]);
     actions.actions[0].onClick?.();
     expect(onPay).toHaveBeenCalledOnce();
+    expect(onPay).toHaveBeenCalledWith(context.firstOperationalRow);
   });
 
   it('uses the refreshed firstOperationalRow rather than the earliest displayed row', () => {
     const future = { id: 'future', sequence: 3, dueDate: '9999-12-31', pendingAmount: '12.50' };
     const markup = selected({ context: { ...context, combinedPlan: [context.combinedPlan[0], future], firstOperationalRow: future } });
     const rows = markup.split('<tbody>')[1].split('</tbody>')[0].match(/<tr>.*?<\/tr>/g) ?? [];
-    expect(rows[0]).toContain('>VENCIDA</span>');
-    expect(rows[0]).not.toContain('aria-label="Pagar cuota');
-    expect(rows[0]).toContain('<td>—</td></tr>');
-    expect(rows[2]).toContain('aria-label="Pagar cuota 3"');
-    expect(rows[1]).toContain('>PAGADA</span>');
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toContain('>PAGADA</span>');
+    expect(rows[1]).toContain('aria-label="Pagar cuota 2"');
+    expect(rows[1]).toContain('₡72,50');
   });
 
   it('does not expose a plan mutation when only payment creation is authorized, and wires its authorized trigger', () => {
@@ -519,9 +516,10 @@ describe('payment selection presentation', () => {
   it('renders a compact capture dialog with only four editable fields and no unsupported date minimum', () => {
     const markup = renderToStaticMarkup(<PaymentCaptureDialog {...captureProps()} />);
     expect(markup).toContain('role="dialog" aria-modal="true" aria-labelledby="payment-capture-title"');
-    expect(markup).toContain('Cuota operativa N.º 2');
-    expect(markup).toContain('Vencimiento: 01/01/2020');
-    expect(markup).toContain('Pendiente: ₡60');
+    expect(markup).toContain('Cobro operativo · obligación N.º 2');
+    expect(markup).toContain('Fecha de referencia: 01/01/2020');
+    expect(markup).toContain('Total vencido: ₡40');
+    expect(markup).toContain('Cuota sugerida: ₡60');
     expect(markup).toContain('Fecha del pago');
     const dateInput = markup.match(/<input[^>]*type="date"[^>]*>/)?.[0];
     expect(dateInput).toContain('value="2020-01-01"');
@@ -591,6 +589,97 @@ describe('payment selection presentation', () => {
     expect(key).toHaveBeenCalledTimes(2);
   });
 
+  it('suggests one obligation instead of the accumulated overdue balance', () => {
+    const overdue = [
+      { id: 'old-1', sequence: 1, dueDate: '2026-09-09', pendingAmount: '20000.00' },
+      { id: 'old-2', sequence: 2, dueDate: '2026-09-10', pendingAmount: '20000.00' },
+      { id: 'old-3', sequence: 3, dueDate: '2026-09-11', pendingAmount: '20000.00' },
+    ];
+    const multiple = { ...context, balances: { ...context.balances, financialBalance: '60000.00' }, combinedPlan: overdue,
+      firstOperationalRow: overdue[0], collectionProjection: { ...context.collectionProjection, overdueAmount: '60000.00', totalSuggestedAmount: '60000.00' } };
+    expect(paymentSuggestion(multiple)).toEqual({ entry: overdue[0], amount: '20000.00' });
+  });
+
+  it('implements option B with multiple same-day payments and no duplicated pending amount', () => {
+    const old = { id: 'old', sequence: 1, dueDate: '2026-09-11', pendingAmount: '40000.00' };
+    const sameDay = { id: 'same-day', sequence: 2, dueDate: '2026-09-12', pendingAmount: '20000.00' };
+    const receiver = { id: 'receiver', sequence: 3, dueDate: '2026-09-14', pendingAmount: '20000.00' };
+    const duplicateDate = { id: 'same-future-date', sequence: 4, dueDate: '2026-09-14', pendingAmount: '10000.00' };
+    const projected: PaymentContext = { ...context,
+      balances: { ...context.balances, financialBalance: '90000.00' }, combinedPlan: [duplicateDate, receiver, sameDay, old], firstOperationalRow: old,
+      validPayments: [
+        { id: 'pay-b', paymentDate: '2026-09-12', amount: '10000.00', status: 'VALID' },
+        { id: 'pay-a', paymentDate: '2026-09-12', amount: '10000.00', status: 'VALID' },
+      ],
+      lastValidPayment: { id: 'pay-b', paymentDate: '2026-09-12', amount: '10000.00', status: 'VALID' },
+    };
+    expect(chronologicalPaymentAccumulation(projected)).toEqual({
+      lastValidPaymentDate: '2026-09-12', receiverEntryId: 'receiver', receiverDate: '2026-09-14', accumulatedAmount: '80000.00', components: [old, sameDay, receiver],
+    });
+    expect(projected.combinedPlan).toEqual([duplicateDate, receiver, sameDay, old]);
+    expect(paymentSuggestion(projected)).toEqual({ entry: old, amount: '40000.00' });
+    expect(paymentSuggestion(projected, receiver.id)).toEqual({ entry: receiver, amount: '20000.00' });
+    expect(paymentTimelineForDisplay(projected).map((row) => [row.kind, row.id, row.amount])).toEqual([
+      ['PAYMENT', 'pay-a', '10000.00'], ['PAYMENT', 'pay-b', '10000.00'], ['PLAN_ENTRY', 'receiver', '80000.00'], ['PLAN_ENTRY', 'same-future-date', '10000.00'],
+    ]);
+    expect(paymentTimelineForDisplay(projected).filter((row) => row.kind === 'PLAN_ENTRY').reduce((sum, row) => sum + Number(row.amount), 0)).toBe(90000);
+
+    const markup = selected({ context: projected });
+    const rows = markup.split('<tbody>')[1].split('</tbody>')[0].match(/<tr>.*?<\/tr>/g) ?? [];
+    expect(rows).toHaveLength(4);
+    expect(rows[0]).toContain('<td>1</td><td>12/09/2026</td><td>—</td><td>₡10.000</td>');
+    expect(rows[1]).toContain('<td>2</td><td>12/09/2026</td><td>—</td><td>₡10.000</td>');
+    expect(rows[2]).toContain('<td>3</td><td>14/09/2026</td><td>₡80.000</td><td>—</td>');
+    expect(rows[3]).toContain('<td>4</td><td>14/09/2026</td><td>₡10.000</td><td>—</td>');
+    expect(markup).not.toMatch(/ACUMULADO OPERATIVO|Incluido en acumulado|Fecha receptora|Desglose del acumulado/);
+    expect([...markup.matchAll(/<th scope="col">(.*?)<\/th>/g)].map((match) => match[1])).toEqual(['N.º', 'Fecha', 'Monto pendiente', 'Monto pagado', 'Estado', 'Acción']);
+  });
+
+  it('keeps pending obligations visible when no later receiver exists and leaves normal future plans ungrouped', () => {
+    const stale = { id: 'stale', sequence: 1, dueDate: '2026-09-12', pendingAmount: '20000.00' };
+    const noReceiver: PaymentContext = { ...context, balances: { ...context.balances, financialBalance: '20000.00' }, combinedPlan: [stale], firstOperationalRow: stale,
+      validPayments: [{ id: 'latest', paymentDate: '2026-09-12', amount: '10000.00', status: 'VALID' }],
+      lastValidPayment: { id: 'latest', paymentDate: '2026-09-12', amount: '10000.00', status: 'VALID' },
+    };
+    expect(chronologicalPaymentAccumulation(noReceiver)).toMatchObject({ receiverEntryId: null, receiverDate: null, accumulatedAmount: '20000.00', components: [stale] });
+    expect(paymentTimelineForDisplay(noReceiver)).toEqual(paymentTimeline(noReceiver));
+    const markup = selected({ context: noReceiver });
+    const rows = markup.split('<tbody>')[1].split('</tbody>')[0].match(/<tr>.*?<\/tr>/g) ?? [];
+    expect(rows).toHaveLength(2);
+    expect(rows[1]).toContain('<td>2</td><td>12/09/2026</td><td>₡20.000</td><td>—</td>');
+    expect(markup).not.toMatch(/COBRO OPERATIVO PENDIENTE|Incluido en cobro pendiente|Fecha receptora/);
+
+    const future = { ...stale, id: 'future', dueDate: '2026-09-13' };
+    expect(chronologicalPaymentAccumulation({ ...noReceiver, combinedPlan: [future], firstOperationalRow: future })).toBeNull();
+    expect(chronologicalPaymentAccumulation({ ...noReceiver, validPayments: [], lastValidPayment: null })).toBeNull();
+    expect(chronologicalPaymentAccumulation({ ...noReceiver, validPayments: [{ ...noReceiver.validPayments[0], status: 'ANNULLED' }] } as unknown as PaymentContext)).toBeNull();
+  });
+
+  it('suggests a partial remainder, a sole balance, or the requested obligation without exceeding the balance', () => {
+    const partial = { id: 'partial', sequence: 1, dueDate: '2026-09-09', pendingAmount: '20000.00' };
+    const future = { id: 'future', sequence: 2, dueDate: '2026-10-10', pendingAmount: '40000.00' };
+    const multiple = { ...context, balances: { ...context.balances, financialBalance: '60000.00' }, combinedPlan: [partial, future], firstOperationalRow: partial };
+    expect(paymentSuggestion(multiple)).toEqual({ entry: partial, amount: '20000.00' });
+    expect(paymentSuggestion(multiple, future.id)).toEqual({ entry: future, amount: '40000.00' });
+    const sole = { ...multiple, balances: { ...multiple.balances, financialBalance: '480000.00' }, combinedPlan: [{ ...partial, pendingAmount: '480000.00' }], firstOperationalRow: { ...partial, pendingAmount: '480000.00' } };
+    expect(paymentSuggestion(sole)?.amount).toBe('480000.00');
+    expect(paymentSuggestion({ ...sole, balances: { ...sole.balances, financialBalance: '15000.00' } })?.amount).toBe('15000.00');
+    expect(paymentSuggestion(multiple, 'missing')).toBeNull();
+    expect(paymentSuggestion({ ...context, combinedPlan: [], firstOperationalRow: null })).toBeNull();
+  });
+
+  it('opens the visible receiver action with its original obligation', () => {
+    const onPay = vi.fn();
+    const future = { id: 'future', sequence: 3, dueDate: '9999-12-31', pendingAmount: '12.50' };
+    const projected = { ...context, combinedPlan: [context.combinedPlan[0], future] };
+    const tree = elements(SelectedPaymentDetails(selectedProps({ context: projected, onPay })));
+    const actions = tree.filter((element) => element.type === TableActions)
+      .flatMap((element) => ((element.props as { actions: TableAction[] }).actions).filter((action) => action.key === 'pay'));
+    expect(actions).toHaveLength(1);
+    actions[0].onClick?.();
+    expect(onPay).toHaveBeenCalledWith(future);
+  });
+
   it('offers one reverse action only for the last backend-ordered VALID payment, not the visually last row', () => {
     // Backend orders by payment_date, created_at, id; created_at can reverse the ID tie.
     const earlier = { id: 'z-earlier', paymentDate: '2020-01-02', amount: '10.00', status: 'VALID' as const };
@@ -635,27 +724,34 @@ describe('payment selection presentation', () => {
   });
 
   it('shows loan and payment facts, required reason, controlled errors and a disabled destructive confirmation for blank or busy input', () => {
-    const props = { context, payment: context.validPayments[0], reason: '  ', busy: false, eligible: true, error: '', onReason: noop, onSubmit: noop, onClose: noop,
+    const props = { context, payment: context.validPayments[0], annulmentType: '' as const, reason: '  ', busy: false, eligible: true, error: '', onType: noop, onReason: noop, onSubmit: noop, onClose: noop,
       dialogRef: createRef<HTMLDivElement>(), reasonRef: createRef<HTMLTextAreaElement>() };
     const markup = renderToStaticMarkup(<PaymentAnnulDialog {...props} />);
     expect(markup).toContain('role="dialog" aria-modal="true" aria-labelledby="payment-annul-title"');
     expect(markup).toContain('Préstamo #7 · Ana');
     expect(markup).toContain('Fecha del pago: 02/01/2020');
     expect(markup).toContain('Monto: ₡40');
-    expect(markup).toContain('anula el pago y recalcula el saldo y el plan de pagos. No elimina el registro.');
-    expect(markup).toContain('Motivo<textarea id="payment-annul-reason"');
+    expect(markup).toContain('conserva el registro y recalcula el saldo y el plan de pagos.');
+    expect(markup).toContain('Motivo de la anulación');
+    expect(markup).toContain('value="DATA_CORRECTION"');
+    expect(markup).toContain('Error de registro');
+    expect(markup).toContain('value="CASH_REFUND"');
+    expect(markup).toContain('Devolución de dinero');
+    expect(markup).toContain('Observaciones<textarea id="payment-annul-reason"');
     expect(markup).toContain('required=""');
     expect(markup).toContain('disabled="">Anular pago</button>');
     expect(renderToStaticMarkup(<PaymentAnnulDialog {...props} reason=" Corrección " eligible={false} error="Solo el último pago válido." />)).toContain('role="alert">Solo el último pago válido.');
     expect(renderToStaticMarkup(<PaymentAnnulDialog {...props} reason=" Corrección " busy />)).toContain('aria-busy="true"');
-    const onSubmit = vi.fn(); const onReason = vi.fn(); const onClose = vi.fn();
-    const tree = elements(PaymentAnnulDialog({ ...props, reason: ' Corrección ', onSubmit, onReason, onClose }));
+    const onSubmit = vi.fn(); const onType = vi.fn(); const onReason = vi.fn(); const onClose = vi.fn();
+    const tree = elements(PaymentAnnulDialog({ ...props, annulmentType: 'DATA_CORRECTION', reason: ' Corrección ', onSubmit, onType, onReason, onClose }));
+    (tree.find((item) => item.type === 'input' && (item.props as { value?: string }).value === 'CASH_REFUND')!.props as { onChange: () => void }).onChange();
+    expect(onType).toHaveBeenCalledWith('CASH_REFUND');
     (tree.find((item) => item.type === 'textarea')!.props as { onChange: (event: ChangeEvent<HTMLTextAreaElement>) => void }).onChange({ target: { value: 'Nuevo motivo' } } as ChangeEvent<HTMLTextAreaElement>);
     expect(onReason).toHaveBeenCalledWith('Nuevo motivo');
     const form = (item: ReturnType<typeof PaymentAnnulDialog>) => (elements(item).find((node) => node.type === 'form')!.props as { onSubmit: (event: FormEvent<HTMLFormElement>) => void }).onSubmit({ preventDefault: noop } as unknown as FormEvent<HTMLFormElement>);
-    form(PaymentAnnulDialog(props)); form(PaymentAnnulDialog({ ...props, reason: 'x', busy: true })); form(PaymentAnnulDialog({ ...props, reason: 'x', eligible: false }));
+    form(PaymentAnnulDialog(props)); form(PaymentAnnulDialog({ ...props, annulmentType: 'DATA_CORRECTION', reason: 'x', busy: true })); form(PaymentAnnulDialog({ ...props, annulmentType: 'DATA_CORRECTION', reason: 'x', eligible: false }));
     expect(onSubmit).not.toHaveBeenCalled();
-    form(PaymentAnnulDialog({ ...props, reason: ' Corrección ', onSubmit }));
+    form(PaymentAnnulDialog({ ...props, annulmentType: 'DATA_CORRECTION', reason: ' Corrección ', onSubmit }));
     expect(onSubmit).toHaveBeenCalledOnce();
     (tree.find((item) => item.type === 'button' && (item.props as { children?: ReactNode }).children === 'Cancelar')!.props as { onClick: () => void }).onClick();
     expect(onClose).toHaveBeenCalledOnce();
@@ -663,10 +759,10 @@ describe('payment selection presentation', () => {
 
   it('reuses keys for the same trimmed attempt and synchronously excludes concurrent submissions', async () => {
     const keys = vi.fn().mockReturnValueOnce('key-1').mockReturnValueOnce('key-2').mockReturnValueOnce('key-3');
-    const first = annulmentAttempt(null, 'payment', ' Reason ', keys);
-    expect(annulmentAttempt(first, 'payment', 'Reason', keys)).toBe(first);
-    expect(annulmentAttempt(first, 'payment', 'Other', keys).key).toBe('key-2');
-    expect(annulmentAttempt(first, 'different', 'Reason', keys).key).toBe('key-3');
+    const first = annulmentAttempt(null, 'payment', ' Reason ', 'DATA_CORRECTION', keys);
+    expect(annulmentAttempt(first, 'payment', 'Reason', 'DATA_CORRECTION', keys)).toBe(first);
+    expect(annulmentAttempt(first, 'payment', 'Reason', 'CASH_REFUND', keys).key).toBe('key-2');
+    expect(annulmentAttempt(first, 'different', 'Reason', 'DATA_CORRECTION', keys).key).toBe('key-3');
     let finish!: () => void;
     const pending = new Promise<void>((resolve) => { finish = resolve; });
     const lock = { current: false }; const action = vi.fn(async () => { await pending; return 'completed'; });
@@ -681,7 +777,7 @@ describe('payment selection presentation', () => {
     const before = { ...context, validPayments: [previous, context.validPayments[0]] };
     const after = { ...before, validPayments: [previous], combinedPlan: [{ ...context.combinedPlan[0], pendingAmount: '100.00' }], balances: { ...context.balances, financialBalance: '100.00' } };
     const api = { annul: vi.fn().mockResolvedValue({ status: 'ANNULLED' }), context: vi.fn().mockResolvedValue(after) };
-    const result = await submitAnnulment('loan-1', annulmentTarget(before)!.id, 'Reason', 'key-1', api);
+    const result = await submitAnnulment('loan-1', annulmentTarget(before)!.id, 'Reason', 'DATA_CORRECTION', 'key-1', api);
     expect(result).toEqual({ accepted: true, context: after });
     if (!result.accepted) throw new Error('Expected a refreshed context.');
     expect(annulmentTarget(result.context)?.id).toBe('previous');
@@ -692,28 +788,28 @@ describe('payment selection presentation', () => {
   it('refreshes stale 409 without claiming success and preserves controlled fingerprint errors', async () => {
     const refreshed = { ...context, validPayments: [], lastValidPayment: null };
     const api = { annul: vi.fn().mockRejectedValue(new Error('Solo se puede anular el último pago válido.')), context: vi.fn().mockResolvedValue(refreshed) };
-    const stale = await submitAnnulment('loan-1', 'payment', 'Reason', 'same-key', api);
+    const stale = await submitAnnulment('loan-1', 'payment', 'Reason', 'DATA_CORRECTION', 'same-key', api);
     expect(stale).toMatchObject({ accepted: false, context: refreshed, retryUncertain: false });
     expect(stale.error).toEqual(new Error('Solo se puede anular el último pago válido.'));
     expect(annulmentTarget(stale.context!)?.id).toBeUndefined();
     api.annul.mockRejectedValueOnce(new Error('The annulment idempotency key was used with different data.'));
-    const conflict = await submitAnnulment('loan-1', 'payment', 'Other', 'same-key', api);
+    const conflict = await submitAnnulment('loan-1', 'payment', 'Other', 'DATA_CORRECTION', 'same-key', api);
     expect(conflict).toMatchObject({ accepted: false, retryUncertain: false });
     expect((conflict.error as Error).message).toContain('idempotency key was used with different data');
   });
 
   it('retains the same payload and key after an ambiguous POST or a successful POST with failed context GET', async () => {
-    const key = annulmentAttempt(null, 'payment', '  Reason  ', () => 'retry-key');
+    const key = annulmentAttempt(null, 'payment', '  Reason  ', 'DATA_CORRECTION', () => 'retry-key');
     const api = { annul: vi.fn().mockRejectedValueOnce(new TypeError('Network unavailable')).mockResolvedValue({ status: 'ANNULLED' }), context: vi.fn().mockResolvedValue(context) };
-    const uncertain = await submitAnnulment('loan-1', 'payment', 'Reason', key.key, api);
+    const uncertain = await submitAnnulment('loan-1', 'payment', 'Reason', 'DATA_CORRECTION', key.key, api);
     expect(uncertain).toMatchObject({ accepted: false, retryUncertain: true, context });
-    expect(await submitAnnulment('loan-1', 'payment', 'Reason', annulmentAttempt(key, 'payment', 'Reason').key, api)).toMatchObject({ accepted: true, context });
-    expect(api.annul.mock.calls).toEqual([['payment', { reason: 'Reason', idempotencyKey: 'retry-key' }], ['payment', { reason: 'Reason', idempotencyKey: 'retry-key' }]]);
+    expect(await submitAnnulment('loan-1', 'payment', 'Reason', 'DATA_CORRECTION', annulmentAttempt(key, 'payment', 'Reason', 'DATA_CORRECTION').key, api)).toMatchObject({ accepted: true, context });
+    expect(api.annul.mock.calls).toEqual([['payment', { reason: 'Reason', annulmentType: 'DATA_CORRECTION', idempotencyKey: 'retry-key' }], ['payment', { reason: 'Reason', annulmentType: 'DATA_CORRECTION', idempotencyKey: 'retry-key' }]]);
     const refresh = { annul: vi.fn().mockResolvedValue({ status: 'ANNULLED' }), context: vi.fn().mockRejectedValueOnce(new Error('GET failed')).mockResolvedValue(context) };
-    const failed = await submitAnnulment('loan-1', 'payment', 'Reason', key.key, refresh);
+    const failed = await submitAnnulment('loan-1', 'payment', 'Reason', 'DATA_CORRECTION', key.key, refresh);
     expect(failed).toMatchObject({ accepted: false, context: null, retryUncertain: true });
     expect((failed.error as Error).message).toContain('GET failed');
-    expect(await submitAnnulment('loan-1', 'payment', 'Reason', key.key, refresh)).toMatchObject({ accepted: true, context });
+    expect(await submitAnnulment('loan-1', 'payment', 'Reason', 'DATA_CORRECTION', key.key, refresh)).toMatchObject({ accepted: true, context });
     expect(refresh.annul.mock.calls[1]).toEqual(refresh.annul.mock.calls[0]);
   });
 });

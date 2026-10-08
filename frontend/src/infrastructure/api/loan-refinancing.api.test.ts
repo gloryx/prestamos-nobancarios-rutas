@@ -66,14 +66,17 @@ describe('refinancing step-one transport', () => {
     const list = { items: [], total: 0, page: 2, pageSize: 10 };
     const preview = { loanId: 'loan-id', eligible: false, remainingToMinimum: '10000.00' };
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({ ok: true, status: 200, json: async () => list } as Response)
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => preview } as Response)
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => preview } as Response);
     try {
       expect(await loanRefinancingApi.search({ search: 'Ana Pérez', page: 2, pageSize: 10 })).toEqual(list);
       expect(await loanRefinancingApi.preview('loan/id')).toEqual(preview);
+      expect(await loanRefinancingApi.preview('loan/id', '2026-09-26')).toEqual(preview);
       const [searchUrl, searchOptions] = fetchMock.mock.calls[0];
       expect(new URL(String(searchUrl)).pathname).toBe('/loan-refinancings/loans');
       expect(Object.fromEntries(new URL(String(searchUrl)).searchParams)).toEqual({ search: 'Ana Pérez', page: '2', pageSize: '10' });
       expect(new URL(String(fetchMock.mock.calls[1][0])).pathname).toBe('/loan-refinancings/loans/loan%2Fid/preview');
+      expect(Object.fromEntries(new URL(String(fetchMock.mock.calls[2][0])).searchParams)).toEqual({ refinancingDate: '2026-09-26' });
       for (const [, options] of fetchMock.mock.calls) {
         expect(options).toMatchObject({ cache: 'no-store', credentials: 'include' });
         expect(options?.method).toBeUndefined();

@@ -72,16 +72,37 @@ export class CollectionAgendaTypeormReader implements CollectionAgendaReader {
     const offset = `$${params.length}`;
 
     const rows = await this.source.query(`
-      WITH ranked_pending AS MATERIALIZED (
-        SELECT e.id, e.loan_id, e.sequence, e.due_date, e.pending_amount,
-          ROW_NUMBER() OVER (PARTITION BY e.loan_id ORDER BY e.due_date ASC, e.sequence ASC, e.id ASC) AS position
-        FROM payment_plan_entries e
-        JOIN loans l ON l.id = e.loan_id AND l.status = 'ACTIVE'
+       WITH carry_seed AS MATERIALIZED (
+         SELECT pa.carried_to_plan_entry_id AS target_id, SUM(pa.carried_forward_amount) AS carried_amount, MIN(pa.created_at) AS first_carry_at
+         FROM payment_applications pa
+         JOIN payments p ON p.id = pa.payment_id AND p.status = 'VALID'
+         JOIN payment_plan_entries source ON source.id = pa.payment_plan_entry_id AND source.due_date < $1::date
+         WHERE pa.carried_to_plan_entry_id IS NOT NULL AND pa.carried_forward_amount > 0
+         GROUP BY pa.carried_to_plan_entry_id
+       ), active_carry AS MATERIALIZED (
+         SELECT seed.target_id, GREATEST(seed.carried_amount - COALESCE(SUM(later.amount_applied) FILTER (WHERE later_payment.id IS NOT NULL), 0), 0) AS carried_amount
+         FROM carry_seed seed
+         LEFT JOIN payment_applications later ON later.payment_plan_entry_id = seed.target_id AND later.created_at > seed.first_carry_at
+         LEFT JOIN payments later_payment ON later_payment.id = later.payment_id AND later_payment.status = 'VALID'
+         GROUP BY seed.target_id, seed.carried_amount
+       ), ranked_pending AS MATERIALIZED (
+         SELECT e.id, e.loan_id, e.sequence, e.due_date, e.pending_amount,
+           LEAST(e.pending_amount, COALESCE(carry.carried_amount, 0)) AS carried_overdue_amount,
+           ROW_NUMBER() OVER (PARTITION BY e.loan_id ORDER BY e.due_date ASC, e.sequence ASC, e.id ASC) AS position,
+           COUNT(*) FILTER (WHERE e.due_date >= $1::date) OVER (PARTITION BY e.loan_id) AS future_count,
+           COUNT(*) FILTER (WHERE e.due_date >= $1::date) OVER (PARTITION BY e.loan_id ORDER BY e.due_date ASC, e.sequence ASC, e.id ASC) AS future_position,
+           COALESCE(SUM(CASE WHEN e.due_date < $1::date THEN e.pending_amount ELSE LEAST(e.pending_amount, COALESCE(carry.carried_amount, 0)) END) OVER (PARTITION BY e.loan_id), 0) AS overdue_amount
+         FROM payment_plan_entries e
+         JOIN loans l ON l.id = e.loan_id AND l.status = 'ACTIVE'
+         LEFT JOIN active_carry carry ON carry.target_id = e.id
         WHERE e.pending_amount > 0
       ), obligations AS MATERIALIZED (
-        SELECT l.id AS loan_id, l.loan_number::text AS loan_number, e.id AS payment_plan_entry_id,
-          e.sequence, e.due_date, e.pending_amount,
-          CASE WHEN e.due_date < $1::date THEN 'OVERDUE' WHEN e.due_date = $1::date THEN 'DUE_TODAY' ELSE 'UPCOMING' END AS collection_status,
+         SELECT l.id AS loan_id, l.loan_number::text AS loan_number, e.id AS payment_plan_entry_id,
+           e.sequence, CASE WHEN e.future_count = 0 THEN $1::date ELSE e.due_date END AS due_date,
+           (e.overdue_amount + CASE WHEN e.future_count > 0 THEN e.pending_amount - e.carried_overdue_amount ELSE 0 END)::numeric(18,2) AS pending_amount,
+           e.overdue_amount::numeric(18,2) AS overdue_amount,
+           (CASE WHEN e.future_count > 0 THEN e.pending_amount - e.carried_overdue_amount ELSE 0 END)::numeric(18,2) AS scheduled_amount,
+           CASE WHEN e.future_count = 0 OR e.due_date = $1::date THEN 'DUE_TODAY' ELSE 'UPCOMING' END AS collection_status,
           c.id AS customer_id, ${customerName} AS customer_name, c.identification,
           c.primary_phone, c.secondary_phone, a.exact_address, a.latitude::text, a.longitude::text,
           (a.property_photo_file_key IS NOT NULL) AS has_property_photo,
@@ -108,7 +129,7 @@ export class CollectionAgendaTypeormReader implements CollectionAgendaReader {
         LEFT JOIN users u ON u.id = cra.collector_user_id
         LEFT JOIN roles role ON role.id = u.role_id
         LEFT JOIN collectors cl ON cl.user_id = cra.collector_user_id
-        WHERE e.position = 1 ${scopeSql}
+         WHERE ((e.future_count > 0 AND e.due_date >= $1::date AND e.future_position = 1) OR (e.future_count = 0 AND e.position = 1)) ${scopeSql}
       ), filtered AS MATERIALIZED (SELECT o.* FROM obligations o ${where}), stats AS (
         SELECT
           COUNT(*) FILTER (WHERE collection_status = 'OVERDUE')::int AS overdue_obligations,
@@ -128,7 +149,7 @@ export class CollectionAgendaTypeormReader implements CollectionAgendaReader {
         FROM filtered
       ), page AS (
         SELECT loan_id AS "loanId", loan_number AS "loanNumber", payment_plan_entry_id AS "paymentPlanEntryId",
-          sequence, due_date::text AS "dueDate", pending_amount::text AS "pendingAmount", collection_status AS "collectionStatus",
+           sequence, due_date::text AS "dueDate", pending_amount::text AS "pendingAmount", overdue_amount::text AS "overdueAmount", scheduled_amount::text AS "scheduledAmount", collection_status AS "collectionStatus",
           assignment_status AS "assignmentStatus", customer_id AS "customerId", customer_name AS "customerName",
           identification, primary_phone AS "primaryPhone", secondary_phone AS "secondaryPhone", exact_address AS "exactAddress",
           latitude, longitude, has_property_photo AS "hasPropertyPhoto", district, canton, province,

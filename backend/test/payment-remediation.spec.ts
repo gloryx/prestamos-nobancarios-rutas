@@ -23,7 +23,7 @@ describe('payment remediation invariants', () => {
     });
 
     expect(Object.keys(result).sort()).toEqual([
-       'balances', 'combinedPlan', 'firstOperationalRow', 'lastValidPayment', 'validPayments',
+       'balances', 'collectionProjection', 'combinedPlan', 'firstOperationalRow', 'lastValidPayment', 'validPayments',
       'paymentFrequency', 'preferredMethod', 'protectedPlanEntryIds', 'refinanceEligibility', 'summary',
     ].sort());
     expect(result.combinedPlan).toEqual([

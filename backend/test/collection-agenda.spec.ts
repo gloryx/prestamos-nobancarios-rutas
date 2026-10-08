@@ -41,7 +41,7 @@ const collectorUser = identity('COLLECTOR', false, ids.collectorUser);
 
 const row = (values: Partial<CollectionAgendaRow> = {}): CollectionAgendaRow => ({
   loanId: 'loan-1', loanNumber: '101', paymentPlanEntryId: 'entry-1', sequence: 1,
-  dueDate: '2026-10-04', pendingAmount: '12000.00', collectionStatus: 'DUE_TODAY', assignmentStatus: 'ASSIGNED',
+  dueDate: '2026-10-04', pendingAmount: '12000.00', overdueAmount: '0.00', scheduledAmount: '12000.00', collectionStatus: 'DUE_TODAY', assignmentStatus: 'ASSIGNED',
   customerId: ids.customer, customerName: 'María Solís', identification: '101110111', primaryPhone: '88880000', secondaryPhone: '22220000',
   exactAddress: '100 m norte', latitude: '9.9281000', longitude: '-84.0907000', hasPropertyPhoto: true,
   district: 'Carmen', canton: 'San José', province: 'San José', routeId: ids.route, routeName: 'Ruta Centro',
@@ -212,10 +212,11 @@ describe('collection agenda PostgreSQL reader contract', () => {
     expect(sql).toContain('c.is_active = true');
     expect(sql).toContain('e.pending_amount > 0');
     expect(sql).toContain('ROW_NUMBER() OVER (PARTITION BY e.loan_id ORDER BY e.due_date ASC, e.sequence ASC, e.id ASC)');
-    expect(sql).toContain('WHERE e.position = 1');
-    expect(sql).toContain("e.due_date < $1::date THEN 'OVERDUE'");
-    expect(sql).toContain("e.due_date = $1::date THEN 'DUE_TODAY'");
+    expect(sql).toContain('e.future_position = 1');
+    expect(sql).toContain('SUM(CASE WHEN e.due_date < $1::date THEN e.pending_amount');
+    expect(sql).toContain("e.future_count = 0 OR e.due_date = $1::date THEN 'DUE_TODAY'");
     expect(sql).toContain("ELSE 'UPCOMING'");
+    expect(sql).toContain('FROM payment_applications pa');
     expect(sql).not.toContain('payment_frequencies');
     for (const excluded of ['REFINANCED', 'CANCELLED', 'ANNULLED', 'UNCOLLECTIBLE']) expect(sql).not.toContain(`l.status = '${excluded}'`);
     expect(params).toEqual(['2026-10-04', 20, 0]);

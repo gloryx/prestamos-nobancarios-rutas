@@ -9,6 +9,13 @@ export type PaymentTimelineRow =
 export type PlanDraftEntry = { key: string; id: string | null; dueDate: string; pendingAmount: string };
 export type PlanFrequency = { intervalUnit: PaymentContext['paymentFrequency']['intervalUnit']; intervalValue: number };
 export type AdaptedPlanDraft = { adaptable: true; entries: PlanDraftEntry[] } | { adaptable: false; entries: PlanDraftEntry[]; reason: 'invalid-amount' | 'protected-total' | 'protected-date' | 'missing-frequency' };
+export type ChronologicalPaymentAccumulation = {
+  lastValidPaymentDate: string;
+  receiverEntryId: string | null;
+  receiverDate: string | null;
+  accumulatedAmount: string;
+  components: PendingPaymentEntry[];
+};
 
 export function localDateOnly(date = new Date()): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
@@ -20,6 +27,39 @@ export function paymentTimeline(context: PaymentContext): PaymentTimelineRow[] {
     ...context.combinedPlan.filter((entry) => (parseMoneyCents(entry.pendingAmount) ?? 0n) > 0n).map((entry) => ({ kind: 'PLAN_ENTRY' as const, id: entry.id, date: entry.dueDate, amount: entry.pendingAmount })),
   ];
   return rows.sort((a, b) => a.date.localeCompare(b.date) || (a.kind === b.kind ? a.id.localeCompare(b.id) : a.kind === 'PAYMENT' ? -1 : 1));
+}
+
+export function paymentSuggestion(context: PaymentContext, planEntryId?: string): { entry: PendingPaymentEntry; amount: string } | null {
+  const entry = planEntryId ? context.combinedPlan.find((item) => item.id === planEntryId) ?? null : context.firstOperationalRow;
+  const pending = entry ? parseMoneyCents(entry.pendingAmount) : null;
+  const balance = parseMoneyCents(context.balances.financialBalance);
+  if (!entry || pending === null || pending <= 0n || balance === null || balance <= 0n) return null;
+  return { entry, amount: moneyFromCents(pending < balance ? pending : balance) };
+}
+
+export function chronologicalPaymentAccumulation(context: PaymentContext): ChronologicalPaymentAccumulation | null {
+  const lastValidPaymentDate = context.validPayments.filter((payment) => payment.status === 'VALID')
+    .reduce<string | null>((latest, payment) => latest === null || payment.paymentDate > latest ? payment.paymentDate : latest, null);
+  if (lastValidPaymentDate === null) return null;
+  const pending = context.combinedPlan.filter((entry) => (parseMoneyCents(entry.pendingAmount) ?? 0n) > 0n)
+    .sort((left, right) => left.dueDate.localeCompare(right.dueDate) || left.sequence - right.sequence || left.id.localeCompare(right.id));
+  const previous = pending.filter((entry) => entry.dueDate <= lastValidPaymentDate);
+  if (!previous.length) return null;
+  const receiver = pending.find((entry) => entry.dueDate > lastValidPaymentDate) ?? null;
+  const components = receiver ? [...previous, receiver] : previous;
+  const receiverEntryId = receiver?.id ?? null;
+  const receiverDate = receiver?.dueDate ?? null;
+  const accumulated = components.reduce((sum, entry) => sum + (parseMoneyCents(entry.pendingAmount) ?? 0n), 0n);
+  return { lastValidPaymentDate, receiverEntryId, receiverDate, accumulatedAmount: moneyFromCents(accumulated), components };
+}
+
+export function paymentTimelineForDisplay(context: PaymentContext): PaymentTimelineRow[] {
+  const rows = paymentTimeline(context);
+  const accumulation = chronologicalPaymentAccumulation(context);
+  if (!accumulation?.receiverEntryId) return rows;
+  const hiddenEntryIds = new Set(accumulation.components.filter((entry) => entry.id !== accumulation.receiverEntryId).map((entry) => entry.id));
+  return rows.filter((row) => row.kind === 'PAYMENT' || !hiddenEntryIds.has(row.id))
+    .map((row) => row.kind === 'PLAN_ENTRY' && row.id === accumulation.receiverEntryId ? { ...row, amount: accumulation.accumulatedAmount } : row);
 }
 
 export function planDraftFromEntries(entries: PendingPaymentEntry[]): PlanDraftEntry[] {

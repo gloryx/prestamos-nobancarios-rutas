@@ -1,4 +1,5 @@
 import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn } from 'typeorm';
+import type { PaymentAnnulmentType } from '../../../../domain/payment/payment.types';
 
 @Entity({ name: 'payments' })
 export class PaymentOrmEntity {
@@ -35,6 +36,7 @@ export class PaymentAnnulmentOrmEntity {
   @PrimaryGeneratedColumn('uuid') id!: string;
   @Column({ name: 'payment_id', type: 'uuid', unique: true }) paymentId!: string;
   @Column({ type: 'text' }) reason!: string;
+  @Column({ name: 'annulment_type', type: 'varchar', length: 24, default: 'CASH_REFUND' }) annulmentType!: PaymentAnnulmentType;
   @Column({ name: 'annulled_at', type: 'timestamptz' }) annulledAt!: Date;
   @Column({ name: 'created_by_user_id', type: 'uuid' }) createdByUserId!: string;
   @Column({ name: 'idempotency_key', type: 'varchar', length: 128, unique: true }) idempotencyKey!: string;

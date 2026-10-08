@@ -11,6 +11,7 @@ const loan: LoanOperationalDetail = {
   financialBalance: '700.00', frequencyName: 'Quincenal', preferredPaymentMethod: 'Efectivo',
   disbursementPaymentMethod: 'Efectivo', createdByName: 'Creator', updatedAt: '2026-01-01T00:00:00Z',
   intervalUnit: 'DAY/15', intervalValue: 1,
+  collectionProjection: { overdueAmount: '300.00', scheduledAmount: '400.00', totalSuggestedAmount: '700.00', operationalDate: '2026-04-02', operationalDateKind: 'SCHEDULED' },
   validPayments: [
     { id: 'payment-b', paymentDate: '2026-02-01', amount: '100.00', status: 'VALID' },
     { id: 'payment-a', paymentDate: '2026-02-01', amount: '400.00', status: 'VALID' },
@@ -25,10 +26,20 @@ const loan: LoanOperationalDetail = {
 
 const pages = (doc: Awaited<ReturnType<typeof createLoanPaymentPlanDocument>>) =>
   (doc.internal.pages as unknown as string[][]).slice(1).map((page) => page.join('\n'));
-const timelineRows = (page: string) => [...page.matchAll(/\((\d+)\. {2}(\d{2}\/\d{2}\/\d{4}) {2}\) Tj[\s\S]*?\((PAGADO|PENDIENTE|VENCIDO)\) Tj/g)]
+const timelineRows = (page: string) => [...page.matchAll(/\((\d+)\. {2}(\d{2}\/\d{2}\/\d{4}) {2}\) Tj[\s\S]*?\((PAGADO|PENDIENTE|VENCIDA)\) Tj/g)]
   .map(([, number, date, state]) => ({ number: Number(number), date, state }));
 const textRuns = (page: string) => [...page.matchAll(/BT\n\/F\d+ ([\d.]+) Tf[\s\S]*?([\d.]+) ([\d.]+) Td\n\(([^)]*)\) Tj\nET/g)]
   .map(([, size, x, y, text]) => ({ size: Number(size), x: Number(x), y: Number(y), text }));
+const textTransform = (page: string, text: string) => {
+  const lines = page.split('\n');
+  const index = lines.indexOf(`(${text}) Tj`);
+  return lines.slice(0, index).reverse().find((line) => line.endsWith(' Tm'));
+};
+const textFontSize = (page: string, text: string) => {
+  const lines = page.split('\n');
+  const index = lines.indexOf(`(${text}) Tj`);
+  return Number(lines.slice(0, index).reverse().find((line) => /^\/F\d+ [\d.]+ Tf$/.test(line))!.split(' ')[1]);
+};
 
 describe('existing shared loan payment-plan receipt', () => {
   it('prints actual payments before same-day obligations with visual numbering and no zero or annulled rows', async () => {
@@ -36,7 +47,7 @@ describe('existing shared loan payment-plan receipt', () => {
     expect(timelineRows(page)).toEqual([
       { number: 1, date: '01/02/2026', state: 'PAGADO' },
       { number: 2, date: '01/02/2026', state: 'PAGADO' },
-      { number: 3, date: '01/02/2026', state: 'VENCIDO' },
+      { number: 3, date: '01/02/2026', state: 'VENCIDA' },
       { number: 4, date: '02/04/2026', state: 'PENDIENTE' },
     ]);
     expect(page).not.toContain('5.  01/03/2026');
@@ -49,7 +60,7 @@ describe('existing shared loan payment-plan receipt', () => {
     expect(page).not.toMatch(/Cobrado|Por cobrar/);
   });
 
-  it('colors only paid and pending state tokens, aligns them to the black date and resets ink', async () => {
+  it('colors each state token, aligns it to the black date and resets ink before the amount', async () => {
     const document = await createLoanPaymentPlanDocument(loan, now);
     const [page] = pages(document);
     const paid = page.match(/0\. g\n0\. Tc\n([\d.]+) ([\d.]+) Td\n\(1\. {2}01\/02\/2026 {2}\) Tj\nET\nBT\n\/F2 7\.5 Tf\n8\.625 TL\n0\.094 0\.388 0\.216 rg\n0\. Tc\n([\d.]+) ([\d.]+) Td\n\(PAGADO\) Tj/);
@@ -60,8 +71,8 @@ describe('existing shared loan payment-plan receipt', () => {
     expect(paid![4]).toBe(paid![2]);
     const amount = page.match(/\(PAGADO\) Tj\nET\nBT\n\/F1 7\.5 Tf\n8\.625 TL\n0\. g\n0\. Tc\n([\d.]+) ([\d.]+) Td\n\(¢400\) Tj/);
     expect(amount?.[2]).toBe(paid![4]);
-    expect(page).toMatch(/0\.569 0\.176 0\.176 rg[\s\S]*?\(PENDIENTE\) Tj\nET\nBT[\s\S]*?0\. g[\s\S]*?\(¢400\) Tj/);
-    expect(page).toMatch(/\/F2 7\.5 Tf\n8\.625 TL\n0\. g\n0\. Tc\n[\d.]+ [\d.]+ Td\n\(VENCIDO\) Tj/);
+    expect(page).toMatch(/0\.863 0\.149 0\.149 rg[\s\S]*?\(PENDIENTE\) Tj\nET\nBT[\s\S]*?0\. g[\s\S]*?\(¢400\) Tj/);
+    expect(page).toMatch(/0\.863 0\.149 0\.149 rg[\s\S]*?\(VENCIDA\) Tj\nET\nBT[\s\S]*?0\. g[\s\S]*?\(¢300\) Tj/);
     expect(page).toMatch(/0\. g\n0\. Tc\n[\d.]+ [\d.]+ Td\n\(¢400\) Tj/);
   });
 
@@ -69,7 +80,7 @@ describe('existing shared loan payment-plan receipt', () => {
     const fixture = { ...loan, financialBalance: balance, validPayments: [{ id: 'payment', paymentDate: '2026-02-01', amount, status: 'VALID' as const }],
       plan: [{ id: 'plan', sequence: 3, dueDate: '2026-02-01', pendingAmount: '300.00' }] };
     const [page] = pages(await createLoanPaymentPlanDocument(fixture, now));
-    expect(timelineRows(page).map(({ state }) => state)).toEqual(['PAGADO', 'VENCIDO']);
+    expect(timelineRows(page).map(({ state }) => state)).toEqual(['PAGADO', 'VENCIDA']);
     expect(page).toContain(getPdfMoneyText(amount));
     expect(page).toContain(getPdfMoneyText('300.00'));
     expect(page).toContain(getPdfMoneyText(balance));
@@ -88,6 +99,40 @@ describe('existing shared loan payment-plan receipt', () => {
     document.setFontSize(30);
     expect(document.getTextWidth('CANCELADO')).toBeGreaterThan(60);
     expect(document.getTextWidth('CANCELADO')).toBeLessThanOrEqual(72);
+  });
+
+  it('fits the centered red REFINANCIADO watermark inside safe rotated bounds without changing CANCELADO', async () => {
+    const cancelled = await createLoanPaymentPlanDocument({ ...loan, status: 'CANCELLED' }, now);
+    const refinanced = await createLoanPaymentPlanDocument({ ...loan, status: 'REFINANCED' }, now);
+    const [cancelledPage] = pages(cancelled);
+    const [refinancedPage] = pages(refinanced);
+    expect(cancelledPage).toMatch(/\/F2 30 Tf[\s\S]*?0\.137 0\.42 0\.271 rg[\s\S]*?\(CANCELADO\) Tj/);
+    expect(refinancedPage).toMatch(/0\.569 0\.176 0\.176 rg[\s\S]*?\(REFINANCIADO\) Tj/);
+    const cancelledTransform = textTransform(cancelledPage, 'CANCELADO')!.split(' ').slice(0, 6).map(Number);
+    const refinancedTransform = textTransform(refinancedPage, 'REFINANCIADO')!.split(' ').slice(0, 6).map(Number);
+    expect(refinancedTransform.slice(0, 4)).toEqual(cancelledTransform.slice(0, 4));
+    expect(refinancedPage.indexOf('(REFINANCIADO) Tj')).toBeLessThan(refinancedPage.indexOf('(Plan de pago) Tj'));
+    const pdf = new TextDecoder('latin1').decode(new Uint8Array(refinanced.output('arraybuffer')));
+    expect(pdf).toContain('/ca 0.2');
+    const fontSize = textFontSize(refinancedPage, 'REFINANCIADO');
+    expect(fontSize).toBeGreaterThan(29);
+    expect(fontSize).toBeLessThan(30);
+    refinanced.setFont('helvetica', 'bold');
+    refinanced.setFontSize(fontSize);
+    const { w, h } = refinanced.getTextDimensions('REFINANCIADO');
+    const scaleFactor = refinanced.internal.scaleFactor;
+    const [a, b, c, d, e, f] = refinancedTransform;
+    const corners = [[e, f], [e + a * w * scaleFactor, f + b * w * scaleFactor],
+      [e + c * h * scaleFactor, f + d * h * scaleFactor],
+      [e + a * w * scaleFactor + c * h * scaleFactor, f + b * w * scaleFactor + d * h * scaleFactor]];
+    const xs = corners.map(([x]) => x);
+    const ys = corners.map(([, y]) => y);
+    expect(Math.min(...xs)).toBeGreaterThanOrEqual(5 * scaleFactor - 0.01);
+    expect(Math.max(...xs)).toBeLessThanOrEqual(75 * scaleFactor + 0.01);
+    expect(Math.min(...ys)).toBeGreaterThanOrEqual(5 * scaleFactor - 0.01);
+    expect(Math.max(...ys)).toBeLessThanOrEqual(175 * scaleFactor + 0.01);
+    expect((Math.min(...xs) + Math.max(...xs)) / 2).toBeCloseTo(40 * scaleFactor, 4);
+    expect((Math.min(...ys) + Math.max(...ys)) / 2).toBeCloseTo(90 * scaleFactor, 4);
   });
 
   it('keeps an empty timeline readable without fabricating paid installments', async () => {
@@ -205,14 +250,27 @@ describe('existing shared loan payment-plan receipt', () => {
     expect(pdf).not.toMatch(/Cobrado|Por cobrar/);
   });
 
-  it('keeps blob preview in a new tab rather than downloading the receipt', async () => {
-    const open = vi.fn(() => ({ addEventListener: vi.fn() }));
+  it('keeps the PDF blob URL available until the preview tab closes', async () => {
+    const preview = { closed: false };
+    const open = vi.fn(() => preview);
     const createObjectURL = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:preview');
-    vi.stubGlobal('window', { open, setTimeout: vi.fn() });
+    const revokeObjectURL = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
+    let checkClosed: () => void = () => undefined;
+    const setInterval = vi.fn((callback: () => void) => { checkClosed = callback; return 17; });
+    const clearInterval = vi.fn();
+    vi.stubGlobal('window', { open, setInterval, clearInterval });
     try {
       await generateLoanPaymentPlanReport(loan);
       expect(createObjectURL).toHaveBeenCalledOnce();
+      expect((createObjectURL.mock.calls[0][0] as Blob).type).toBe('application/pdf');
       expect(open).toHaveBeenCalledWith('blob:preview', '_blank');
-    } finally { createObjectURL.mockRestore(); vi.unstubAllGlobals(); }
+      expect(revokeObjectURL).not.toHaveBeenCalled();
+      checkClosed();
+      expect(revokeObjectURL).not.toHaveBeenCalled();
+      preview.closed = true;
+      checkClosed();
+      expect(clearInterval).toHaveBeenCalledWith(17);
+      expect(revokeObjectURL).toHaveBeenCalledExactlyOnceWith('blob:preview');
+    } finally { createObjectURL.mockRestore(); revokeObjectURL.mockRestore(); vi.unstubAllGlobals(); }
   });
 });

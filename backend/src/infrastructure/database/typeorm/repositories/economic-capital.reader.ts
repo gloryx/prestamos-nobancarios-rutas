@@ -5,6 +5,7 @@ import type { EconomicCapitalEvent, EconomicCapitalFacts } from '../../../../dom
 import { analyzeEconomicPrincipalProvenance, type EconomicLoanFact, type EconomicPaymentFact,
   type EconomicProvenanceFacts, type EconomicRefinancingFact, MAX_ECONOMIC_PROVENANCE_LOANS, MAX_ECONOMIC_PROVENANCE_PAYMENTS,
   MAX_ECONOMIC_PROVENANCE_REFINANCINGS } from '../../../../domain/cash-movement/economic-principal-provenance';
+import { loanStatusAtCutoffCtes } from './loan-status-at-cutoff.sql';
 
 function groupEvents(events: EconomicCapitalEvent[]): EconomicCapitalEvent[] {
   const grouped = new Map<string, { disbursed: bigint; recovered: bigint; adjustments: bigint }>();
@@ -47,22 +48,13 @@ export class EconomicCapitalTypeOrmReader implements EconomicCapitalReader, Econ
       FROM financial_openings WHERE singleton_key = 'DEFAULT'`);
     if (!opening) return { capitalFacts: { opening: null, events: [], warnings: [] },
       provenance: { chains: [], events: [], gainEvents: [], warnings: [] }, loans: [], economicFacts: { loans: [], refinancings: [], payments: [] } };
-    const loans: EconomicLoanFact[] = await manager.query(`WITH status_at_cutoff AS (
-      SELECT DISTINCT ON (h.loan_id) h.loan_id, h.to_status AS status
-      FROM loan_status_history h WHERE (h.changed_at AT TIME ZONE 'America/Costa_Rica')::date <= $1::date
-      ORDER BY h.loan_id, h.event_sequence DESC
-    ), status_dates AS (
-      SELECT h.loan_id,
-        MIN((h.changed_at AT TIME ZONE 'America/Costa_Rica')::date) FILTER (WHERE h.to_status = 'CANCELLED')::text AS "cancelledDate",
-        MIN((h.changed_at AT TIME ZONE 'America/Costa_Rica')::date) FILTER (WHERE h.to_status = 'ANNULLED')::text AS "annulledDate"
-       FROM loan_status_history h
-       WHERE (h.changed_at AT TIME ZONE 'America/Costa_Rica')::date <= $1::date
-       GROUP BY h.loan_id
-    ) SELECT l.id AS "loanId", l.loan_number::text AS "loanNumber",
+    const loans: EconomicLoanFact[] = await manager.query(`WITH ${loanStatusAtCutoffCtes('$1')}
+      SELECT l.id AS "loanId", l.loan_number::text AS "loanNumber",
       l.customer_id AS "customerId", concat_ws(' ',c.first_name,c.middle_name,c.first_last_name,c.second_last_name) AS "customerName",
       l.start_date::text AS "startDate", l.principal::text AS principal, l.interest_amount::text AS "interestAmount",
-       l.total_amount::text AS "totalAmount", COALESCE(snapshot.status,'UNKNOWN') AS status,
-      dates."cancelledDate", dates."annulledDate",
+       l.total_amount::text AS "totalAmount", snapshot.status,
+      CASE WHEN snapshot.status = 'CANCELLED' THEN snapshot.effective_date::text END AS "cancelledDate",
+      CASE WHEN snapshot.status = 'ANNULLED' THEN snapshot.effective_date::text END AS "annulledDate",
       d.id AS "disbursementId", d.amount::text AS "disbursementAmount", d.disbursement_date::text AS "disbursementDate",
       d.payment_method_id AS "disbursementMethodId", cash.id AS "cashId", cash.amount::text AS "cashAmount",
       cash.movement_date::text AS "cashDate", cash.payment_method_id AS "cashMethodId",
@@ -72,7 +64,6 @@ export class EconomicCapitalTypeOrmReader implements EconomicCapitalReader, Econ
       reversal.concept AS "reversalConcept"
       FROM loans l JOIN customers c ON c.id = l.customer_id
       LEFT JOIN status_at_cutoff snapshot ON snapshot.loan_id = l.id
-      LEFT JOIN status_dates dates ON dates.loan_id = l.id
       LEFT JOIN loan_disbursements d ON d.loan_id = l.id
       LEFT JOIN cash_movements cash ON cash.loan_disbursement_id = d.id
        LEFT JOIN cash_movements reversal ON reversal.reversed_movement_id = cash.id AND reversal.movement_date <= $1::date
@@ -98,9 +89,13 @@ export class EconomicCapitalTypeOrmReader implements EconomicCapitalReader, Econ
       reversal.concept AS "reversalConcept"
       FROM payments p LEFT JOIN cash_movements cash ON cash.payment_id = p.id AND cash.concept = 'CUSTOMER_PAYMENT'
        LEFT JOIN payment_annulments annulment ON annulment.payment_id = p.id
-         AND (annulment.annulled_at AT TIME ZONE 'America/Costa_Rica')::date <= $1::date
+         AND (annulment.annulment_type = 'DATA_CORRECTION' OR
+           (annulment.annulment_type = 'CASH_REFUND'
+             AND (annulment.annulled_at AT TIME ZONE 'America/Costa_Rica')::date <= $1::date))
        LEFT JOIN cash_movements reversal ON reversal.reversed_movement_id = cash.id AND reversal.movement_date <= $1::date
-      WHERE p.payment_date <= $1::date ORDER BY p.loan_id, p.payment_date, p.created_at, p.id LIMIT $2`,
+      WHERE p.payment_date <= $1::date
+        AND annulment.annulment_type IS DISTINCT FROM 'DATA_CORRECTION'
+      ORDER BY p.loan_id, p.payment_date, p.created_at, p.id LIMIT $2`,
     [toDate, MAX_ECONOMIC_PROVENANCE_PAYMENTS + 1]);
     const analysis = analyzeEconomicPrincipalProvenance({ loans, refinancings, payments }, toDate);
     return { capitalFacts: { opening, events: groupEvents(analysis.events), warnings: analysis.warnings },

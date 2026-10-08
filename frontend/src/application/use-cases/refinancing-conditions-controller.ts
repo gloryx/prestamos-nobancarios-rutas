@@ -1,4 +1,4 @@
-import type { LoanRefinancingOptions } from '../ports/loan-refinancing.repository';
+import type { LoanRefinancingOptions, LoanRefinancingPreviewLookup } from '../ports/loan-refinancing.repository';
 import type { RefinancingPreview } from '../../domain/entities/loan-refinancing';
 import type { PaymentFrequency } from '../../domain/entities/payment-frequency';
 import type { PaymentMethod } from '../../domain/entities/payment-method';
@@ -15,6 +15,8 @@ export type RefinancingConditionsState = {
   optionsLoaded: boolean;
   loadingOptions: boolean;
   optionsError: unknown | null;
+  loadingHistoricalPreview: boolean;
+  historicalPreviewError: unknown | null;
 };
 
 const initialConditions = (): RefinancingConditions => ({
@@ -25,11 +27,13 @@ const initialConditions = (): RefinancingConditions => ({
 
 export class RefinancingConditionsController {
   private state: RefinancingConditionsState = { preview: null, conditions: initialConditions(),
-    frequencies: [], methods: [], optionsLoaded: false, loadingOptions: false, optionsError: null };
+    frequencies: [], methods: [], optionsLoaded: false, loadingOptions: false, optionsError: null,
+    loadingHistoricalPreview: false, historicalPreviewError: null };
   private readonly listeners = new Set<() => void>();
   private optionsRequest = 0;
+  private previewRequest = 0;
 
-  constructor(private readonly options: LoanRefinancingOptions) {}
+  constructor(private readonly options: LoanRefinancingOptions, private readonly previews?: LoanRefinancingPreviewLookup) {}
 
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
@@ -44,11 +48,13 @@ export class RefinancingConditionsController {
 
   setPreview(preview: RefinancingPreview): void {
     if (this.state.preview?.loanId === preview.loanId && this.state.preview.baseline === preview.baseline) return;
-    this.update({ preview, conditions: initialConditions() });
+    ++this.previewRequest;
+    this.update({ preview, conditions: initialConditions(), loadingHistoricalPreview: false, historicalPreviewError: null });
   }
 
   resetDraft(): void {
-    this.update({ preview: null, conditions: initialConditions() });
+    ++this.previewRequest;
+    this.update({ preview: null, conditions: initialConditions(), loadingHistoricalPreview: false, historicalPreviewError: null });
   }
 
   async loadOptions(): Promise<void> {
@@ -68,6 +74,28 @@ export class RefinancingConditionsController {
     const conditions = { ...this.state.conditions, ...changes };
     if (changes.newMoney !== undefined && parseMoneyCents(changes.newMoney) === 0n) conditions.disbursementPaymentMethodId = '';
     this.update({ conditions });
+  }
+
+  async setRefinancingDate(refinancingDate: string): Promise<void> {
+    const conditions = { ...this.state.conditions, refinancingDate,
+      ...(this.state.conditions.mode === 'personalized' ? { mode: 'automatic' as const, customPlan: [] } : {}) };
+    const current = this.state.preview;
+    const request = ++this.previewRequest;
+    if (!this.previews || !current || !/^\d{4}-\d{2}-\d{2}$/.test(refinancingDate)) {
+      this.update({ conditions, loadingHistoricalPreview: false, historicalPreviewError: null });
+      return;
+    }
+    this.update({ conditions, loadingHistoricalPreview: true, historicalPreviewError: null });
+    try {
+      const preview = await this.previews.preview(current.loanId, refinancingDate);
+      if (request !== this.previewRequest) return;
+      if (preview.loanId !== current.loanId || preview.baseline !== current.baseline) {
+        throw new Error('Loan preview changed while calculating the historical balance.');
+      }
+      this.update({ preview, loadingHistoricalPreview: false });
+    } catch (error) {
+      if (request === this.previewRequest) this.update({ historicalPreviewError: error, loadingHistoricalPreview: false });
+    }
   }
 
   setMode(mode: RefinancingConditions['mode']): void {
@@ -90,11 +118,13 @@ export class RefinancingConditionsController {
 
   canProceed(): boolean {
     return this.state.optionsLoaded && !this.state.loadingOptions && this.state.optionsError === null &&
+      !this.state.loadingHistoricalPreview && this.state.historicalPreviewError === null &&
       this.evaluate()?.valid === true;
   }
 
   dispose(): void {
     ++this.optionsRequest;
+    ++this.previewRequest;
     this.listeners.clear();
   }
 }

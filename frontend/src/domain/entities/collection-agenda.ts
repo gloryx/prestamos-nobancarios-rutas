@@ -10,6 +10,8 @@ export type CollectionAgendaObligation = {
   sequence: number;
   dueDate: string;
   pendingAmount: string;
+  overdueAmount: string;
+  scheduledAmount: string;
   collectionStatus: CollectionAgendaStatus;
 };
 export type CollectionAgendaCustomer = {

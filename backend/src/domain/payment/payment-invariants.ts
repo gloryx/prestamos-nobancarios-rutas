@@ -48,6 +48,7 @@ export function buildPaymentContext(input: {
   preferredMethod: unknown;
   paymentFrequency: { intervalUnit: IntervalUnit; intervalValue: number };
   protectedPlanEntryIds?: string[];
+  collectionProjection?: unknown;
 }) {
   const combinedPlan = filterPositivePendingEntries(input.combinedPlan)
     .sort((left, right) => paymentDateOnlyKey(left.dueDate).localeCompare(paymentDateOnlyKey(right.dueDate)) || left.sequence - right.sequence || left.id.localeCompare(right.id));
@@ -62,5 +63,6 @@ export function buildPaymentContext(input: {
     preferredMethod: input.preferredMethod,
     paymentFrequency: input.paymentFrequency,
     protectedPlanEntryIds: input.protectedPlanEntryIds ?? [],
+    collectionProjection: input.collectionProjection ?? null,
   };
 }

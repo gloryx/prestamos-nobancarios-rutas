@@ -16,7 +16,7 @@ describe('retroactive period transaction locking', () => {
     expect(application('loan/loan.use-case.ts')).toContain('assertDateAllowed(input.startDate, manager)');
     const payments = application('payment/payment.use-case.ts');
     expect(payments).toContain('assertDateAllowed(input.paymentDate, manager)');
-    expect(payments).toContain('assertDateAllowed(today(), manager)');
+    expect(payments).toContain('assertDateAllowed(effectiveDate, manager)');
     expect(application('loan-refinancing/refinancing.use-case.ts')).toContain('assertDateAllowed(input.refinancingDate, tx.context)');
   });
 });

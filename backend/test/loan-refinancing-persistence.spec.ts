@@ -99,6 +99,33 @@ describe('refinancing persistence contracts without a database connection', () =
     expect(statements.find((sql) => sql.includes('INSERT INTO loan_refinancings'))).toContain('ON CONFLICT DO NOTHING RETURNING id');
   });
 
+  it('removes data corrections from every cutoff while keeping cash refunds effective until their real date', async () => {
+    const query = jest.fn(async (sql: string, args?: unknown[]) => {
+      if (sql.includes('FROM payments p LEFT JOIN payment_annulments')) {
+        expect(sql).toContain("p.status = 'ANNULLED'");
+        expect(sql).toContain("(p.status = 'VALID') <> (annulment.id IS NULL)");
+        expect(sql).toContain("annulment.annulled_at AT TIME ZONE 'America/Costa_Rica'");
+        expect(sql).toContain("annulment.annulment_type = 'CASH_REFUND'");
+        expect(sql).toContain("annulment.annulment_type = 'DATA_CORRECTION'");
+        expect(sql).toContain('annulment.annulled_at AT TIME ZONE');
+        expect(sql).toContain('p.payment_date > $2::date');
+        expect(args).toEqual([uuid(1), '2026-09-30']);
+        return [{ paidAmount: '30040.00', paidPrincipal: '30040.00', paidInterest: '0.00',
+          invalidCount: 0, lastValidPaymentDate: '2026-09-10', laterPaymentCount: 0 }];
+      }
+      return [];
+    });
+    const transaction = jest.fn(async (work: (tx: { query: typeof query }) => Promise<unknown>) => work({ query }));
+    const store = new LoanRefinancingTypeormStore({ transaction } as unknown as DataSource,
+      new LoanFinancialTotalsTypeormReader(), {} as never);
+    await store.transaction(async (tx) => {
+      await expect(tx.readHistoricalPayments(uuid(1), '2026-09-30')).resolves.toEqual({
+        totals: { paidAmount: '30040.00', paidPrincipal: '30040.00', paidInterest: '0.00', invalidCount: 0 },
+        lastValidPaymentDate: '2026-09-10', laterPaymentCount: 0,
+      });
+    });
+  });
+
   it('loads each customer graph in three bounded queries regardless of chain length', async () => {
     const query = jest.fn(async (sql: string, args: unknown[]) => {
       if (sql.includes('FROM loans l JOIN customers c')) return [{ id: uuid(6), fullName: 'Customer', identification: '123' }];

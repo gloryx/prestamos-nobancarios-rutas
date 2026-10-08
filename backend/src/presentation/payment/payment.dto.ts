@@ -2,8 +2,9 @@ import { IsArray, IsDateString, IsIn, IsObject, IsOptional, IsString, IsUUID, Ma
 import type { PlanBaseline } from '../../domain/payment/payment-invariants';
 import { COLLECTION_STATUSES, PORTFOLIO_LOAN_STATUSES, type CollectionStatus, type PortfolioLoanStatus } from '../../application/payment/portfolio-tracking.use-case';
 import { COLLECTION_AGENDA_STATUSES, type CollectionAgendaFilterStatus } from '../../application/payment/collection-agenda.use-case';
+import type { PaymentAnnulmentType } from '../../domain/payment/payment.types';
 export class CreatePaymentDto { @IsString() loanId!: string; @Matches(/^(?:0|[1-9]\d{0,15})(?:\.\d{1,2})?$/) amount!: string; @IsDateString() paymentDate!: string; @IsString() methodId!: string; @IsUUID(undefined, { message: 'Seleccione un cobrador.' }) collectorId!: string; @IsString() idempotencyKey!: string; }
-export class AnnulPaymentDto { @IsString() reason!: string; @IsString() idempotencyKey!: string; }
+export class AnnulPaymentDto { @IsString() reason!: string; @IsIn(['DATA_CORRECTION', 'CASH_REFUND']) annulmentType!: PaymentAnnulmentType; @IsString() idempotencyKey!: string; }
 export class CustomizePaymentPlanDto { @IsArray() entries!: Array<{ id: string | null; dueDate: string; pendingAmount: string }>; @IsObject() base!: PlanBaseline; @IsString() idempotencyKey!: string; }
 export class DailyCollectionDateDto { @Matches(/^\d{4}-\d{2}-\d{2}$/) date!: string; }
 export class DailyCollectionsQueryDto extends DailyCollectionDateDto {

@@ -76,11 +76,19 @@ export type NewRefinancing = RefinancingAmounts & {
   idempotencyKey: string; idempotencyFingerprint: string;
 };
 
+export type HistoricalRefinancingPayments = {
+  totals: ValidPaymentTotals; lastValidPaymentDate: string | null; laterPaymentCount: number;
+};
+export type HistoricalRefinancingPreview = {
+  current: RefinancingSnapshot; historicalPayments: HistoricalRefinancingPayments;
+};
+
 export interface RefinancingTransaction {
   readonly context?: unknown;
   findByKey(key: string): Promise<{ id: string; fingerprint: string } | undefined>;
   lockOrigin(id: string): Promise<RefinancingSnapshot | undefined>;
   readSnapshot(id: string): Promise<RefinancingSnapshot | undefined>;
+  readHistoricalPayments(id: string, throughDate: string): Promise<HistoricalRefinancingPayments>;
   openingDate(): Promise<string | undefined>;
   activeReferences(frequencyId: string, methodIds: string[]): Promise<boolean>;
   insertLoan(input: { customerId: string; refinancingDate: string; paymentFrequencyId: string; preferredPaymentMethodId: string;
@@ -97,6 +105,7 @@ export interface RefinancingStore {
   list(query: RefinancingListQuery): Promise<{ items: RefinancingListItem[]; total: number }>;
   search(query: RefinancingSearchQuery): Promise<{ items: RefinancingCandidate[]; total: number }>;
   preview(id: string): Promise<RefinancingSnapshot | undefined>;
+  previewAt(id: string, throughDate: string): Promise<HistoricalRefinancingPreview | undefined>;
   transaction<T>(work: (tx: RefinancingTransaction) => Promise<T>): Promise<T>;
   detail(id: string): Promise<RefinancingOperation | undefined>;
   chainGraphForLoan(loanId: string): Promise<RefinancingChainGraph | undefined>;

@@ -12,8 +12,7 @@ export const money = (value: bigint): string => {
   return `${value < 0n ? '-' : ''}${amount / 100n}.${(amount % 100n).toString().padStart(2, '0')}`;
 };
 
-export function evaluateRefinancing(snapshot: RefinancingSnapshot) {
-  const pending = snapshot.plan.reduce((sum, row) => sum + cents(row.pendingAmount), 0n);
+function evaluate(snapshot: RefinancingSnapshot, pending: bigint) {
   const integrity = evaluateLoanFinancialIntegrity(snapshot, snapshot.totals, pending);
   const minimumRequiredPayment = cents(snapshot.interestAmount);
   const reasons: string[] = [];
@@ -22,6 +21,14 @@ export function evaluateRefinancing(snapshot: RefinancingSnapshot) {
   if (integrity.financialBalance <= 0n || integrity.outstandingPrincipal + integrity.outstandingInterest <= 0n) reasons.push('NO_OUTSTANDING_BALANCE');
   if (integrity.validPaidAmount < minimumRequiredPayment) reasons.push('MINIMUM_PAYMENT_NOT_MET');
   return { integrity, minimumRequiredPayment, reasons, eligible: reasons.length === 0 };
+}
+
+export function evaluateRefinancing(snapshot: RefinancingSnapshot) {
+  return evaluate(snapshot, snapshot.plan.reduce((sum, row) => sum + cents(row.pendingAmount), 0n));
+}
+
+export function evaluateRefinancingAtPaymentCutoff(snapshot: RefinancingSnapshot) {
+  return evaluate(snapshot, cents(snapshot.totalAmount) - cents(snapshot.totals.paidAmount));
 }
 
 export function refinancingAmounts(outstandingPrincipal: bigint, outstandingInterest: bigint, newMoney: bigint, newInterest: bigint) {

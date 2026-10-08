@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RefinancingResult } from '../../domain/entities/loan-refinancing';
 import { HttpApiError } from '../../infrastructure/api/api-client';
+import { loanApi } from '../../infrastructure/api/loan.api';
 import { loanRefinancingOperations } from '../../infrastructure/api/loan-refinancing.api';
+import { generateLoanPaymentPlanReport } from '../../infrastructure/reports/loan-payment-plan-report.service';
 import { RefinancingDetailPage } from './RefinancingDetailPage';
 import { RefinancingResultView } from './RefinancingResultView';
 
@@ -21,13 +23,17 @@ vi.mock('react-router-dom', async (original) => ({ ...await original<typeof impo
   useLocation: () => ({ state: hooks.created ? { createdRefinancing: hooks.created } : null }),
 }));
 vi.mock('../../infrastructure/api/loan-refinancing.api', () => ({ loanRefinancingOperations: { detail: vi.fn() } }));
+vi.mock('../../infrastructure/api/loan.api', () => ({ loanApi: { detail: vi.fn() } }));
+vi.mock('../../infrastructure/reports/loan-payment-plan-report.service', () => ({ generateLoanPaymentPlanReport: vi.fn() }));
 
-const result = { refinancingId: 'ref-1', newLoan: { id: 'new-1', status: 'ACTIVE' } } as RefinancingResult;
+const result = { refinancingId: 'ref-1', originLoan: { id: 'origin-1', status: 'REFINANCED' },
+  newLoan: { id: 'new-1', status: 'ACTIVE' } } as RefinancingResult;
 const render = () => { hooks.index = 0; hooks.effects = []; return RefinancingDetailPage(); };
 
 describe('persisted refinancing detail', () => {
   beforeEach(() => { hooks.id = 'ref-1'; hooks.created = null; hooks.navigate.mockReset(); hooks.states = []; hooks.effects = [];
-    vi.mocked(loanRefinancingOperations.detail).mockReset(); });
+    vi.mocked(loanRefinancingOperations.detail).mockReset(); vi.mocked(loanApi.detail).mockReset();
+    vi.mocked(generateLoanPaymentPlanReport).mockReset(); });
 
   it('reads the result from GET and never submits another refinancing', async () => {
     vi.mocked(loanRefinancingOperations.detail).mockResolvedValueOnce(result);
@@ -58,6 +64,34 @@ describe('persisted refinancing detail', () => {
     expect(loanRefinancingOperations.detail).toHaveBeenCalledExactlyOnceWith('ref-1');
     (screen.props as { onNew: () => void }).onNew();
     expect(hooks.navigate).toHaveBeenCalledExactlyOnceWith('/loan-refinancings/new');
+  });
+
+  it('downloads the fresh refinanced payment plan for the origin loan', async () => {
+    const origin = { id: 'origin-1', loanNumber: '101', status: 'REFINANCED' } as Awaited<ReturnType<typeof loanApi.detail>>;
+    vi.mocked(loanRefinancingOperations.detail).mockResolvedValueOnce(result);
+    vi.mocked(loanApi.detail).mockResolvedValueOnce(origin);
+    render(); hooks.effects[0]();
+    await vi.waitFor(() => expect(hooks.states[1]).toMatchObject({ id: 'ref-1', value: result }));
+    const detail = render();
+    (detail.props as { onDownload: () => void }).onDownload();
+    await vi.waitFor(() => expect(generateLoanPaymentPlanReport).toHaveBeenCalledExactlyOnceWith(origin));
+    expect(loanApi.detail).toHaveBeenCalledExactlyOnceWith('origin-1');
+    expect(hooks.states[3]).toBe(false);
+  });
+
+  it('keeps the detail visible with loading state and a clear download error', async () => {
+    let reject!: (cause: unknown) => void;
+    vi.mocked(loanRefinancingOperations.detail).mockResolvedValueOnce(result);
+    vi.mocked(loanApi.detail).mockReturnValueOnce(new Promise((_, fail) => { reject = fail; }));
+    render(); hooks.effects[0]();
+    await vi.waitFor(() => expect(hooks.states[1]).toMatchObject({ id: 'ref-1', value: result }));
+    (render().props as { onDownload: () => void }).onDownload();
+    expect(hooks.states[3]).toBe(true);
+    expect(render().props).toMatchObject({ downloading: true, downloadError: '' });
+    reject(new Error('private server detail'));
+    await vi.waitFor(() => expect(hooks.states[4]).toBe('No se pudo descargar el plan de pagos. Intenta nuevamente.'));
+    expect(render().props).toMatchObject({ downloading: false, downloadError: 'No se pudo descargar el plan de pagos. Intenta nuevamente.' });
+    expect(generateLoanPaymentPlanReport).not.toHaveBeenCalled();
   });
 
   it('maps missing details and other failures to safe messages with a retry', async () => {

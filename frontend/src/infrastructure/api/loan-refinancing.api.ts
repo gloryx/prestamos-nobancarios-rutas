@@ -11,8 +11,9 @@ export const loanRefinancingApi: LoanRefinancingLookup = {
     const params = new URLSearchParams({ search: query.search, page: String(query.page), pageSize: String(query.pageSize) });
     return apiClient.request(`/loan-refinancings/loans?${params}`, { cache: 'no-store' });
   },
-  preview(loanId): Promise<RefinancingPreview> {
-    return apiClient.request(`/loan-refinancings/loans/${encodeURIComponent(loanId)}/preview`, { cache: 'no-store' });
+  preview(loanId, refinancingDate): Promise<RefinancingPreview> {
+    const query = refinancingDate ? `?${new URLSearchParams({ refinancingDate })}` : '';
+    return apiClient.request(`/loan-refinancings/loans/${encodeURIComponent(loanId)}/preview${query}`, { cache: 'no-store' });
   },
 };
 
@@ -63,7 +64,8 @@ export function classifyRefinancingFailure(error: unknown): RefinancingFailure {
   if (error instanceof HttpApiError) {
     if (error.status === 409) {
       if (error.reasonCode === 'STALE_DATA' || error.reasonCode === 'ALREADY_REFINANCED' ||
-        error.reasonCode === 'IDEMPOTENCY_CONFLICT' || error.reasonCode === 'CONCURRENT_REFINANCING') return error.reasonCode;
+        error.reasonCode === 'IDEMPOTENCY_CONFLICT' || error.reasonCode === 'CONCURRENT_REFINANCING' ||
+        error.reasonCode === 'HISTORICAL_BALANCE_CONFLICT') return error.reasonCode;
       return 'CONFLICT';
     }
     if (error.status === 400) return 'INVALID';

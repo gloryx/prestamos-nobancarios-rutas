@@ -3,6 +3,10 @@ import type { DataSource } from 'typeorm';
 import { PaymentConflictError, RegisterPaymentUseCase } from '../src/application/payment/payment.use-case';
 import { PaymentController } from '../src/presentation/payment/payment.controller';
 import { LoanFinancialTotalsTypeormReader } from '../src/infrastructure/database/typeorm/repositories/loan-financial-totals.reader';
+import type { PaymentAnnulmentType } from '../src/domain/payment/payment.types';
+import { ClosedFinancialPeriodError } from '../src/domain/financial-close/financial-close.errors';
+import { validate } from 'class-validator';
+import { AnnulPaymentDto } from '../src/presentation/payment/payment.dto';
 
 const totalsReader = new LoanFinancialTotalsTypeormReader();
 const collectorId = '77777777-7777-4777-8777-777777777777';
@@ -10,7 +14,7 @@ const collectorId = '77777777-7777-4777-8777-777777777777';
 type Plan = { id: string; loanId: string; dueDate: string; sequence: number; pendingAmount: string };
 type Fact = { id: string; loanId: string; amount: string; principal: string; interest: string; methodId: string; collectorId?: string | null; status: 'VALID' | 'ANNULLED'; paymentDate: string; createdAt: string; key?: string; fingerprint?: string };
 type Application = { entryId: string; amountApplied: string; pendingBefore: string; pendingAfter: string; carriedForwardAmount: string; carriedToEntryId: string | null; paymentId?: string };
-type Annulment = { paymentId: string; reason: string; key: string; fingerprint: string; id?: string };
+type Annulment = { paymentId: string; reason: string; type: PaymentAnnulmentType; key: string; fingerprint: string; annulledAt: string; id?: string };
 type Cash = { id: string; paymentId?: string; reversedId?: string; direction: string; concept: string; amount: string; methodId: string; key?: string; fingerprint?: string; movementDate?: string; reason?: string; actorId?: string };
 type State = { status: 'ACTIVE' | 'CANCELLED' | 'REFINANCED'; plan: Plan[]; payments: Fact[]; applications: Application[]; annulments: Annulment[]; cash: Cash[]; history: Array<{ sql: string; params: unknown[] }> };
 const cents = (amount: string) => BigInt(amount.replace('.', ''));
@@ -21,7 +25,7 @@ const initial = (): State => ({
   status: 'ACTIVE', plan: [entry('first', '2026-02-01', '950.00')],
   payments: [{ id: 'p', loanId: 'loan', amount: '50.00', principal: '50.00', interest: '0.00', methodId: 'method', collectorId, status: 'VALID', paymentDate: '2026-01-02', createdAt: '2026-01-02T10:00:00Z' }],
   applications: [app('first', '50.00', '1000.00', '950.00')], annulments: [],
-  cash: [{ id: 'cash-p', paymentId: 'p', direction: 'INFLOW', concept: 'CUSTOMER_PAYMENT', amount: '50.00', methodId: 'method' }],
+  cash: [{ id: 'cash-p', paymentId: 'p', direction: 'INFLOW', concept: 'CUSTOMER_PAYMENT', amount: '50.00', methodId: 'method', movementDate: '2026-01-02' }],
   history: [{ sql: 'CREATED', params: ['loan', 1] }],
 });
 const carried = (): State => {
@@ -60,21 +64,23 @@ function store(start: State, options: { postPending?: string; postInvalidCount?:
         return payment ? [{ loanId: payment.loanId }] : [];
       }
       if (sql.includes('FROM loans WHERE id = $1 FOR UPDATE')) return [{ id: 'loan', status: draft.status, startDate: '2026-01-01', ...(options.loanAmounts ?? { principal: '800.00', interestAmount: '200.00', totalAmount: '1000.00' }) }];
-      if (sql.startsWith('SELECT * FROM payments WHERE id = $1 FOR UPDATE')) {
+      if (sql.includes('FROM payments WHERE id = $1 FOR UPDATE')) {
         const payment = draft.payments.find((fact) => fact.id === params[0]);
-        return payment ? [{ ...payment, loan_id: payment.loanId, method_id: payment.methodId }] : [];
+        return payment ? [{ ...payment }] : [];
       }
       if (sql.includes('FROM payment_annulments WHERE idempotency_key')) {
         const found = draft.annulments.find((item) => item.key === params[0]);
-        return found ? [{ paymentId: found.paymentId, reason: found.reason, fingerprint: found.fingerprint }] : [];
+        return found ? [{ paymentId: found.paymentId, reason: found.reason, annulmentType: found.type,
+          annulledAt: new Date(found.annulledAt), fingerprint: found.fingerprint }] : [];
       }
       if (sql.includes('FROM cash_movements WHERE payment_id')) {
         const found = draft.cash.find((item) => item.paymentId === params[0] && item.direction === 'INFLOW' && item.concept === 'CUSTOMER_PAYMENT');
-        return found ? [{ id: found.id, amount: found.amount, methodId: found.methodId }] : [];
+        return found ? [{ id: found.id, amount: found.amount, movementDate: found.movementDate, methodId: found.methodId }] : [];
       }
       if (sql.includes('FROM cash_movements WHERE reversed_movement_id')) {
         const found = draft.cash.find((item) => item.reversedId === params[0]);
-        return found ? [{ amount: found.amount, direction: found.direction, concept: found.concept, methodId: found.methodId, idempotencyKey: found.key, fingerprint: found.fingerprint }] : [];
+        return found ? [{ amount: found.amount, movementDate: found.movementDate, direction: found.direction,
+          concept: found.concept, methodId: found.methodId, idempotencyKey: found.key, fingerprint: found.fingerprint }] : [];
       }
       if (sql.includes('ORDER BY payment_date DESC, created_at DESC, id DESC LIMIT 1')) {
         const latest = draft.payments.filter((fact) => fact.loanId === params[0] && fact.status === 'VALID')
@@ -101,11 +107,12 @@ function store(start: State, options: { postPending?: string; postInvalidCount?:
         return [];
       }
       if (sql.startsWith('INSERT INTO payment_annulments')) {
-        if (options.annulmentConflict || draft.annulments.some((item) => item.key === params[3] || item.paymentId === params[0])) return [];
+        if (options.annulmentConflict || draft.annulments.some((item) => item.key === params[4] || item.paymentId === params[0])) return [];
         const id = 'annulment'; const paymentId = options.wrongPaymentSource ? 'other' : params[0] as string;
         const reason = options.persistedReason ?? params[1] as string;
-        draft.annulments.push({ id, paymentId, reason, key: params[3] as string, fingerprint: params[4] as string });
-        return [{ id, paymentId, reason, annulledAt: new Date('2026-09-28T10:11:12Z'), createdByUserId: options.persistedActor ?? params[2] }];
+        const type = params[2] as PaymentAnnulmentType; const annulledAt = '2026-09-28T10:11:12Z';
+        draft.annulments.push({ id, paymentId, reason, type, key: params[4] as string, fingerprint: params[5] as string, annulledAt });
+        return [{ id, paymentId, reason, annulmentType: type, annulledAt: new Date(annulledAt), createdByUserId: options.persistedActor ?? params[3] }];
       }
       if (sql.startsWith('UPDATE payment_plan_entries')) {
         const row = draft.plan.find((item) => item.id === params[1]);
@@ -158,12 +165,21 @@ function store(start: State, options: { postPending?: string; postInvalidCount?:
   return { source: { transaction } as unknown as DataSource, state: () => state, queries };
 }
 
-const annul = (testStore: ReturnType<typeof store>, reason = '  Correction  ', key = 'key', paymentId = 'p') => new RegisterPaymentUseCase(testStore.source, totalsReader).annul(paymentId, reason, key, 'actor');
+const annul = (testStore: ReturnType<typeof store>, reason = '  Correction  ', key = 'key', paymentId = 'p',
+  type: PaymentAnnulmentType = 'CASH_REFUND') => new RegisterPaymentUseCase(testStore.source, totalsReader).annul(paymentId, reason, key, 'actor', type);
 const writes = (testStore: ReturnType<typeof store>) => testStore.queries.filter((sql) => /^(INSERT|UPDATE|DELETE)\b/.test(sql));
 
 describe('last valid Payment annulment against the current plan', () => {
   beforeEach(() => { jest.useFakeTimers(); jest.setSystemTime(new Date('2026-09-28T12:00:00Z')); });
   afterEach(() => jest.useRealTimers());
+
+  it('requires an explicit supported annulment type at the transport boundary', async () => {
+    expect(await validate(Object.assign(new AnnulPaymentDto(), { reason: 'Correction', idempotencyKey: 'key' })))
+      .toEqual(expect.arrayContaining([expect.objectContaining({ property: 'annulmentType' })]));
+    expect(await validate(Object.assign(new AnnulPaymentDto(), { reason: 'Correction', annulmentType: 'OTHER', idempotencyKey: 'key' })))
+      .toEqual(expect.arrayContaining([expect.objectContaining({ property: 'annulmentType' })]));
+    expect(await validate(Object.assign(new AnnulPaymentDto(), { reason: 'Correction', annulmentType: 'DATA_CORRECTION', idempotencyKey: 'key' }))).toEqual([]);
+  });
 
   it('refuses an isolated historical payment annulment on a REFINANCED origin without writing', async () => {
     const state = initial(); state.status = 'REFINANCED';
@@ -180,15 +196,54 @@ describe('last valid Payment annulment against the current plan', () => {
     const q = testStore.queries;
     const position = (fragment: string) => q.findIndex((sql) => sql.includes(fragment));
     expect(position('SELECT loan_id AS "loanId"')).toBeLessThan(position('FROM loans WHERE id = $1 FOR UPDATE'));
-    expect(position('FROM loans WHERE id = $1 FOR UPDATE')).toBeLessThan(position('SELECT * FROM payments WHERE id = $1 FOR UPDATE'));
-    expect(position('SELECT * FROM payments WHERE id = $1 FOR UPDATE')).toBeLessThan(position('ORDER BY payment_date DESC, created_at DESC, id DESC LIMIT 1'));
+    expect(position('FROM loans WHERE id = $1 FOR UPDATE')).toBeLessThan(position('FROM payments WHERE id = $1 FOR UPDATE'));
+    expect(position('FROM payments WHERE id = $1 FOR UPDATE')).toBeLessThan(position('ORDER BY payment_date DESC, created_at DESC, id DESC LIMIT 1'));
     expect(position('ORDER BY payment_date DESC, created_at DESC, id DESC LIMIT 1')).toBeLessThan(position('FROM payment_plan_entries WHERE loan_id = $1 ORDER BY'));
     expect(q.filter((sql) => sql.includes('SUM(principal_applied)'))).toHaveLength(2);
     expect(testStore.state().plan[0].pendingAmount).toBe('1000.00');
     expect(testStore.state().cash[1]).toMatchObject({ amount: '50.00', reversedId: 'cash-p', direction: 'OUTFLOW', methodId: 'method', movementDate: '2026-09-28', reason: 'Correction', actorId: 'actor', key: 'payment-annulment:key' });
-    expect(testStore.state().annulments[0]).toMatchObject({ reason: 'Correction', key: 'key' });
+    expect(testStore.state().annulments[0]).toMatchObject({ reason: 'Correction', type: 'CASH_REFUND', key: 'key' });
     expect(testStore.state().history).toHaveLength(1);
     expect(testStore.queries.some((sql) => sql.startsWith('SELECT MAX(event_sequence)'))).toBe(false);
+  });
+
+  it('backdates only the cash reversal for a data correction while retaining the real annulment timestamp', async () => {
+    const testStore = store(initial());
+    const dates: string[] = [];
+    await new RegisterPaymentUseCase(testStore.source, totalsReader, {
+      assertDateAllowed: async (date: string) => { dates.push(date); },
+    } as never).annul('p', 'Data error', 'correction-key', 'actor', 'DATA_CORRECTION');
+
+    expect(dates).toEqual(['2026-01-02']);
+    expect(testStore.state().annulments[0]).toMatchObject({ type: 'DATA_CORRECTION', annulledAt: '2026-09-28T10:11:12Z' });
+    expect(testStore.state().cash[1]).toMatchObject({ movementDate: '2026-01-02', concept: 'REVERSAL' });
+  });
+
+  it('uses the real annulment date for a cash refund and includes the type in idempotency', async () => {
+    const testStore = store(initial());
+    const dates: string[] = [];
+    const useCase = new RegisterPaymentUseCase(testStore.source, totalsReader, {
+      assertDateAllowed: async (date: string) => { dates.push(date); },
+    } as never);
+    await useCase.annul('p', 'Cash returned', 'refund-key', 'actor', 'CASH_REFUND');
+
+    expect(dates).toEqual(['2026-09-28']);
+    expect(testStore.state().cash[1]).toMatchObject({ movementDate: '2026-09-28', concept: 'REVERSAL' });
+    await expect(useCase.annul('p', 'Cash returned', 'refund-key', 'actor', 'DATA_CORRECTION')).rejects.toBeInstanceOf(PaymentConflictError);
+  });
+
+  it('applies the closed-period guard to the economic date selected by the annulment type', async () => {
+    const correction = store(initial());
+    const guard = { assertDateAllowed: async (date: string) => {
+      if (date === '2026-01-02') throw new ClosedFinancialPeriodError('The period is closed.');
+    } };
+    await expect(new RegisterPaymentUseCase(correction.source, totalsReader, guard as never)
+      .annul('p', 'Data error', 'correction-key', 'actor', 'DATA_CORRECTION')).rejects.toThrow('The period is closed.');
+    expect(writes(correction)).toEqual([]);
+
+    const refund = store(initial());
+    await expect(new RegisterPaymentUseCase(refund.source, totalsReader, guard as never)
+      .annul('p', 'Cash returned', 'refund-key', 'actor', 'CASH_REFUND')).resolves.toMatchObject({ id: 'p', status: 'ANNULLED' });
   });
 
   it('restores every untouched application exactly without changing dates, sequence, or other rows', async () => {
@@ -356,7 +411,7 @@ describe('last valid Payment annulment against the current plan', () => {
     await expect(annul(testStore)).rejects.toBeInstanceOf(PaymentConflictError);
     expect(testStore.state()).toEqual(state);
     expect(writes(testStore)).toEqual([]);
-    await expect(new PaymentController(new RegisterPaymentUseCase(testStore.source, totalsReader), {} as never, {} as never).annul('p', { reason: 'Correction', idempotencyKey: 'key' }, { id: 'actor' } as never)).rejects.toMatchObject({ status: 409 });
+    await expect(new PaymentController(new RegisterPaymentUseCase(testStore.source, totalsReader), {} as never, {} as never).annul('p', { reason: 'Correction', annulmentType: 'CASH_REFUND', idempotencyKey: 'key' }, { id: 'actor' } as never)).rejects.toMatchObject({ status: 409 });
   });
 
   it('ignores a later ANNULLED payment when choosing the latest VALID one', async () => {
@@ -374,7 +429,7 @@ describe('last valid Payment annulment against the current plan', () => {
     const event = testStore.state().history[2];
     expect(event.sql).toContain("'TRANSITION','CANCELLED','ACTIVE',$2,$3,$4,$5,$6");
     expect(event.params).toEqual(['loan', new Date('2026-09-28T10:11:12Z'), 'persisted-annulment-actor', 'Persisted correction', 'p', 'annulment', 3]);
-    expect(testStore.queries.find((sql) => sql.startsWith('INSERT INTO payment_annulments'))).toContain('RETURNING id, payment_id AS "paymentId", reason, annulled_at AS "annulledAt", created_by_user_id AS "createdByUserId"');
+    expect(testStore.queries.find((sql) => sql.startsWith('INSERT INTO payment_annulments'))).toContain('annulment_type AS "annulmentType", annulled_at AS "annulledAt", created_by_user_id AS "createdByUserId"');
     expect(testStore.queries.find((sql) => sql.startsWith('UPDATE loans SET status'))).toContain("WHERE id = $1 AND status = 'CANCELLED' RETURNING id");
     expect(testStore.queries.findIndex((sql) => sql.startsWith('INSERT INTO loan_status_history'))).toBeGreaterThan(testStore.queries.findIndex((sql) => sql.startsWith('INSERT INTO cash_movements')));
     expect(testStore.queries.findIndex((sql) => sql.startsWith('SELECT MAX(event_sequence)'))).toBeGreaterThan(testStore.queries.findIndex((sql) => sql.startsWith('UPDATE loans SET status')));
@@ -394,7 +449,7 @@ describe('last valid Payment annulment against the current plan', () => {
   it('exposes a failed guarded reopening as HTTP 409 without committing the annulment', async () => {
     const start = closed(); const testStore = store(start, { reopenResult: 'zero' });
     const controller = new PaymentController(new RegisterPaymentUseCase(testStore.source, totalsReader), {} as never, {} as never);
-    await expect(controller.annul('p', { reason: 'Correction', idempotencyKey: 'key' }, { id: 'actor' } as never)).rejects.toMatchObject({ status: 409 });
+    await expect(controller.annul('p', { reason: 'Correction', annulmentType: 'CASH_REFUND', idempotencyKey: 'key' }, { id: 'actor' } as never)).rejects.toMatchObject({ status: 409 });
     expect(testStore.state()).toEqual(start);
     expect(testStore.state().history).toHaveLength(2);
   });
@@ -507,7 +562,8 @@ describe('last valid Payment annulment against the current plan', () => {
     }
     const wrong = initial();
     wrong.payments.push({ ...wrong.payments[0], id: 'q', loanId: 'other' });
-    wrong.annulments.push({ paymentId: 'q', reason: 'Correction', key: 'key', fingerprint: createHash('sha256').update(JSON.stringify({ paymentId: 'q', reason: 'Correction' })).digest('hex') });
+    wrong.annulments.push({ paymentId: 'q', reason: 'Correction', type: 'CASH_REFUND', key: 'key', annulledAt: '2026-09-28T10:11:12Z',
+      fingerprint: createHash('sha256').update(JSON.stringify({ paymentId: 'q', reason: 'Correction' })).digest('hex') });
     const conflict = store(wrong);
     await expect(annul(conflict)).rejects.toBeInstanceOf(PaymentConflictError);
     expect(writes(conflict)).toEqual([]);

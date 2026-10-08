@@ -9,6 +9,9 @@ const HEIGHT = 180;
 const MARGIN = 4;
 const CONTENT_BOTTOM = 165;
 const ROW_HEIGHT = 8;
+const WATERMARK_ANGLE = 38;
+const REFINANCED_WATERMARK_MARGIN = MARGIN + 1;
+const REFINANCED_WATERMARK_MAX_FONT_SIZE = 30;
 const STATUS_LABELS: Record<string, string> = {
   ACTIVE: 'ACTIVO', CANCELLED: 'CANCELADO', REFINANCED: 'REFINANCIADO',
   UNCOLLECTIBLE: 'INCOBRABLE', ANNULLED: 'ANULADO',
@@ -18,8 +21,12 @@ function openPdfPreview(doc: { output: (type: 'blob') => Blob }): void {
   const blobUrl = URL.createObjectURL(doc.output('blob'));
   const preview = window.open(blobUrl, '_blank');
   const revoke = () => URL.revokeObjectURL(blobUrl);
-  preview?.addEventListener('load', revoke, { once: true });
-  window.setTimeout(revoke, 60_000);
+  if (!preview) { revoke(); return; }
+  const releaseWhenClosed = window.setInterval(() => {
+    if (!preview.closed) return;
+    window.clearInterval(releaseWhenClosed);
+    revoke();
+  }, 1_000);
 }
 
 function dateKey(date: Date): string {
@@ -57,13 +64,34 @@ export async function createLoanPaymentPlanDocument(loan: LoanOperationalDetail,
     const status = STATUS_LABELS[loan.status] ?? loan.status;
     if (['CANCELLED', 'REFINANCED', 'UNCOLLECTIBLE'].includes(loan.status)) {
       const cancelled = loan.status === 'CANCELLED';
+      const refinanced = loan.status === 'REFINANCED';
+      const prominent = cancelled || refinanced;
       doc.saveGraphicsState();
-      doc.setGState(doc.GState({ opacity: cancelled ? 0.2 : 0.14 }));
+      doc.setGState(doc.GState({ opacity: prominent ? 0.2 : 0.14 }));
       if (cancelled) doc.setTextColor(35, 107, 69);
+      else if (refinanced) doc.setTextColor(145, 45, 45);
       else doc.setTextColor(90);
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(cancelled ? 30 : 19);
-      doc.text(status, WIDTH / 2, HEIGHT / 2, { align: 'center', angle: 38 });
+      if (refinanced) {
+        doc.setFontSize(REFINANCED_WATERMARK_MAX_FONT_SIZE);
+        const angle = WATERMARK_ANGLE * Math.PI / 180;
+        const initialDimensions = doc.getTextDimensions(status);
+        const rotatedWidth = initialDimensions.w * Math.cos(angle) + initialDimensions.h * Math.sin(angle);
+        const rotatedHeight = initialDimensions.w * Math.sin(angle) + initialDimensions.h * Math.cos(angle);
+        const scale = Math.min(
+          1,
+          (WIDTH - 2 * REFINANCED_WATERMARK_MARGIN) / rotatedWidth,
+          (HEIGHT - 2 * REFINANCED_WATERMARK_MARGIN) / rotatedHeight,
+        );
+        doc.setFontSize(Math.floor(REFINANCED_WATERMARK_MAX_FONT_SIZE * scale * 100) / 100);
+        const dimensions = doc.getTextDimensions(status);
+        const x = WIDTH / 2 - (dimensions.w * Math.cos(angle) - dimensions.h * Math.sin(angle)) / 2;
+        const y = HEIGHT / 2 + (dimensions.w * Math.sin(angle) + dimensions.h * Math.cos(angle)) / 2;
+        doc.text(status, x, y, { angle: WATERMARK_ANGLE });
+      } else {
+        doc.setFontSize(cancelled ? 30 : 19);
+        doc.text(status, WIDTH / 2, HEIGHT / 2, { align: 'center', angle: WATERMARK_ANGLE });
+      }
       doc.restoreGraphicsState();
     }
     doc.setTextColor(0);
@@ -96,6 +124,14 @@ export async function createLoanPaymentPlanDocument(loan: LoanOperationalDetail,
       if (!text.split(': ')[1]) continue;
       for (const line of limitedLines(doc, text, 2)) { doc.text(line, MARGIN, y + 1); y += 3.5; }
     }
+    if (loan.collectionProjection.operationalDate) {
+      doc.setFont('helvetica', 'bold');
+      doc.text(loan.collectionProjection.operationalDateKind === 'TODAY' ? 'COBRO PENDIENTE HOY' : 'PRÓXIMO COBRO', MARGIN, y + 1);
+      doc.text(getPdfMoneyText(loan.collectionProjection.totalSuggestedAmount), WIDTH - MARGIN, y + 1, { align: 'right' }); y += 4;
+      doc.setFont('helvetica', 'normal');
+      doc.text(`Atrasado ${getPdfMoneyText(loan.collectionProjection.overdueAmount)}  |  Programado ${getPdfMoneyText(loan.collectionProjection.scheduledAmount)}`, MARGIN, y + 1); y += 4;
+      doc.text(`Fecha operativa: ${formatDateOnlyForDisplay(loan.collectionProjection.operationalDate)}`, MARGIN, y + 1); y += 4;
+    }
     doc.setLineWidth(0.2);
     doc.line(MARGIN, y + 2, WIDTH - MARGIN, y + 2);
     doc.setFont('helvetica', 'bold');
@@ -109,7 +145,7 @@ export async function createLoanPaymentPlanDocument(loan: LoanOperationalDetail,
   for (const [index, row] of rows.entries()) {
     if (y + ROW_HEIGHT > CONTENT_BOTTOM) { doc.addPage([WIDTH, HEIGHT], 'portrait'); y = header(nameChunks[0]); }
     const payment = row.kind === 'PAYMENT';
-    const condition = payment ? 'PAGADO' : row.date < today ? 'VENCIDO' : 'PENDIENTE';
+    const condition = payment ? 'PAGADO' : row.date < today ? 'VENCIDA' : 'PENDIENTE';
     doc.setFontSize(7.5);
     doc.setFont('helvetica', 'bold');
     const prefix = `${index + 1}.  ${formatDateOnlyForDisplay(row.date)}  `;
@@ -128,7 +164,7 @@ export async function createLoanPaymentPlanDocument(loan: LoanOperationalDetail,
     doc.setFont('helvetica', 'bold');
     doc.text(prefix, MARGIN, y + 4.5);
     if (condition === 'PAGADO') doc.setTextColor(24, 99, 55);
-    if (condition === 'PENDIENTE') doc.setTextColor(145, 45, 45);
+    if (condition === 'PENDIENTE' || condition === 'VENCIDA') doc.setTextColor(220, 38, 38);
     doc.text(condition, MARGIN + prefixWidth, y + 4.5);
     doc.setTextColor(0);
     doc.setFont('helvetica', 'normal');

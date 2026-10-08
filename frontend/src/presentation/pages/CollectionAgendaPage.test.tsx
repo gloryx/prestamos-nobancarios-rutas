@@ -7,9 +7,9 @@ import { CollectionAgendaView } from './CollectionAgendaPage';
 const customer: CollectionAgendaCustomer = { customerId: 'customer-1', customerName: 'Ana Mora', identification: '1-1111-1111', primaryPhone: '8888-0000', secondaryPhone: null,
   address: { exact: 'Frente al parque', district: 'Santa Cruz', canton: 'Santa Cruz', province: 'Guanacaste' }, coordinates: { latitude: '10.2', longitude: '-85.5' }, propertyPhoto: { available: true, accessPath: '/protected' },
   obligations: [
-    { loanId: 'loan-1', loanNumber: '101', paymentPlanEntryId: 'entry-1', sequence: 1, dueDate: '2026-10-03', pendingAmount: '15000.00', collectionStatus: 'OVERDUE' },
-    { loanId: 'loan-2', loanNumber: '245', paymentPlanEntryId: 'entry-2', sequence: 2, dueDate: '2026-10-05', pendingAmount: '20000.00', collectionStatus: 'DUE_TODAY' },
-    { loanId: 'loan-3', loanNumber: '300', paymentPlanEntryId: 'entry-3', sequence: 1, dueDate: '2026-10-07', pendingAmount: '9000.00', collectionStatus: 'UPCOMING' },
+    { loanId: 'loan-1', loanNumber: '101', paymentPlanEntryId: 'entry-1', sequence: 1, dueDate: '2026-10-03', pendingAmount: '15000.00', overdueAmount: '15000.00', scheduledAmount: '0.00', collectionStatus: 'OVERDUE' },
+    { loanId: 'loan-2', loanNumber: '245', paymentPlanEntryId: 'entry-2', sequence: 2, dueDate: '2026-10-05', pendingAmount: '20000.00', overdueAmount: '0.00', scheduledAmount: '20000.00', collectionStatus: 'DUE_TODAY' },
+    { loanId: 'loan-3', loanNumber: '300', paymentPlanEntryId: 'entry-3', sequence: 1, dueDate: '2026-10-07', pendingAmount: '9000.00', overdueAmount: '0.00', scheduledAmount: '9000.00', collectionStatus: 'UPCOMING' },
   ] };
 const data: CollectionAgendaResult = { referenceDate: '2026-10-05', period: { fromDate: null, toDate: '2026-10-11' },
   summary: { overdue: { obligations: 12, customers: 10, amount: '120000.00' }, dueToday: { obligations: 8, customers: 7, amount: '85000.00' }, upcoming: { obligations: 21, customers: 18, amount: '240000.00' } },

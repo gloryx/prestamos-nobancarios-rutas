@@ -137,6 +137,9 @@ describe('refinancing HTTP boundary and RBAC', () => {
     expect((await post(body(), 'regular')).status).toBe(403);
     expect((await post(body(), 'viewer')).status).toBe(403);
     expect((await get(`loans/${origin}/preview`, 'viewer')).status).toBe(200);
+    expect((await get(`loans/${origin}/preview?refinancingDate=2026-09-26`, 'viewer')).status).toBe(200);
+    expect(preview).toHaveBeenLastCalledWith(origin, '2026-09-26');
+    expect((await get(`loans/${origin}/preview?refinancingDate=invalid`, 'viewer')).status).toBe(400);
     expect((await get('loans?page=1&pageSize=20&search=Customer', 'viewer')).status).toBe(200);
     expect(search).toHaveBeenCalledWith({ search: 'Customer', page: 1, pageSize: 20 });
     expect((await get(`loans/${origin}/chain`, 'viewer')).status).toBe(200);
@@ -193,6 +196,10 @@ describe('refinancing HTTP boundary and RBAC', () => {
     const stale = await post(body(), 'operator');
     expect(stale.status).toBe(409);
     expect(await stale.json()).toMatchObject({ reasonCode: 'STALE_DATA' });
+    confirm.mockRejectedValueOnce(new RefinancingConflictError('historical balance', 'HISTORICAL_BALANCE_CONFLICT'));
+    const historical = await post(body(), 'operator');
+    expect(historical.status).toBe(409);
+    expect(await historical.json()).toMatchObject({ reasonCode: 'HISTORICAL_BALANCE_CONFLICT' });
     confirm.mockRejectedValueOnce(new Error('private SQL detail'));
     const error = await post(body(), 'operator');
     expect(error.status).toBe(500);

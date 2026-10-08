@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { buildPaymentProjection } from '../src/domain/payment/payment-projection';
+import { buildCollectionProjection, buildPaymentProjection } from '../src/domain/payment/payment-projection';
 import { paymentDateOnlyKey } from '../src/domain/payment/payment-date-only';
 
 describe('payment projection', () => {
@@ -61,5 +61,35 @@ describe('payment projection', () => {
       cwd: process.cwd(), env: { ...process.env, TZ: 'Pacific/Auckland' }, encoding: 'utf8',
     });
     expect(JSON.parse(output)).toEqual({ utcDay: 29, key: '2026-09-30', rows: ['local', 'later'] });
+  });
+
+  it('consolidates overdue obligations with only the next scheduled obligation', () => {
+    expect(buildCollectionProjection([
+      { id: 'old-a', dueDate: '2026-09-01', sequence: 1, pendingAmount: '20.00' },
+      { id: 'old-b', dueDate: '2026-09-02', sequence: 2, pendingAmount: '20.00' },
+      { id: 'next', dueDate: '2026-10-10', sequence: 3, pendingAmount: '20.00' },
+      { id: 'later', dueDate: '2026-11-10', sequence: 4, pendingAmount: '20.00' },
+    ], '2026-10-07')).toEqual({ overdueAmount: '40.00', scheduledAmount: '20.00', totalSuggestedAmount: '60.00', operationalDate: '2026-10-10', operationalDateKind: 'SCHEDULED' });
+  });
+
+  it('uses today without inventing a due date when only overdue debt remains', () => {
+    expect(buildCollectionProjection([{ id: 'old', dueDate: '2026-09-01', sequence: 1, pendingAmount: '40.00' }], '2026-10-07'))
+      .toEqual({ overdueAmount: '40.00', scheduledAmount: '0.00', totalSuggestedAmount: '40.00', operationalDate: '2026-10-07', operationalDateKind: 'TODAY' });
+  });
+
+  it('presents a historical carry as overdue without duplicating the receiver balance', () => {
+    const result = buildCollectionProjection([{ id: 'future', dueDate: '2026-10-10', sequence: 2, pendingAmount: '100.00' }], '2026-10-07', [{
+      planEntryId: 'old', amountApplied: '20.00', carriedForwardAmount: '40.00', carriedToPlanEntryId: 'future', sourceDueDate: '2026-09-01', createdAt: '2026-09-05T01:00:00Z',
+    }]);
+    expect(result).toEqual({ overdueAmount: '40.00', scheduledAmount: '60.00', totalSuggestedAmount: '100.00', operationalDate: '2026-10-10', operationalDateKind: 'SCHEDULED' });
+  });
+
+  it('reduces historical carried arrears first after a later application', () => {
+    const applications = [
+      { planEntryId: 'old', amountApplied: '20.00', carriedForwardAmount: '40.00', carriedToPlanEntryId: 'future', sourceDueDate: '2026-09-01', createdAt: '2026-09-05T01:00:00Z' },
+      { planEntryId: 'future', amountApplied: '15.00', carriedForwardAmount: '0.00', carriedToPlanEntryId: null, sourceDueDate: '2026-10-10', createdAt: '2026-09-06T01:00:00Z' },
+    ];
+    expect(buildCollectionProjection([{ id: 'future', dueDate: '2026-10-10', sequence: 2, pendingAmount: '85.00' }], '2026-10-07', applications))
+      .toMatchObject({ overdueAmount: '25.00', scheduledAmount: '60.00', totalSuggestedAmount: '85.00' });
   });
 });

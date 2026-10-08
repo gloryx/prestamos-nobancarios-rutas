@@ -4,7 +4,7 @@ import type { TransactionalCashMovementRecorder } from '../../../../application/
 import { getNextLoanStatusEventSequence } from '../../../../application/loan/loan-status-history-sequence';
 import { MAX_REFINANCING_GRAPH_EDGES } from '../../../../application/loan-refinancing/refinancing-chain';
 import type { LoanFinancialTotalsReader } from '../../../../application/loan/loan-financial-totals.reader';
-import type { NewRefinancing, RefinancingCandidate, RefinancingChainCustomer, RefinancingChainGraph, RefinancingChainLoanRow, RefinancingChainTransitionRow, RefinancingListItem, RefinancingListQuery, RefinancingOperation, RefinancingSearchQuery, RefinancingStore, RefinancingTransaction } from '../../../../application/loan-refinancing/refinancing.port';
+import type { HistoricalRefinancingPayments, NewRefinancing, RefinancingCandidate, RefinancingChainCustomer, RefinancingChainGraph, RefinancingChainLoanRow, RefinancingChainTransitionRow, RefinancingListItem, RefinancingListQuery, RefinancingOperation, RefinancingSearchQuery, RefinancingStore, RefinancingTransaction } from '../../../../application/loan-refinancing/refinancing.port';
 import type { RefinancingSnapshot } from '../../../../domain/loan-refinancing/refinancing-finance';
 import { VALID_PAYMENT_TOTALS_SELECT } from './loan-financial-totals.reader';
 
@@ -129,6 +129,38 @@ export class LoanRefinancingTypeormStore implements RefinancingStore {
     return this.source.transaction('REPEATABLE READ', (manager) => this.snapshot(manager, id));
   }
 
+  private async historicalPayments(manager: EntityManager, id: string, throughDate: string): Promise<HistoricalRefinancingPayments> {
+    const effective = `(p.payment_date <= $2::date AND
+      ((p.status = 'VALID' AND annulment.id IS NULL) OR (p.status = 'ANNULLED' AND annulment.id IS NOT NULL
+        AND annulment.annulment_type = 'CASH_REFUND'
+        AND (annulment.annulled_at AT TIME ZONE 'America/Costa_Rica')::date > $2::date)))`;
+    const [row] = await manager.query(`SELECT
+      COALESCE(SUM(p.amount) FILTER (WHERE ${effective}), 0)::text AS "paidAmount",
+      COALESCE(SUM(p.principal_applied) FILTER (WHERE ${effective}), 0)::text AS "paidPrincipal",
+      COALESCE(SUM(p.interest_applied) FILTER (WHERE ${effective}), 0)::text AS "paidInterest",
+      COUNT(*) FILTER (WHERE p.payment_date <= $2::date AND
+        ((p.status = 'VALID') <> (annulment.id IS NULL) OR (${effective} AND
+          (p.amount <= 0 OR p.principal_applied < 0 OR p.interest_applied < 0 OR
+            p.amount <> p.principal_applied + p.interest_applied))))::int AS "invalidCount",
+      MAX(p.payment_date) FILTER (WHERE ${effective})::text AS "lastValidPaymentDate",
+      COUNT(*) FILTER (WHERE
+        (p.payment_date > $2::date AND NOT (p.status = 'ANNULLED' AND annulment.annulment_type = 'DATA_CORRECTION'))
+        OR (p.payment_date <= $2::date AND p.status = 'ANNULLED' AND annulment.annulment_type = 'CASH_REFUND'
+          AND (annulment.annulled_at AT TIME ZONE 'America/Costa_Rica')::date > $2::date))::int AS "laterPaymentCount"
+      FROM payments p LEFT JOIN payment_annulments annulment ON annulment.payment_id = p.id
+      WHERE p.loan_id = $1`, [id, throughDate]);
+    return { totals: { paidAmount: row.paidAmount, paidPrincipal: row.paidPrincipal,
+      paidInterest: row.paidInterest, invalidCount: row.invalidCount },
+      lastValidPaymentDate: row.lastValidPaymentDate, laterPaymentCount: row.laterPaymentCount };
+  }
+
+  previewAt(id: string, throughDate: string) {
+    return this.source.transaction('REPEATABLE READ', async (manager) => {
+      const current = await this.snapshot(manager, id);
+      return current ? { current, historicalPayments: await this.historicalPayments(manager, id, throughDate) } : undefined;
+    });
+  }
+
   transaction<T>(work: (tx: RefinancingTransaction) => Promise<T>): Promise<T> {
     return this.source.transaction(async (manager) => work({
       context: manager,
@@ -139,6 +171,7 @@ export class LoanRefinancingTypeormStore implements RefinancingStore {
         return row ? this.snapshot(manager, id) : undefined;
       },
       readSnapshot: (id) => this.snapshot(manager, id),
+      readHistoricalPayments: (id, throughDate) => this.historicalPayments(manager, id, throughDate),
       openingDate: async () => (await manager.query(`SELECT opening_date::text AS "openingDate"
         FROM financial_openings WHERE singleton_key = 'DEFAULT' FOR SHARE`))[0]?.openingDate,
       activeReferences: async (frequencyId, methods) => {

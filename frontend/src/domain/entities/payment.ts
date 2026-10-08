@@ -1,10 +1,13 @@
 import type { IntervalUnit } from './payment-frequency';
 
 export type LoanStatus = 'ACTIVE' | 'CANCELLED' | 'REFINANCED' | 'UNCOLLECTIBLE' | 'ANNULLED';
+export type PaymentAnnulmentType = 'DATA_CORRECTION' | 'CASH_REFUND';
+export type PaymentAnnulmentBody = { reason: string; annulmentType: PaymentAnnulmentType; idempotencyKey: string };
 export type PaymentLoan = { id: string; loanNumber: string; identification: string; customerName: string; financialBalance: string; isOverdue: boolean };
 export type PaymentLoanPage = { items: PaymentLoan[]; total: number; page: number; pageSize: number };
 export type ValidPayment = { id: string; amount: string; paymentDate: string; status: 'VALID' };
 export type PendingPaymentEntry = { id: string; dueDate: string; sequence: number; pendingAmount: string };
+export type CollectionProjection = { overdueAmount: string; scheduledAmount: string; totalSuggestedAmount: string; operationalDate: string | null; operationalDateKind: 'SCHEDULED' | 'TODAY' | null };
 export type PlanBaseline = Readonly<{ financialBalance: string; entries: ReadonlyArray<Readonly<Pick<PendingPaymentEntry, 'id' | 'dueDate' | 'pendingAmount'>>> }>;
 export type PaymentContext = {
   summary: { loanId: string; loanNumber: string; status: LoanStatus; identification: string; customerName: string; totalAmount: string; principal: string; interestAmount: string };
@@ -17,4 +20,5 @@ export type PaymentContext = {
   refinanceEligibility: boolean;
   preferredMethod: { id: string | null; activeMethods: Array<{ id: string; name: string }>; collectors: Array<{ id: string; name: string }> };
   paymentFrequency: { intervalUnit: IntervalUnit; intervalValue: number };
+  collectionProjection: CollectionProjection;
 };

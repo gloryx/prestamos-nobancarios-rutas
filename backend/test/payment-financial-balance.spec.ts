@@ -285,6 +285,7 @@ describe('payment loan context integrity', () => {
       if (sql.includes('FROM payments WHERE loan_id')) return paid.map((fact, index) => ({ id: `p-${index}`, amount: fact.amount, paymentDate: '2026-01-02', status: fact.status }));
       if (sql.includes('FROM payment_plan_entries')) return pending === '0.00' ? [] : [{ id: 'entry', dueDate: '2026-02-01', sequence: 1, pendingAmount: pending }];
       if (sql.includes('FROM payment_methods') || sql.includes('FROM collectors')) return [];
+      if (sql.includes('FROM payment_applications pa')) return [];
       throw new Error(`Unexpected query: ${sql}`);
     });
     return new PaymentContextUseCase({ query } as unknown as DataSource, totalsReader).execute('loan-1');

@@ -47,9 +47,10 @@ const result: RefinancingResult = {
 
 function setup() {
   let latestPreview = preview;
+  let historicalPreview: RefinancingPreview | undefined;
   const lookup: LoanRefinancingLookup = {
     search: vi.fn(async (query) => ({ items: [], total: 0, page: query.page, pageSize: query.pageSize })),
-    preview: vi.fn(async () => latestPreview),
+    preview: vi.fn(async (_loanId, refinancingDate) => refinancingDate ? historicalPreview ?? latestPreview : latestPreview),
   };
   const operations: LoanRefinancingOperations = { confirm: vi.fn(async () => result), detail: vi.fn(async () => result) };
   const origin = new RefinancingStepOneController(lookup);
@@ -57,7 +58,7 @@ function setup() {
     frequencies: [{ id: 'daily', name: 'Diaria', intervalUnit: 'DAY' as const, intervalValue: 1, order: 1, isActive: true }],
     methods: [{ id: 'cash', name: 'Efectivo', order: 1, isActive: true },
       { id: 'transfer', name: 'Transferencia', order: 2, isActive: true }],
-  })) });
+  })) }, lookup);
   const keys = vi.fn().mockReturnValueOnce('key-1').mockReturnValueOnce('key-2').mockReturnValueOnce('key-3');
   const confirmation = new RefinancingConfirmationController(operations, keys, classifyRefinancingFailure);
   const page = () => { hooks.stateIndex = 0; hooks.refIndex = 0; hooks.effects = [];
@@ -76,7 +77,8 @@ function setup() {
     expect(origin.getSnapshot().step).toBe('CONFIRMATION');
   };
   return { lookup, operations, origin, conditions, confirmation, keys, page, wizard, prepare,
-    changePreview: (next: RefinancingPreview) => { latestPreview = next; } };
+    changePreview: (next: RefinancingPreview) => { latestPreview = next; },
+    changeHistoricalPreview: (next: RefinancingPreview) => { historicalPreview = next; } };
 }
 
 describe('refinancing wizard Step 3 transitions', () => {
@@ -112,6 +114,33 @@ describe('refinancing wizard Step 3 transitions', () => {
     wizard().onContinueToConfirmation(); expect(confirmation.getSnapshot().prepared!.request.idempotencyKey).toBe('key-1');
     wizard().onBackToConditions(); conditions.setConditions({ observations: 'cambio contractual' });
     wizard().onContinueToConfirmation(); expect(confirmation.getSnapshot().prepared!.request.idempotencyKey).toBe('key-2');
+  });
+
+  it('recalculates and confirms loan 3 from the selected historical date without losing the draft', async () => {
+    const flow = setup();
+    const current: RefinancingPreview = { ...preview, loanNumber: '3', principal: '500000.00',
+      interestAmount: '100000.00', totalAmount: '600000.00', paidAmount: '440000.00',
+      paidPrincipal: '440000.00', outstandingPrincipal: '60000.00', outstandingInterest: '100000.00',
+      financialBalance: '160000.00', pendingPlanAmount: '160000.00' };
+    const historical = { ...current, paidAmount: '440040.00', paidPrincipal: '440040.00',
+      outstandingPrincipal: '59960.00', financialBalance: '159960.00', pendingPlanAmount: '159960.00' };
+    flow.changePreview(current); flow.changeHistoricalPreview(historical);
+    await flow.origin.select(current.loanId); flow.wizard().onContinue();
+    await vi.waitFor(() => expect(flow.conditions.getSnapshot().optionsLoaded).toBe(true));
+    flow.conditions.setConditions({ newMoney: '340000.00', newInterestAmount: '100000.00',
+      paymentFrequencyId: 'daily', preferredPaymentMethodId: 'cash', disbursementPaymentMethodId: 'transfer',
+      count: '30', observations: 'Preserve draft' });
+    await flow.conditions.setRefinancingDate('2026-09-26');
+    expect(flow.conditions.evaluate()).toMatchObject({ principal: '499960.00', total: '599960.00', valid: true });
+    flow.wizard().onContinueToConfirmation();
+    const request = flow.confirmation.getSnapshot().prepared!.request;
+    expect(request).toMatchObject({ refinancingDate: '2026-09-26', newMoney: '340000.00',
+      newInterestAmount: '100000.00', observations: 'Preserve draft' });
+    expect(request.plan).toHaveLength(30);
+    expect(request.plan.reduce((sum, row) => sum + BigInt(row.pendingAmount.replace('.', '')), 0n)).toBe(59996000n);
+    expect(request.plan.every((row) => new Date(`${row.dueDate}T00:00:00Z`).getUTCDay() !== 0)).toBe(true);
+    flow.wizard().onConfirm(true);
+    await vi.waitFor(() => expect(flow.operations.confirm).toHaveBeenCalledWith(request));
   });
 
   it('only submits from confirmation when permitted, locks double click, and starts a clean wizard after success', async () => {

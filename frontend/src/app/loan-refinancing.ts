@@ -6,7 +6,7 @@ import { RefinancingChainController } from '../application/use-cases/refinancing
 import { classifyRefinancingFailure, loanRefinancingApi, loanRefinancingChainsApi, loanRefinancingListApi, loanRefinancingOperations, loanRefinancingOptions, refinancingCustomerLookup } from '../infrastructure/api/loan-refinancing.api';
 
 export const createRefinancingStepOne = () => new RefinancingStepOneController(loanRefinancingApi);
-export const createRefinancingConditions = () => new RefinancingConditionsController(loanRefinancingOptions);
+export const createRefinancingConditions = () => new RefinancingConditionsController(loanRefinancingOptions, loanRefinancingApi);
 export const createRefinancingList = () => new RefinancingListController(loanRefinancingListApi, refinancingCustomerLookup);
 export const createRefinancingChains = () => new RefinancingChainController(loanRefinancingChainsApi, refinancingCustomerLookup);
 export const createRefinancingConfirmation = () => new RefinancingConfirmationController(

@@ -178,9 +178,12 @@ describe('customer financial analysis application and reader', () => {
       expect(call[0]).toMatch(/customer_id/);
       expect(call[1]).toEqual(expect.arrayContaining(['customer-1', '2026-09-30']));
     }
-    expect(query.mock.calls[1][0]).toContain("COALESCE(snapshot.status,'ACTIVE')");
+    expect(query.mock.calls[1][0]).toContain('l.start_date AS effective_date');
+    expect(query.mock.calls[1][0]).toContain('r.refinancing_date AS effective_date');
+    expect(query.mock.calls[1][0]).not.toContain('COALESCE(snapshot.status');
     expect(query.mock.calls[1][0]).toContain('reversal.movement_date <= $2::date');
     expect(query.mock.calls[3][0]).toContain('annulment.annulled_at');
+    expect(query.mock.calls[3][0]).toContain("annulment.annulment_type IS DISTINCT FROM 'DATA_CORRECTION'");
     expect(result).toEqual({ customer, facts: { loans: [], refinancings: [], payments: [] } });
   });
 

@@ -73,7 +73,7 @@ export class PaymentController {
   }
   @Get('loans/:loanId') @RequirePermissions('payments.view') detail(@Param('loanId') loanId: string) { return this.context.execute(loanId).catch((error) => this.map(error)); }
   @Post() @HttpCode(HttpStatus.CREATED) @RequirePermissions('payments.create') create(@Body() body: CreatePaymentDto, @CurrentUser() actor: CurrentIdentity) { return this.register.execute(body, actor.id).catch((error) => this.map(error)); }
-  @Post(':paymentId/annul') @HttpCode(HttpStatus.CREATED) @RequirePermissions('payments.annul') annul(@Param('paymentId') paymentId: string, @Body() body: AnnulPaymentDto, @CurrentUser() actor: CurrentIdentity) { return this.register.annul(paymentId, body.reason, body.idempotencyKey, actor.id).catch((error) => this.map(error)); }
+  @Post(':paymentId/annul') @HttpCode(HttpStatus.CREATED) @RequirePermissions('payments.annul') annul(@Param('paymentId') paymentId: string, @Body() body: AnnulPaymentDto, @CurrentUser() actor: CurrentIdentity) { return this.register.annul(paymentId, body.reason, body.idempotencyKey, actor.id, body.annulmentType).catch((error) => this.map(error)); }
   @Put('loans/:loanId/plan') @RequirePermissions('payments.plan.customize') plan(@Param('loanId') loanId: string, @Body() body: CustomizePaymentPlanDto) { return this.customize.execute(loanId, body.entries, body.idempotencyKey, body.base).catch((error) => this.map(error)); }
   private map(error: unknown): never { if (error instanceof PaymentConflictError) throw new ConflictException(error.message); if (error instanceof PaymentValidationError) throw new BadRequestException(error.message); if (error instanceof PaymentNotFoundError) throw new NotFoundException(error.message); throw error; }
 }

@@ -88,4 +88,53 @@ describe('refinancing conditions', () => {
     expect(controller.getSnapshot().optionsLoaded).toBe(true);
     controller.dispose();
   });
+
+  it('recalculates the historical balance and automatic plan while preserving independent draft fields', async () => {
+    const current: RefinancingPreview = { ...preview, loanNumber: '3', principal: '500000.00',
+      interestAmount: '100000.00', totalAmount: '600000.00', paidAmount: '440000.00',
+      paidPrincipal: '440000.00', outstandingPrincipal: '60000.00', outstandingInterest: '100000.00',
+      financialBalance: '160000.00', pendingPlanAmount: '160000.00' };
+    const historical: RefinancingPreview = { ...current, paidAmount: '440040.00', paidPrincipal: '440040.00',
+      outstandingPrincipal: '59960.00', financialBalance: '159960.00', pendingPlanAmount: '159960.00' };
+    const options: LoanRefinancingOptions = { load: vi.fn(async () => ({ frequencies: [frequency], methods: [method] })) };
+    const lookup = { preview: vi.fn(async () => historical) };
+    const controller = new RefinancingConditionsController(options, lookup);
+    controller.setPreview(current);
+    await controller.loadOptions();
+    controller.setConditions({ newMoney: '340000.00', newInterestAmount: '100000.00', paymentFrequencyId: 'daily',
+      preferredPaymentMethodId: 'cash', disbursementPaymentMethodId: 'cash', count: '30', observations: 'Keep me' });
+    controller.setMode('personalized');
+    expect(controller.getSnapshot().conditions.mode).toBe('personalized');
+    const refresh = controller.setRefinancingDate('2026-09-26');
+    expect(controller.getSnapshot()).toMatchObject({ loadingHistoricalPreview: true,
+      conditions: { newMoney: '340000.00', newInterestAmount: '100000.00', paymentFrequencyId: 'daily',
+        preferredPaymentMethodId: 'cash', count: '30', observations: 'Keep me', mode: 'automatic', customPlan: [] } });
+    expect(controller.canProceed()).toBe(false);
+    await refresh;
+    expect(lookup.preview).toHaveBeenCalledWith(current.loanId, '2026-09-26');
+    expect(controller.getSnapshot()).toMatchObject({ preview: { outstandingPrincipal: '59960.00' },
+      loadingHistoricalPreview: false, historicalPreviewError: null });
+    const draft = controller.evaluate('2026-10-08')!;
+    expect(draft).toMatchObject({ principal: '499960.00', total: '599960.00', valid: true });
+    expect(draft.plan).toHaveLength(30);
+    expect(draft.plan.reduce((sum, row) => sum + BigInt(row.pendingAmount.replace('.', '')), 0n)).toBe(59996000n);
+    expect(draft.plan.every((row) => new Date(`${row.dueDate}T00:00:00Z`).getUTCDay() !== 0)).toBe(true);
+    expect(controller.canProceed()).toBe(true);
+  });
+
+  it('keeps the latest historical preview and blocks confirmation when refresh fails', async () => {
+    let first!: (value: RefinancingPreview) => void;
+    const lookup = { preview: vi.fn()
+      .mockImplementationOnce(() => new Promise<RefinancingPreview>((resolve) => { first = resolve; }))
+      .mockRejectedValueOnce(new Error('offline')) };
+    const controller = new RefinancingConditionsController({ load: vi.fn(async () => ({ frequencies: [frequency], methods: [method] })) }, lookup);
+    controller.setPreview(preview);
+    const stale = controller.setRefinancingDate('2026-09-20');
+    const latest = controller.setRefinancingDate('2026-09-21');
+    first({ ...preview, outstandingPrincipal: '1.00' });
+    await stale; await latest;
+    expect(controller.getSnapshot()).toMatchObject({ historicalPreviewError: expect.any(Error), loadingHistoricalPreview: false });
+    expect(controller.getSnapshot().preview?.outstandingPrincipal).toBe('120000.00');
+    expect(controller.canProceed()).toBe(false);
+  });
 });

@@ -169,10 +169,10 @@ describe('chronological multi-obligation payment registration', () => {
   });
 
   it.each([
-    [3, '20000.00', ['0.00', '100000.00', '60000.00'], '40000.00'],
-    [2, '1.00', ['0.00', '119999.00'], '59999.00'],
-    [2, '59999.00', ['0.00', '60001.00'], '1.00'],
-  ] as const)('carries a %s-row payment of %s with exactly two audited mutations and one cash inflow', async (count, amount, pending, carry) => {
+    [3, '20000.00', ['40000.00', '60000.00', '60000.00']],
+    [2, '1.00', ['59999.00', '60000.00']],
+    [2, '59999.00', ['1.00', '60000.00']],
+  ] as const)('keeps a partial payment on the oldest of %s rows for %s', async (count, amount, pending) => {
     const testStore = store(count);
     const opening = initial(count);
     const result = await register(testStore, amount);
@@ -181,19 +181,15 @@ describe('chronological multi-obligation payment registration', () => {
     expect(ordered.map((row) => row.pendingAmount)).toEqual(pending);
     expect(ordered.map(({ id, dueDate, sequence }) => [id, dueDate, sequence]))
       .toEqual([...opening.rows].sort((a, b) => a.sequence - b.sequence).map(({ id, dueDate, sequence }) => [id, dueDate, sequence]));
-    expect(state.applications).toEqual([
-      { paymentId: 'payment-1', planEntryId: 'entry-1', amountApplied: amount, pendingBefore: '60000.00', pendingAfter: '0.00', carriedForwardAmount: carry, carriedToPlanEntryId: 'entry-2' },
-      { paymentId: 'payment-1', planEntryId: 'entry-2', amountApplied: '0.00', pendingBefore: '60000.00', pendingAfter: pending[1], carriedForwardAmount: '0.00', carriedToPlanEntryId: null },
-    ]);
+    expect(state.applications).toEqual([{ paymentId: 'payment-1', planEntryId: 'entry-1', amountApplied: amount, pendingBefore: '60000.00', pendingAfter: pending[0], carriedForwardAmount: '0.00', carriedToPlanEntryId: null }]);
     expect(result.applications).toEqual(state.applications);
     expect(state.payments).toMatchObject([{ amount, principal: amount, interest: '0.00', status: 'VALID' }]);
     expect(state.cash).toEqual([{ id: 'cash-1', paymentId: 'payment-1', amount }]);
     expect(state.applications.reduce((sum, item) => sum + cents(item.amountApplied), 0n)).toBe(cents(amount));
     expect(ordered.reduce((sum, row) => sum + cents(row.pendingAmount), 0n) + cents(amount)).toBe(BigInt(count) * 6000000n);
     expect(testStore.calls.filter(({ sql }) => sql.startsWith('INSERT INTO payment_applications')).every(({ sql }) => sql.includes("MAX(created_at) + interval '1 microsecond'"))).toBe(true);
-    expect(testStore.calls.filter(({ sql }) => sql.startsWith('INSERT INTO payment_applications')).map(({ params }) => params[1]))
-      .toEqual(['entry-1', 'entry-2']);
-    expect(testStore.calls.filter(({ sql }) => sql.startsWith('UPDATE payment_plan_entries')).map(({ params }) => params[1])).toEqual(['entry-1', 'entry-2']);
+    expect(testStore.calls.filter(({ sql }) => sql.startsWith('INSERT INTO payment_applications')).map(({ params }) => params[1])).toEqual(['entry-1']);
+    expect(testStore.calls.filter(({ sql }) => sql.startsWith('UPDATE payment_plan_entries')).map(({ params }) => params[1])).toEqual(['entry-1']);
     expect(writes(testStore).filter(({ sql }) => sql.startsWith('INSERT INTO payment_plan_entries'))).toHaveLength(0);
   });
 
@@ -206,21 +202,21 @@ describe('chronological multi-obligation payment registration', () => {
     expect(writes(testStore).filter(({ sql }) => sql.startsWith('INSERT INTO payment_plan_entries'))).toHaveLength(0);
   });
 
-  it('keeps capital-first principal and interest on real cash when carrying a mixed balance', async () => {
+  it('keeps capital-first principal and interest while preserving the oldest partial balance', async () => {
     const testStore = store(2, { principal: '15000.00' });
     await register(testStore, '20000.00');
     expect(testStore.state().payments).toMatchObject([{ amount: '20000.00', principal: '15000.00', interest: '5000.00' }]);
-    expect([...testStore.state().rows].sort((a, b) => a.sequence - b.sequence).map((row) => row.pendingAmount)).toEqual(['0.00', '100000.00']);
-    expect(testStore.state().applications.map((item) => item.amountApplied)).toEqual(['20000.00', '0.00']);
+    expect([...testStore.state().rows].sort((a, b) => a.sequence - b.sequence).map((row) => row.pendingAmount)).toEqual(['40000.00', '60000.00']);
+    expect(testStore.state().applications.map((item) => item.amountApplied)).toEqual(['20000.00']);
     expect(testStore.state().cash).toEqual([{ id: 'cash-1', paymentId: 'payment-1', amount: '20000.00' }]);
   });
 
-  it('closes an overdue first obligation without moving its date or the later due date', async () => {
+  it('keeps an overdue partial obligation on its original date', async () => {
     const testStore = store(2, { firstOverdue: true });
     await register(testStore, '20000.00');
     expect(testStore.state().rows.map(({ id, dueDate, sequence }) => [id, dueDate, sequence]))
       .toEqual([['entry-2', '2026-03-01', 2], ['entry-1', '2026-01-05', 1]]);
-    expect(testStore.state().applications.map((item) => [item.planEntryId, item.pendingAfter])).toEqual([['entry-1', '0.00'], ['entry-2', '100000.00']]);
+    expect(testStore.state().applications.map((item) => [item.planEntryId, item.pendingAfter])).toEqual([['entry-1', '40000.00']]);
   });
 
   it('replays paired carry even when the first key lookup was stale without any additional writes', async () => {
@@ -231,17 +227,17 @@ describe('chronological multi-obligation payment registration', () => {
     expect(await register(testStore, '20000.00')).toEqual(first);
     expect(writes(testStore)).toHaveLength(count);
     expect(testStore.state().payments).toHaveLength(1);
-    expect(testStore.state().applications).toHaveLength(2);
+    expect(testStore.state().applications).toHaveLength(1);
     expect(testStore.state().cash).toHaveLength(1);
     expect(testStore.state().history).toHaveLength(1);
   });
 
-  it('rolls back both plan mutations, the payment, applications and cash on receiver, cash, or reconciliation failure', async () => {
-    for (const options of [{ failReceiver: true }, { failCash: true }, { postPending: '159999.99' }]) {
+  it('rolls back the oldest plan mutation, payment, application and cash on cash or reconciliation failure', async () => {
+    for (const options of [{ failCash: true }, { postPending: '159999.99' }]) {
       const testStore = store(3, options);
       await expect(register(testStore, '20000.00')).rejects.toThrow();
       expect(testStore.state()).toEqual(initial(3));
-      expect(writes(testStore).filter(({ sql }) => sql.startsWith('UPDATE payment_plan_entries'))).toHaveLength(2);
+      expect(writes(testStore).filter(({ sql }) => sql.startsWith('UPDATE payment_plan_entries'))).toHaveLength(1);
     }
   });
 

@@ -3,9 +3,12 @@ import type { CustomerListItem } from '../../domain/entities/customer';
 import type { PaymentFrequency } from '../../domain/entities/payment-frequency';
 import type { PaymentMethod } from '../../domain/entities/payment-method';
 
-export interface LoanRefinancingLookup {
+export interface LoanRefinancingPreviewLookup {
+  preview(loanId: string, refinancingDate?: string): Promise<RefinancingPreview>;
+}
+
+export interface LoanRefinancingLookup extends LoanRefinancingPreviewLookup {
   search(query: { search: string; page: number; pageSize: RefinancingPageSize }): Promise<RefinancingLoanSearchResponse>;
-  preview(loanId: string): Promise<RefinancingPreview>;
 }
 
 export interface LoanRefinancingList {

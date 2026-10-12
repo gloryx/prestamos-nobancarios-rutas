@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { loanRefinancingApi, loanRefinancingChainsApi, loanRefinancingListApi, loanRefinancingOperations, loanRefinancingOptions, refinancingCustomerLookup, classifyRefinancingFailure } from './loan-refinancing.api';
+import { loanRefinancingAnnulmentsApi, loanRefinancingApi, loanRefinancingChainsApi, loanRefinancingListApi, loanRefinancingOperations, loanRefinancingOptions, refinancingCustomerLookup, classifyRefinancingFailure } from './loan-refinancing.api';
 import { HttpApiError } from './api-client';
 
 describe('refinancing step-one transport', () => {
@@ -114,6 +114,34 @@ describe('refinancing step-one transport', () => {
       expect(fetchMock.mock.calls[0][1]).toMatchObject({ method: 'POST', credentials: 'include', body: JSON.stringify(body) });
       expect(new URL(String(fetchMock.mock.calls[1][0])).pathname).toBe('/loan-refinancings/ref%2F1');
       expect(fetchMock.mock.calls[1][1]).toMatchObject({ cache: 'no-store', credentials: 'include' });
+    } finally { fetchMock.mockRestore(); }
+  });
+
+  it('serializes refinancing-annulment reads and commands through the contextual endpoints', async () => {
+    const empty = { items: [], total: 0, page: 1, pageSize: 20, totalPages: 0 };
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => empty } as Response)
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => empty } as Response)
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] } as Response)
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ annulmentId: 'a' }) } as Response)
+      .mockResolvedValueOnce({ ok: true, status: 201, json: async () => ({ annulmentId: 'a' }) } as Response);
+    const candidateQuery = { page: 1, pageSize: 20 as const, search: 'Ana', effectiveDate: '2026-10-10',
+      sortBy: 'customer' as const, sortDir: 'asc' as const };
+    try {
+      await loanRefinancingAnnulmentsApi.listCandidates(candidateQuery);
+      await loanRefinancingAnnulmentsApi.listAnnulled({ page: 1, pageSize: 20, sortBy: 'effectiveDate', sortDir: 'desc' });
+      await loanRefinancingAnnulmentsApi.paymentMethods();
+      await loanRefinancingAnnulmentsApi.detail('annul/id');
+      const body = { annulmentType: 'DATA_CORRECTION' as const, disbursementResolution: 'NOT_DELIVERED' as const,
+        reason: 'Corrección necesaria', idempotencyKey: 'key' };
+      await loanRefinancingAnnulmentsApi.annul('ref/id', body);
+      expect(fetchMock.mock.calls.map(([url]) => new URL(String(url)).pathname)).toEqual([
+        '/loan-refinancings/annullable', '/loan-refinancings/annulled', '/loan-refinancings/annulment-payment-methods',
+        '/loan-refinancings/annulments/annul%2Fid', '/loan-refinancings/ref%2Fid/annul',
+      ]);
+      expect(Object.fromEntries(new URL(String(fetchMock.mock.calls[0][0])).searchParams)).toEqual({ page: '1', pageSize: '20',
+        sortBy: 'customer', sortDir: 'asc', search: 'Ana', effectiveDate: '2026-10-10' });
+      expect(fetchMock.mock.calls[4][1]).toMatchObject({ method: 'POST', credentials: 'include', body: JSON.stringify(body) });
     } finally { fetchMock.mockRestore(); }
   });
 

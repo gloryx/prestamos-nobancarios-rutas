@@ -255,19 +255,23 @@ describe('sidebar navigation configuration', () => {
     expect(loans.items[5]).toMatchObject({ type: 'group', requiredPermission: 'loans.refinance.view',
       items: [{ label: 'Refinanciamientos', path: '/loan-refinancings', requiredPermission: 'loans.refinance.view' },
         { label: 'Nuevo refinanciamiento', path: '/loan-refinancings/new', requiredPermission: 'loans.refinance.view' },
-        { label: 'Cadenas de refinanciamiento', path: '/loan-refinancings/chains', requiredPermission: 'loans.refinance.view' }] });
+        { label: 'Cadenas de refinanciamiento', path: '/loan-refinancings/chains', requiredPermission: 'loans.refinance.view' },
+        { label: 'Refinanciamientos anulados', path: '/loan-refinancings/annulments', requiredPermission: 'loans.refinance.view' }] });
     expect(getActiveGroupIds(navigationEntries, '/loan-refinancings')).toEqual(['loans', 'loans.refinancings']);
     expect(getActiveGroupIds(navigationEntries, '/loan-refinancings/new')).toEqual(['loans', 'loans.refinancings']);
     expect(getActiveGroupIds(navigationEntries, '/loan-refinancings/operation-id')).toEqual(['loans', 'loans.refinancings']);
     expect(getActiveGroupIds(navigationEntries, '/loan-refinancings/chains')).toEqual(['loans', 'loans.refinancings']);
     expect(getActiveGroupIds(navigationEntries, '/loan-refinancings/chains/loan/loan-id')).toEqual(['loans', 'loans.refinancings']);
+    expect(getActiveGroupIds(navigationEntries, '/loan-refinancings/annulments')).toEqual(['loans', 'loans.refinancings']);
     if (loans.items[5].type === 'group') {
-      const [listing, creation, chains] = loans.items[5].items;
+      const [listing, creation, chains, annulments] = loans.items[5].items;
       expect(isNavigationEntryActive(listing, '/loan-refinancings/new')).toBe(false);
       expect(isNavigationEntryActive(creation, '/loan-refinancings/new')).toBe(true);
       expect(isNavigationEntryActive(listing, '/loan-refinancings/operation-id')).toBe(true);
       expect(isNavigationEntryActive(listing, '/loan-refinancings/chains/loan/loan-id')).toBe(false);
       expect(isNavigationEntryActive(chains, '/loan-refinancings/chains/loan/loan-id')).toBe(true);
+      expect(isNavigationEntryActive(listing, '/loan-refinancings/annulments')).toBe(false);
+      expect(isNavigationEntryActive(annulments, '/loan-refinancings/annulments')).toBe(true);
     }
     const denied = filterNavigationEntries(navigationEntries, () => false).find((entry) => entry.label === 'PRÉSTAMOS');
     expect(denied).toBeUndefined();
@@ -280,7 +284,7 @@ describe('sidebar navigation configuration', () => {
     expect(refinanceOnly?.type === 'group' && refinanceOnly.items.map((entry) => entry.label)).toEqual(['Refinanciamientos']);
     if (refinanceOnly?.type === 'group' && refinanceOnly.items[0].type === 'group') {
       expect(refinanceOnly.items[0].items.map((entry) => entry.label)).toEqual([
-        'Refinanciamientos', 'Nuevo refinanciamiento', 'Cadenas de refinanciamiento',
+        'Refinanciamientos', 'Nuevo refinanciamiento', 'Cadenas de refinanciamiento', 'Refinanciamientos anulados',
       ]);
     }
   });

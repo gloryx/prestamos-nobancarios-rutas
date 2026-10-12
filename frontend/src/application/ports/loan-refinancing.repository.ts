@@ -1,4 +1,4 @@
-import type { ConfirmRefinancingRequest, CustomerRefinancingChains, RefinancingChain, RefinancingListQuery, RefinancingListResult, RefinancingLoanSearchResponse, RefinancingPageSize, RefinancingPreview, RefinancingResult } from '../../domain/entities/loan-refinancing';
+import type { AnnulRefinancingRequest, ConfirmRefinancingRequest, CustomerRefinancingChains, RefinancingAnnulledSort, RefinancingAnnulmentCandidate, RefinancingAnnulmentCandidateSort, RefinancingAnnulmentDetail, RefinancingAnnulmentPaymentMethod, RefinancingAnnulmentQuery, RefinancingAnnulmentResult, RefinancingChain, RefinancingListQuery, RefinancingListResult, RefinancingLoanSearchResponse, RefinancingPageSize, RefinancingPreview, RefinancingResult } from '../../domain/entities/loan-refinancing';
 import type { CustomerListItem } from '../../domain/entities/customer';
 import type { PaymentFrequency } from '../../domain/entities/payment-frequency';
 import type { PaymentMethod } from '../../domain/entities/payment-method';
@@ -33,4 +33,12 @@ export interface LoanRefinancingOperations {
 export interface LoanRefinancingChains {
   byLoan(loanId: string): Promise<RefinancingChain>;
   byCustomer(customerId: string): Promise<CustomerRefinancingChains>;
+}
+
+export interface LoanRefinancingAnnulments {
+  listCandidates(query: RefinancingAnnulmentQuery<RefinancingAnnulmentCandidateSort>): Promise<RefinancingAnnulmentResult<RefinancingAnnulmentCandidate>>;
+  listAnnulled(query: RefinancingAnnulmentQuery<RefinancingAnnulledSort>): Promise<RefinancingAnnulmentResult<RefinancingAnnulmentDetail>>;
+  detail(annulmentId: string): Promise<RefinancingAnnulmentDetail>;
+  paymentMethods(): Promise<RefinancingAnnulmentPaymentMethod[]>;
+  annul(refinancingId: string, request: AnnulRefinancingRequest): Promise<RefinancingAnnulmentDetail>;
 }

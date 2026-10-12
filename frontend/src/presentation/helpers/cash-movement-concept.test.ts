@@ -10,6 +10,8 @@ describe('cash movement table concept', () => {
   it('distinguishes payment and disbursement reversals by the direct original', () => {
     expect(formatCashMovementTableConcept({ concept: 'REVERSAL', reversedConcept: 'CUSTOMER_PAYMENT', loanNumber: '125' })).toBe('Reversión de pago de préstamo #125');
     expect(formatCashMovementTableConcept({ concept: 'REVERSAL', reversedConcept: 'LOAN_DISBURSEMENT', loanNumber: '125' })).toBe('Reversión de desembolso de préstamo #125');
+    expect(formatCashMovementTableConcept({ concept: 'REVERSAL', reversedConcept: 'REFINANCING_NEW_MONEY_DISBURSEMENT',
+      loanNumber: '125' })).toBe('Reversión de desembolso por anulación de refinanciamiento #125');
   });
 
   it('keeps exact existing labels for missing or invalid numbers and non-loan originals', () => {
@@ -17,6 +19,8 @@ describe('cash movement table concept', () => {
       expect(formatCashMovementTableConcept({ concept: 'CUSTOMER_PAYMENT', loanNumber })).toBe('Pago de cliente');
       expect(formatCashMovementTableConcept({ concept: 'LOAN_DISBURSEMENT', loanNumber })).toBe('Desembolso de préstamo');
       expect(formatCashMovementTableConcept({ concept: 'REVERSAL', reversedConcept: 'CUSTOMER_PAYMENT', loanNumber })).toBe('Reversión');
+      expect(formatCashMovementTableConcept({ concept: 'REVERSAL', reversedConcept: 'REFINANCING_NEW_MONEY_DISBURSEMENT',
+        loanNumber })).toBe('Reversión de desembolso por anulación de refinanciamiento');
     }
     expect(formatCashMovementTableConcept({ concept: 'REVERSAL', reversedConcept: 'OPERATING_EXPENSE', loanNumber: '125' })).toBe('Reversión');
     expect(formatCashMovementTableConcept({ concept: 'REVERSAL', loanNumber: '125' })).toBe('Reversión');

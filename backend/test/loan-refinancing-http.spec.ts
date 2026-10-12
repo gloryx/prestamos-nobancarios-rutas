@@ -4,6 +4,7 @@ import { ValidationPipe } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { Test } from '@nestjs/testing';
 import { LoanRefinancingUseCase, RefinancingConflictError, RefinancingNotFoundError } from '../src/application/loan-refinancing/refinancing.use-case';
+import { LoanRefinancingAnnulmentUseCase } from '../src/application/loan-refinancing/refinancing-annulment.use-case';
 import type { RefinancingOperation } from '../src/application/loan-refinancing/refinancing.port';
 import { SecurityService } from '../src/application/security/security.service';
 import { SecurityUnauthorizedError } from '../src/application/security/security.errors';
@@ -15,6 +16,7 @@ import { PERMISSIONS, SESSION_COOKIE } from '../src/shared/constants/security';
 const uuid = (n: number) => `00000000-0000-4000-8000-${n.toString(16).padStart(12, '0')}`;
 const actor = uuid(2), origin = uuid(1);
 const operation = (): RefinancingOperation => ({ id: uuid(6), originLoanId: origin, originLoanNumber: '100',
+  refinancingStatus: 'CONFIRMED',
   newLoanId: uuid(7), newLoanNumber: '150', originStatus: 'REFINANCED', newStatus: 'ACTIVE',
   originStartDate: '2026-09-01', newStartDate: '2026-09-30', customerId: uuid(5), customerName: 'Customer One',
   customerIdentification: '123', refinancingDate: '2026-09-30', createdAt: new Date('2026-09-30T12:00:00Z'),
@@ -54,6 +56,7 @@ describe('refinancing HTTP boundary and RBAC', () => {
   beforeAll(async () => {
     const module = await Test.createTestingModule({ controllers: [LoanRefinancingController], providers: [
       { provide: LoanRefinancingUseCase, useValue: { list, search, preview, confirm, detail, chain, chainsForCustomer } },
+      { provide: LoanRefinancingAnnulmentUseCase, useValue: {} },
       { provide: SecurityService, useValue: { authenticate } },
       { provide: APP_GUARD, useClass: AuthenticationGuard }, { provide: APP_GUARD, useClass: PermissionGuard },
     ] }).compile();
@@ -129,8 +132,8 @@ describe('refinancing HTTP boundary and RBAC', () => {
     expect(await conflicted.json()).toMatchObject({ reasonCode: 'CHAIN_INTEGRITY_ERROR' });
   });
 
-  it('registers two distinct technical permissions without granting them to default roles', async () => {
-    expect(PERMISSIONS.filter(([code]) => code.startsWith('loans.refinance.'))).toHaveLength(2);
+  it('registers distinct view, create and annul permissions without granting them to default roles', async () => {
+    expect(PERMISSIONS.filter(([code]) => code.startsWith('loans.refinance.'))).toHaveLength(3);
     expect((await get(`loans/${origin}/preview`)).status).toBe(401);
     expect((await get('loans', 'regular')).status).toBe(403);
     expect((await get(`loans/${origin}/preview`, 'regular')).status).toBe(403);

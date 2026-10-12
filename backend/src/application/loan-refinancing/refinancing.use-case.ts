@@ -108,7 +108,10 @@ function normalize(input: RefinancingRequest): RefinancingRequest {
 }
 
 function assertOperation(operation: RefinancingOperation | undefined, amounts?: RefinancingAmounts): asserts operation is RefinancingOperation {
-  if (!operation || operation.originStatus !== 'REFINANCED' || !operation.newLoanId || !operation.originLoanId ||
+  if (!operation || !operation.newLoanId || !operation.originLoanId ||
+    !['CONFIRMED', 'ANNULLED'].includes(operation.refinancingStatus) ||
+    operation.refinancingStatus === 'CONFIRMED' && operation.originStatus !== 'REFINANCED' ||
+    operation.refinancingStatus === 'ANNULLED' && (operation.originStatus !== 'ACTIVE' || operation.newStatus !== 'ANNULLED') ||
     operation.newMoneyDisbursed === '0.00' && (operation.disbursementId !== null || operation.cashMovementId !== null) ||
     operation.newMoneyDisbursed !== '0.00' && (!operation.disbursementId || !operation.cashMovementId) ||
     operation.newMoneyDisbursed !== '0.00' && (operation.disbursementAmount !== operation.newMoneyDisbursed ||

@@ -17,6 +17,7 @@ import { NewRefinancingPage } from '../pages/NewRefinancingPage';
 import { RefinancingsPage } from '../pages/RefinancingsPage';
 import { RefinancingDetailPage } from '../pages/RefinancingDetailPage';
 import { RefinancingChainsPage } from '../pages/RefinancingChainsPage';
+import { RefinancingAnnulmentManagementPage } from '../pages/RefinancingAnnulmentManagementPage';
 import { ProfitabilityPage } from '../pages/ProfitabilityPage';
 import { FinancialAnalysisPage } from '../pages/FinancialAnalysisPage';
 import { CustomerStatisticsPage } from '../pages/CustomerStatisticsPage';
@@ -444,7 +445,7 @@ describe('refinancing origin route', () => {
     expect((listRoute?.props as { element?: ReactNode }).element).toMatchObject({ type: RouteGuard,
       props: { permission: 'loans.refinance.view', children: { type: RefinancingsPage } } });
     expect(routes.map((route) => (route.props as { path?: string }).path))
-      .toEqual(expect.arrayContaining([path, `${path}/new`, `${path}/chains`, `${path}/chains/loan/:loanId`, `${path}/:id`]));
+      .toEqual(expect.arrayContaining([path, `${path}/new`, `${path}/chains`, `${path}/chains/loan/:loanId`, `${path}/annulments`, `${path}/:id`]));
     const viewOnly = renderRoute(path, { ...identity, permissions: ['loans.refinance.view'] });
     expect(viewOnly).toContain('Consulta y analiza las operaciones de refinanciamiento registradas.');
     expect(viewOnly).toContain('nav-group--nested nav-group--active');
@@ -468,5 +469,19 @@ describe('refinancing origin route', () => {
     expect(renderRoute('/loan-refinancings/chains', { ...identity, permissions: [] })).toContain('No tienes permiso');
     expect(renderRoute('/loan-refinancings/chains/loan/root', { ...identity,
       permissions: ['loans.refinance.view'] })).toContain('Cargando cadenas de refinanciamiento');
+  });
+
+  it('publishes refinancing annulment management before generic detail with view and superadmin access', () => {
+    const routes = elements(AppRouter()).filter((element) => element.type === Route);
+    const paths = routes.map((route) => (route.props as { path?: string }).path);
+    const entry = routes.find((route) => (route.props as { path?: string }).path === '/loan-refinancings/annulments');
+    expect((entry?.props as { element?: ReactNode }).element).toMatchObject({ type: RouteGuard,
+      props: { permission: 'loans.refinance.view', children: { type: RefinancingAnnulmentManagementPage } } });
+    expect(paths.indexOf('/loan-refinancings/annulments')).toBeLessThan(paths.indexOf('/loan-refinancings/:id'));
+    expect(renderRoute('/loan-refinancings/annulments', { ...identity, permissions: ['loans.refinance.view'] }))
+      .toContain('Refinanciamientos anulados');
+    expect(renderRoute('/loan-refinancings/annulments', { ...identity, permissions: [] })).toContain('No tienes permiso');
+    expect(renderRoute('/loan-refinancings/annulments', { ...identity, role: { ...identity.role, isSuperAdmin: true } }))
+      .toContain('Refinanciamientos anulados');
   });
 });

@@ -34,6 +34,7 @@ import { NewRefinancingPage } from '../pages/NewRefinancingPage';
 import { RefinancingsPage } from '../pages/RefinancingsPage';
 import { RefinancingDetailPage } from '../pages/RefinancingDetailPage';
 import { RefinancingChainsPage } from '../pages/RefinancingChainsPage';
+import { RefinancingAnnulmentManagementPage } from '../pages/RefinancingAnnulmentManagementPage';
 import { PaymentsPage } from '../pages/PaymentsPage';
 import { DailyCollectionsPage } from '../pages/DailyCollectionsPage';
 import { PaymentHistoryPage } from '../pages/PaymentHistoryPage';
@@ -90,8 +91,9 @@ export function AppRouter(): ReactElement {
           <Route path="/loan-refinancings" element={<RouteGuard permission="loans.refinance.view"><RefinancingsPage /></RouteGuard>} />
           <Route path="/loan-refinancings/new" element={<RouteGuard permission="loans.refinance.view"><NewRefinancingPage /></RouteGuard>} />
           <Route path="/loan-refinancings/chains" element={<RouteGuard permission="loans.refinance.view"><RefinancingChainsPage /></RouteGuard>} />
-          <Route path="/loan-refinancings/chains/loan/:loanId" element={<RouteGuard permission="loans.refinance.view"><RefinancingChainsPage /></RouteGuard>} />
-         <Route path="/loan-refinancings/:id" element={<RouteGuard permission="loans.refinance.view"><RefinancingDetailPage /></RouteGuard>} />
+           <Route path="/loan-refinancings/chains/loan/:loanId" element={<RouteGuard permission="loans.refinance.view"><RefinancingChainsPage /></RouteGuard>} />
+          <Route path="/loan-refinancings/annulments" element={<RouteGuard permission="loans.refinance.view"><RefinancingAnnulmentManagementPage /></RouteGuard>} />
+          <Route path="/loan-refinancings/:id" element={<RouteGuard permission="loans.refinance.view"><RefinancingDetailPage /></RouteGuard>} />
        <Route path="/payments" element={<Navigate to="/payments/new" replace />} />
        <Route path="/payments/new" element={<RouteGuard permission="payments.view"><PaymentsPage /></RouteGuard>} />
         <Route path="/payments/portfolio-tracking" element={<RouteGuard permission="payments.view"><PortfolioTrackingPage /></RouteGuard>} />

@@ -16,6 +16,8 @@ export type EconomicRefinancingFact = {
   refinancingId: string; originLoanId: string; newLoanId: string; refinancingDate: string; createdAt: string;
   outstandingPrincipalTransferred: string; capitalizedOutstandingInterest: string;
   newMoneyDisbursed: string; newContractualPrincipal: string;
+  status: 'CONFIRMED' | 'ANNULLED'; annulmentType: 'DATA_CORRECTION' | 'CASH_REFUND' | null;
+  annulmentEffectiveDate: string | null;
 };
 
 export type EconomicPaymentFact = {
@@ -138,8 +140,11 @@ export function analyzeEconomicPrincipalProvenance(facts: EconomicProvenanceFact
   const incoming = new Map<string, EconomicRefinancingFact>();
   const outgoing = new Map<string, EconomicRefinancingFact>();
   for (const edge of facts.refinancings) {
+    const lifecycleIsValid = (edge.status === 'CONFIRMED' && edge.annulmentType === null && edge.annulmentEffectiveDate === null)
+      || (edge.status === 'ANNULLED' && edge.annulmentType === 'CASH_REFUND'
+        && edge.annulmentEffectiveDate !== null && edge.annulmentEffectiveDate >= edge.refinancingDate);
     if (!edge.refinancingId || edge.originLoanId === edge.newLoanId || incoming.has(edge.newLoanId) || outgoing.has(edge.originLoanId)
-      || !loans.has(edge.originLoanId) || !loans.has(edge.newLoanId)) {
+      || !loans.has(edge.originLoanId) || !loans.has(edge.newLoanId) || !lifecycleIsValid) {
       warnings.push('El grafo de refinanciamientos contiene relaciones faltantes, duplicadas o ramificadas.');
       continue;
     }
@@ -184,6 +189,7 @@ export function analyzeEconomicPrincipalProvenance(facts: EconomicProvenanceFact
     let paymentsReceived = 0n;
     const visited = new Set<string>();
     const refinancingIds: string[] = [];
+    let reversedEdge = false;
     const fail = (message: string) => { if (!chainWarnings.includes(message)) chainWarnings.push(message); };
 
     const validateDisbursement = (loan: EconomicLoanFact, expected: bigint, concept: string, expectedDate: string): boolean => {
@@ -199,7 +205,7 @@ export function analyzeEconomicPrincipalProvenance(facts: EconomicProvenanceFact
       if (valid && loan.cashDate && loan.cashDate <= throughDate) addEvent(localEvents, loan.cashDate, expected);
       if (loan.reversalId) {
         const reversalValid = valid && loan.reversalConcept === 'REVERSAL' && loan.reversalDirection === 'INFLOW'
-          && cents(loan.reversalAmount ?? '') === expected && loan.reversalMethodId === loan.cashMethodId
+          && cents(loan.reversalAmount ?? '') === expected && loan.reversalMethodId !== null
           && loan.reversalDate !== null && loan.reversalDate >= loan.cashDate!;
         if (!reversalValid) fail(`El reverso de desembolso del préstamo ${loan.loanId} no concilia.`);
         else if (loan.reversalDate! <= throughDate) addEvent(localEvents, loan.reversalDate!, 0n, 0n, -expected);
@@ -224,7 +230,10 @@ export function analyzeEconomicPrincipalProvenance(facts: EconomicProvenanceFact
       visited.add(current.loanId);
       terminalLoanId = current.loanId;
       const transition = outgoing.get(current.loanId);
-      const boundary = transition?.refinancingDate ?? throughDate;
+      const incomingTransition = incoming.get(current.loanId);
+      const incomingReversalDate = incomingTransition?.status === 'ANNULLED'
+        && incomingTransition.annulmentEffectiveDate! <= throughDate ? incomingTransition.annulmentEffectiveDate : null;
+      const boundary = transition?.refinancingDate ?? incomingReversalDate ?? throughDate;
       const principal = cents(current.principal);
       const interest = cents(current.interestAmount);
       const contractualTotal = cents(current.totalAmount);
@@ -316,6 +325,33 @@ export function analyzeEconomicPrincipalProvenance(facts: EconomicProvenanceFact
       if (total(buckets) + reversedOwnDisbursement !== principal - effectivePrincipal || effectiveInterest > interest) {
         fail(`La composición pendiente del préstamo ${current.loanId} no concilia con sus pagos.`);
       }
+      if (!transition && incomingTransition && incomingReversalDate) {
+        const transferred = cents(incomingTransition.outstandingPrincipalTransferred);
+        const capitalized = cents(incomingTransition.capitalizedOutstandingInterest);
+        const newMoney = cents(incomingTransition.newMoneyDisbursed);
+        const origin = loans.get(incomingTransition.originLoanId);
+        const yieldBucket = buckets.find((bucket) => bucket.kind === 'CAPITALIZED_YIELD'
+          && bucket.sourceId === incomingTransition.refinancingId);
+        const reversalIsConsistent = transferred !== null && capitalized !== null && newMoney !== null && origin
+          && current.status === 'ANNULLED' && current.annulledDate === incomingReversalDate && origin.status === 'ACTIVE'
+          && effectivePayments.length === 0 && total(buckets, 'ECONOMIC') === transferred
+          && (capitalized === 0n ? !yieldBucket : yieldBucket?.amount === capitalized)
+          && (newMoney === 0n
+            ? !current.reversalId && reversedOwnDisbursement === 0n
+            : current.reversalDate === incomingReversalDate && reversedOwnDisbursement === newMoney);
+        if (!reversalIsConsistent) {
+          fail(`La anulación del refinanciamiento ${incomingTransition.refinancingId} no concilia con sus hechos económicos.`);
+          break;
+        }
+        if (yieldBucket) buckets.splice(buckets.indexOf(yieldBucket), 1);
+        createdYield -= capitalized!;
+        totalNewMoney -= newMoney!;
+        refinancingIds.pop();
+        current = origin!;
+        terminalLoanId = current.loanId;
+        reversedEdge = true;
+        break;
+      }
       if (!transition) break;
       const transferred = cents(transition.outstandingPrincipalTransferred);
       const capitalized = cents(transition.capitalizedOutstandingInterest);
@@ -328,7 +364,10 @@ export function analyzeEconomicPrincipalProvenance(facts: EconomicProvenanceFact
         || interest - effectiveInterest !== capitalized || cents(successor.principal) !== newPrincipal) {
         fail(`El refinanciamiento ${transition.refinancingId} no concilia con los buckets pendientes del origen.`); break;
       }
-      if (current.status !== 'REFINANCED') fail(`El préstamo origen ${current.loanId} no está marcado como refinanciado.`);
+      const transitionIsReversed = transition.status === 'ANNULLED' && transition.annulmentEffectiveDate! <= throughDate;
+      if ((!transitionIsReversed && current.status !== 'REFINANCED') || (transitionIsReversed && current.status !== 'ACTIVE')) {
+        fail(`El préstamo origen ${current.loanId} no tiene el estado esperado para su refinanciamiento.`);
+      }
       refinancingIds.push(transition.refinancingId);
       if (capitalized) {
         buckets.push({ kind: 'CAPITALIZED_YIELD', sourceId: transition.refinancingId,
@@ -346,7 +385,7 @@ export function analyzeEconomicPrincipalProvenance(facts: EconomicProvenanceFact
       } else if (!newMoney) validateDisbursement(successor, 0n, 'REFINANCING_NEW_MONEY_DISBURSEMENT', transition.refinancingDate);
       current = successor;
     }
-    if (visited.has(outgoing.get(current.loanId)?.newLoanId ?? '')) fail(`La cadena con raíz ${root.loanId} contiene un ciclo.`);
+    if (!reversedEdge && visited.has(outgoing.get(current.loanId)?.newLoanId ?? '')) fail(`La cadena con raíz ${root.loanId} contiene un ciclo.`);
     const economicPending = total(buckets, 'ECONOMIC');
     const yieldPending = total(buckets, 'CAPITALIZED_YIELD');
     const cashDisbursed = rootRealDisbursement === null ? null : rootRealDisbursement + totalNewMoney;

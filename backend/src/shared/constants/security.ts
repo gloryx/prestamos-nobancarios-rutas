@@ -11,7 +11,7 @@ export const PERMISSIONS = [
   ['cash-movements.view', 'Consultar movimientos de caja', 'FINANZAS'], ['cash-movements.create', 'Crear movimientos de caja', 'FINANZAS'], ['cash-movements.reverse', 'Reversar movimientos de caja', 'FINANZAS'], ['cash-movements.export', 'Exportar movimientos de caja', 'FINANZAS'],
   ['financial-closes.view', 'Consultar cierres financieros', 'FINANZAS'], ['financial-closes.confirm', 'Confirmar cierres financieros', 'FINANZAS'],
   ['loans.view', 'Acceso global a préstamos — Ver', 'PRÉSTAMOS'], ['loans.assigned.view', 'Ver préstamos asignados', 'PRÉSTAMOS'], ['loans.create', 'Crear préstamos', 'PRÉSTAMOS'], ['loans.update', 'Editar préstamos', 'PRÉSTAMOS'], ['loans.export', 'Exportar préstamos', 'PRÉSTAMOS'], ['loans.status.uncollectible', 'Marcar préstamo como incobrable', 'PRÉSTAMOS'], ['loans.status.reactivate', 'Reactivar préstamo incobrable', 'PRÉSTAMOS'], ['loans.status.annul', 'Anular préstamo', 'PRÉSTAMOS'],
-  ['loans.refinance.view', 'Consultar refinanciamientos', 'PRÉSTAMOS'], ['loans.refinance.create', 'Confirmar refinanciamientos', 'PRÉSTAMOS'],
+  ['loans.refinance.view', 'Consultar refinanciamientos', 'PRÉSTAMOS'], ['loans.refinance.create', 'Confirmar refinanciamientos', 'PRÉSTAMOS'], ['loans.refinance.annul', 'Anular refinanciamientos', 'PRÉSTAMOS'],
   ['payments.view', 'Consultar pagos', 'PAGOS'], ['payments.create', 'Registrar pagos', 'PAGOS'], ['payments.annul', 'Anular pagos', 'PAGOS'], ['payments.plan.customize', 'Personalizar planes de pago', 'PAGOS'],
   ['collection-agenda.view', 'Ver agenda de cobros', 'COBRANZAS'], ['daily-collections.assigned.view', 'Ver cobros del día asignados', 'COBRANZAS'],
 ] as const;

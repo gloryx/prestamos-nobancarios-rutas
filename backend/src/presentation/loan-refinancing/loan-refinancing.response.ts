@@ -3,6 +3,7 @@ import type { RefinancingOperation } from '../../application/loan-refinancing/re
 export function refinancingResponse(operation: RefinancingOperation) {
   return {
     refinancingId: operation.id,
+    status: operation.refinancingStatus,
     originLoan: { id: operation.originLoanId, loanNumber: operation.originLoanNumber,
       status: operation.originStatus, startDate: operation.originStartDate },
     newLoan: { id: operation.newLoanId, loanNumber: operation.newLoanNumber,

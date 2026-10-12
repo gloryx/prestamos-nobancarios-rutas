@@ -50,6 +50,7 @@ describe('CashMovementTypeOrmRepository', () => {
       movement('reverse-payment', 'REVERSAL', { reversedMovementId: 'original-payment' }),
       movement('disbursement', 'LOAN_DISBURSEMENT', { loanDisbursementId: 'dis-1' }),
       movement('reverse-disbursement', 'REVERSAL', { reversedMovementId: 'original-disbursement' }),
+      movement('reverse-refinancing', 'REVERSAL', { reversedMovementId: 'original-refinancing' }),
       movement('reverse-manual', 'REVERSAL', { reversedMovementId: 'original-manual' }),
       movement('missing-original', 'REVERSAL', { reversedMovementId: 'missing' }),
       movement('reverse-chain', 'REVERSAL', { reversedMovementId: 'original-reversal' }),
@@ -61,15 +62,17 @@ describe('CashMovementTypeOrmRepository', () => {
     const query = jest.fn().mockResolvedValueOnce([
       { id: 'original-payment', concept: 'CUSTOMER_PAYMENT', paymentId: 'pay-1', loanDisbursementId: null },
       { id: 'original-disbursement', concept: 'LOAN_DISBURSEMENT', loanDisbursementId: 'dis-1', paymentId: null },
+      { id: 'original-refinancing', concept: 'REFINANCING_NEW_MONEY_DISBURSEMENT', loanDisbursementId: 'dis-2', paymentId: null },
       { id: 'original-manual', concept: 'OPERATING_EXPENSE', paymentId: 'unrelated', loanDisbursementId: null },
       { id: 'original-reversal', concept: 'REVERSAL', paymentId: 'unrelated', loanDisbursementId: 'dis-1' },
       { id: 'original-legacy', concept: 'CUSTOMER_PAYMENT', paymentId: null, loanDisbursementId: null },
-    ]).mockResolvedValueOnce([{ id: 'dis-1', loanNumber: '125' }]).mockResolvedValueOnce([{ id: 'pay-1', loanNumber: '126' }]);
+    ]).mockResolvedValueOnce([{ id: 'dis-1', loanNumber: '125' }, { id: 'dis-2', loanNumber: '127' }])
+      .mockResolvedValueOnce([{ id: 'pay-1', loanNumber: '126' }]);
     const repository = new CashMovementTypeOrmRepository({ createQueryBuilder: () => builder } as never, { query } as never);
     const result = await repository.list({ page: 3, pageSize: 20 });
     expect(query).toHaveBeenCalledTimes(3);
-    expect(query.mock.calls[0]).toEqual([expect.stringContaining('FROM cash_movements WHERE id = ANY($1::uuid[])'), [['original-payment', 'original-disbursement', 'original-manual', 'missing', 'original-reversal', 'original-legacy']]]);
-    expect(query.mock.calls[1]).toEqual([expect.stringContaining('FROM loan_disbursements d JOIN loans l ON l.id = d.loan_id WHERE d.id = ANY($1::uuid[])'), [['dis-1']]]);
+    expect(query.mock.calls[0]).toEqual([expect.stringContaining('FROM cash_movements WHERE id = ANY($1::uuid[])'), [['original-payment', 'original-disbursement', 'original-refinancing', 'original-manual', 'missing', 'original-reversal', 'original-legacy']]]);
+    expect(query.mock.calls[1]).toEqual([expect.stringContaining('FROM loan_disbursements d JOIN loans l ON l.id = d.loan_id WHERE d.id = ANY($1::uuid[])'), [['dis-1', 'dis-2']]]);
     expect(query.mock.calls[2]).toEqual([expect.stringContaining('FROM payments p JOIN loans l ON l.id = p.loan_id WHERE p.id = ANY($1::uuid[])'), [['pay-1']]]);
     expect(query.mock.calls[1][0]).toContain('l.loan_number::text');
     expect(query.mock.calls[2][0]).toContain('l.loan_number::text');
@@ -80,6 +83,7 @@ describe('CashMovementTypeOrmRepository', () => {
     expect(result.items.map(({ id, loanNumber, reversedConcept }) => [id, loanNumber, reversedConcept])).toEqual([
       ['payment', '126', null], ['reverse-payment', '126', 'CUSTOMER_PAYMENT'],
       ['disbursement', '125', null], ['reverse-disbursement', '125', 'LOAN_DISBURSEMENT'],
+      ['reverse-refinancing', '127', 'REFINANCING_NEW_MONEY_DISBURSEMENT'],
       ['reverse-manual', null, null], ['missing-original', null, null], ['reverse-chain', null, null],
       ['reverse-legacy', null, 'CUSTOMER_PAYMENT'],
       ['legacy-payment', null, null], ['manual', null, null],

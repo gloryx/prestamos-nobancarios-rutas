@@ -8,7 +8,7 @@ import type { HistoricalRefinancingPayments, NewRefinancing, RefinancingCandidat
 import type { RefinancingSnapshot } from '../../../../domain/loan-refinancing/refinancing-finance';
 import { VALID_PAYMENT_TOTALS_SELECT } from './loan-financial-totals.reader';
 
-const operationSql = `SELECT r.id, r.origin_loan_id AS "originLoanId", origin.loan_number::text AS "originLoanNumber",
+const operationSql = `SELECT r.id, r.status AS "refinancingStatus", r.origin_loan_id AS "originLoanId", origin.loan_number::text AS "originLoanNumber",
   r.new_loan_id AS "newLoanId", successor.loan_number::text AS "newLoanNumber",
   r.outstanding_principal_transferred::text AS "outstandingPrincipalTransferred",
   r.capitalized_outstanding_interest::text AS "capitalizedOutstandingInterest",
@@ -215,12 +215,15 @@ export class LoanRefinancingTypeormStore implements RefinancingStore {
         const sequence = await getNextLoanStatusEventSequence(manager, originId);
         if (sequence < 2) throw new Error('Origin loan status history is unavailable.');
         await manager.query(`INSERT INTO loan_status_history
-          (loan_id, event_sequence, event_kind, from_status, to_status, changed_at, changed_by_user_id, reason)
-          VALUES ($1,$2,'TRANSITION','ACTIVE','REFINANCED',clock_timestamp(),$3,$4)`,
-        [originId, sequence, actorId, `Refinancing ${refinancingId}`]);
+          (loan_id, event_sequence, event_kind, from_status, to_status, changed_at, changed_by_user_id, reason,
+            refinancing_id, refinancing_role)
+          VALUES ($1,$2,'TRANSITION','ACTIVE','REFINANCED',clock_timestamp(),$3,$4,$5,'ORIGIN')`,
+        [originId, sequence, actorId, `Refinancing ${refinancingId}`, refinancingId]);
         await manager.query(`INSERT INTO loan_status_history
-          (loan_id, event_sequence, event_kind, from_status, to_status, changed_at, changed_by_user_id)
-          VALUES ($1,1,'CREATED',NULL,'ACTIVE',$2,$3)`, [newLoan.id, newLoan.createdAt, actorId]);
+          (loan_id, event_sequence, event_kind, from_status, to_status, changed_at, changed_by_user_id,
+            refinancing_id, refinancing_role)
+          VALUES ($1,1,'CREATED',NULL,'ACTIVE',$2,$3,$4,'SUCCESSOR')`,
+        [newLoan.id, newLoan.createdAt, actorId, refinancingId]);
       },
       disburseNewMoney: async (input) => {
         const [disbursement] = await manager.query(`INSERT INTO loan_disbursements
@@ -255,7 +258,7 @@ export class LoanRefinancingTypeormStore implements RefinancingStore {
       r.new_contractual_total::text AS "newContractualTotal"
       FROM loan_refinancings r JOIN loans origin ON origin.id = r.origin_loan_id
       JOIN loans successor ON successor.id = r.new_loan_id
-      WHERE origin.customer_id = $1 OR successor.customer_id = $1
+      WHERE (origin.customer_id = $1 OR successor.customer_id = $1) AND r.status = 'CONFIRMED'
       LIMIT $2`, [customer.id, MAX_REFINANCING_GRAPH_EDGES + 1]);
     if (!transitions.length || transitions.length > MAX_REFINANCING_GRAPH_EDGES) return { customer, transitions, loans: [] };
     const ids = [...new Set(transitions.flatMap((row) => [row.originLoanId, row.newLoanId]))];

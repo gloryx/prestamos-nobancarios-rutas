@@ -3,7 +3,8 @@ import { RefinancingConditionsController } from '../application/use-cases/refina
 import { RefinancingConfirmationController } from '../application/use-cases/refinancing-confirmation-controller';
 import { RefinancingListController } from '../application/use-cases/refinancing-list-controller';
 import { RefinancingChainController } from '../application/use-cases/refinancing-chain-controller';
-import { classifyRefinancingFailure, loanRefinancingApi, loanRefinancingChainsApi, loanRefinancingListApi, loanRefinancingOperations, loanRefinancingOptions, refinancingCustomerLookup } from '../infrastructure/api/loan-refinancing.api';
+import { RefinancingAnnulmentController } from '../application/use-cases/refinancing-annulment-controller';
+import { classifyRefinancingFailure, loanRefinancingAnnulmentsApi, loanRefinancingApi, loanRefinancingChainsApi, loanRefinancingListApi, loanRefinancingOperations, loanRefinancingOptions, refinancingCustomerLookup } from '../infrastructure/api/loan-refinancing.api';
 
 export const createRefinancingStepOne = () => new RefinancingStepOneController(loanRefinancingApi);
 export const createRefinancingConditions = () => new RefinancingConditionsController(loanRefinancingOptions, loanRefinancingApi);
@@ -11,3 +12,5 @@ export const createRefinancingList = () => new RefinancingListController(loanRef
 export const createRefinancingChains = () => new RefinancingChainController(loanRefinancingChainsApi, refinancingCustomerLookup);
 export const createRefinancingConfirmation = () => new RefinancingConfirmationController(
   loanRefinancingOperations, () => crypto.randomUUID(), classifyRefinancingFailure);
+export const createRefinancingAnnulments = (canAnnul: () => boolean) => new RefinancingAnnulmentController(
+  loanRefinancingAnnulmentsApi, () => crypto.randomUUID(), canAnnul);

@@ -774,8 +774,15 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--focus); outline
 .loan-annulment__resolution legend, .payment-annulment__type legend { margin-bottom: .4rem; font-weight: 700; }
 .loan-annulment__resolution label, .payment-annulment__type label { display: flex; align-items: center; gap: .5rem; }
 .loan-annulment__counter { display: block; color: var(--muted); font-size: .8rem; text-align: right; }
+.refinancing-annulment .loan-list__table { min-width: 72rem; }
+.refinancing-annulment__date-validation { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: .65rem; margin-bottom: .8rem; }
+.refinancing-annulment__date-validation .success-message { grid-column: 1 / -1; margin: 0; }
+.refinancing-annulment__confirmation { display: flex; align-items: flex-start; gap: .5rem; margin: .8rem 0; }
+.refinancing-annulment__detail { display: grid; grid-template-columns: minmax(8rem, auto) 1fr; gap: .5rem 1rem; }
+.refinancing-annulment__detail dt { color: var(--muted); font-weight: 700; }
+.refinancing-annulment__detail dd { margin: 0; overflow-wrap: anywhere; }
 @media (max-width: 760px) { .loan-management__summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } .loan-management .loan-list__toolbar { grid-template-columns: 1fr; } .loan-management .loan-list__toolbar label:first-child { grid-column: auto; } }
-@media (max-width: 420px) { .loan-management__summary { grid-template-columns: 1fr; } .loan-management__dialog { padding: 1rem; } }
+@media (max-width: 420px) { .loan-management__summary { grid-template-columns: 1fr; } .loan-management__dialog { padding: 1rem; } .refinancing-annulment__date-validation, .refinancing-annulment__detail { grid-template-columns: 1fr; } }
 .payment-history .payment-history__filters { grid-template-columns: repeat(auto-fit, minmax(min(11rem, 100%), 1fr)); margin-bottom: 1rem; }
 .payment-history .payment-history__filters label:first-child { grid-column: auto; }
 .payment-history__filters > button { align-self: end; min-height: 2.45rem; }

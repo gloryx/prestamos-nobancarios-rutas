@@ -1,7 +1,7 @@
 import type { EconomicPaymentFact, EconomicProvenanceFacts, EconomicProvenanceResult } from '../cash-movement/economic-principal-provenance';
 import type { MonthlyProfitabilityResult } from '../cash-movement/monthly-profitability';
 
-export const FINANCIAL_CLOSE_MODEL_VERSION = 2;
+export const FINANCIAL_CLOSE_MODEL_VERSION = 3;
 export type FinancialCloseSection = 'LIQUIDITY' | 'CONTRACTUAL_PORTFOLIO' | 'ECONOMIC_CAPITAL' |
   'REFINANCINGS' | 'PROFITABILITY' | 'RECONCILIATIONS';
 export type FinancialCloseCashFact = { direction: 'INFLOW' | 'OUTFLOW'; concept: string; amount: string; date: string;
@@ -10,7 +10,7 @@ export type FinancialCloseStatusTransition = { loanId: string; fromStatus: strin
 export type FinancialCloseConcept = { section: FinancialCloseSection; code: string; label: string;
   classification: 'OPERATING' | 'FINANCING' | 'EXTERNAL_NON_OPERATING' | 'BALANCE' | 'CONTROL' | 'RESULT';
   amount: string; ordinal: number };
-export type FinancialCloseCalculation = { modelVersion: 2; period: string; fromDate: string; toDate: string;
+export type FinancialCloseCalculation = { modelVersion: 2 | 3; period: string; fromDate: string; toDate: string;
   integrity: { status: 'COMPLETE' | 'INCONSISTENT'; blockingIssues: string[]; warnings: string[] };
   sections: Array<{ code: FinancialCloseSection; concepts: FinancialCloseConcept[] }> };
 export type FinancialCloseEconomicSnapshot = { provenance: EconomicProvenanceResult; facts: EconomicProvenanceFacts };
@@ -104,18 +104,28 @@ export function calculateFinancialClose(input: { period: string; openingDate: st
   const incoming = new Set(finalSnapshot.facts.refinancings.map((row) => row.newLoanId));
   const normalOriginations = finalSnapshot.facts.loans.filter((loan) => !incoming.has(loan.loanId) && within(loan.startDate, fromDate, toDate));
   const periodRefinancings = finalSnapshot.facts.refinancings.filter((row) => within(row.refinancingDate, fromDate, toDate));
+  const reversedRefinancings = finalSnapshot.facts.refinancings.filter((row) => row.status === 'ANNULLED'
+    && row.annulmentType === 'CASH_REFUND' && within(row.annulmentEffectiveDate, fromDate, toDate));
   const normalContractOriginated = sum(normalOriginations, (loan) => cents(loan.totalAmount));
   const successorContractTotal = sum(periodRefinancings, (row) => cents(finalSnapshot.facts.loans.find((loan) => loan.loanId === row.newLoanId)?.totalAmount ?? '0.00'));
   const transferredPrincipal = sum(periodRefinancings, (row) => cents(row.outstandingPrincipalTransferred));
   const capitalizedYield = sum(periodRefinancings, (row) => cents(row.capitalizedOutstandingInterest));
   const newMoney = sum(periodRefinancings, (row) => cents(row.newMoneyDisbursed));
+  const correctedRefinancingOrigin = refinancingEconomicOrigin - newMoney;
   const successorPrincipal = sum(periodRefinancings, (row) => cents(row.newContractualPrincipal));
   const removedOriginContract = transferredPrincipal + capitalizedYield;
+  const restoredOriginContract = sum(reversedRefinancings,
+    (row) => cents(row.outstandingPrincipalTransferred) + cents(row.capitalizedOutstandingInterest));
+  const retiredSuccessorContract = sum(reversedRefinancings,
+    (row) => cents(finalSnapshot.facts.loans.find((loan) => loan.loanId === row.newLoanId)?.totalAmount ?? '0.00'));
+  const reversedNewMoney = sum(reversedRefinancings, (row) => cents(row.newMoneyDisbursed));
   const contractualPayments = paymentFlows(finalSnapshot.facts.payments, fromDate, toDate);
-  const annulledContract = sum(finalSnapshot.facts.loans.filter((loan) => within(loan.annulledDate, fromDate, toDate)),
+  const reversedSuccessors = new Set(reversedRefinancings.map((row) => row.newLoanId));
+  const annulledContract = sum(finalSnapshot.facts.loans.filter((loan) => !reversedSuccessors.has(loan.loanId)
+    && within(loan.annulledDate, fromDate, toDate)),
     (loan) => cents(loan.totalAmount) - effectivePayments(finalSnapshot.facts.payments, loan.loanId, loan.annulledDate!));
   const contractualVariance = finalContract.total - (openingContract.total + normalContractOriginated + successorContractTotal
-    - contractualPayments.net - removedOriginContract - annulledContract);
+    - contractualPayments.net - removedOriginContract - annulledContract + restoredOriginContract - retiredSuccessorContract);
   const uncollectibleMovement = sum(input.statusTransitions.filter((transition) => within(transition.date, fromDate, toDate)), (transition) => {
     const loan = finalSnapshot.facts.loans.find((item) => item.loanId === transition.loanId);
     if (!loan) return 0n;
@@ -135,7 +145,8 @@ export function calculateFinancialClose(input: { period: string; openingDate: st
     (event) => cents(event.economicPrincipalRecovered));
   const reportedAdjustments = cents(input.profitability.capital.adjustmentsInPeriod ?? '0.00');
   const legitimateEconomicAdjustment = disbursementReversalAdjustment;
-  const adjustmentEvidenceVariance = reportedAdjustments - paymentReversalRestoration - legitimateEconomicAdjustment;
+  const adjustmentEvidenceVariance = reportedAdjustments - paymentReversalRestoration - legitimateEconomicAdjustment
+    - correctedRefinancingOrigin;
   const originatedEconomic = normalEconomicOrigin + refinancingEconomicOrigin;
   const closingEconomicCapital = cents(input.profitability.capital.closingEconomicBalance ?? '0.00');
   const capitalVariance = closingEconomicCapital - (cents(input.profitability.capital.openingEconomicBalance ?? '0.00')
@@ -193,6 +204,9 @@ export function calculateFinancialClose(input: { period: string; openingDate: st
     concept('REFINANCINGS', 'DINERO_NUEVO_DESEMBOLSADO', 'Dinero nuevo desembolsado', 'OPERATING', newMoney),
     concept('REFINANCINGS', 'CAPITAL_CONTRACTUAL_SUCESOR', 'Capital contractual de sucesores', 'CONTROL', successorPrincipal),
     concept('REFINANCINGS', 'TOTAL_CONTRACTUAL_SUCESOR', 'Total contractual de sucesores', 'CONTROL', successorContractTotal),
+    concept('REFINANCINGS', 'SALDO_ORIGEN_RESTAURADO_ANULACION_REFINANCIACION', 'Saldo de origen restaurado por anulación de refinanciación', 'CONTROL', restoredOriginContract),
+    concept('REFINANCINGS', 'SALDO_SUCESOR_RETIRADO_ANULACION_REFINANCIACION', 'Saldo de sucesor retirado por anulación de refinanciación', 'CONTROL', retiredSuccessorContract),
+    concept('REFINANCINGS', 'DINERO_NUEVO_REVERTIDO_ANULACION_REFINANCIACION', 'Dinero nuevo revertido por anulación de refinanciación', 'CONTROL', reversedNewMoney),
 
     concept('PROFITABILITY', 'INTERES_REGULAR_REALIZADO', 'Interés regular realizado', 'OPERATING', regularInterest),
     concept('PROFITABILITY', 'RENDIMIENTO_CAPITALIZADO_RECUPERADO', 'Rendimiento capitalizado recuperado', 'OPERATING', recoveredYield),

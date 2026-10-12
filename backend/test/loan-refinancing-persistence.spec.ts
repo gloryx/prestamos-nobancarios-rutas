@@ -3,6 +3,7 @@ import type { TransactionalCashMovementRecorder } from '../src/application/cash-
 import { LoanFinancialTotalsTypeormReader } from '../src/infrastructure/database/typeorm/repositories/loan-financial-totals.reader';
 import { LoanRefinancingTypeormStore } from '../src/infrastructure/database/typeorm/repositories/loan-refinancing.store';
 import { CreateLoanRefinancings1761900000000 } from '../src/infrastructure/database/typeorm/migrations/1761900000000-create-loan-refinancings';
+import { CreateLoanRefinancingAnnulments1762300000000 } from '../src/infrastructure/database/typeorm/migrations/1762300000000-create-loan-refinancing-annulments';
 
 const uuid = (n: number) => `00000000-0000-4000-8000-${n.toString(16).padStart(12, '0')}`;
 
@@ -52,6 +53,38 @@ describe('refinancing persistence contracts without a database connection', () =
     expect(down.join('\n')).toContain('DROP TABLE loan_refinancings');
   });
 
+  it('declares append-only refinancing annulments and preserves only confirmed origin uniqueness', async () => {
+    const statements: string[] = [];
+    const migration = new CreateLoanRefinancingAnnulments1762300000000();
+    await migration.up({ query: async (sql: string) => { statements.push(sql); return []; } } as unknown as QueryRunner);
+    const sql = statements.join('\n');
+
+    for (const required of [
+      'loan_refinancing_annulments', 'UQ_refinancing_annulment_refinancing',
+      "annulment_type\" IN ('DATA_CORRECTION','CASH_REFUND')", 'effective_date',
+      'char_length(btrim("reason")) BETWEEN 1 AND 500', 'refund_payment_method_id',
+      'idempotency_fingerprint', 'ON DELETE RESTRICT', 'trg_refinancing_annulment_immutable',
+      'trg_refinancing_annulment_validate', "edge_status IS DISTINCT FROM 'CONFIRMED'",
+      "NEW.effective_date <> edge_date", '(edge_new_money > 0) <> (NEW.refund_payment_method_id IS NOT NULL)',
+      'ADD "status" character varying', "DEFAULT 'CONFIRMED'", 'DROP CONSTRAINT "UQ_refinancing_origin"',
+      'UQ_refinancing_confirmed_origin', "WHERE \"status\" = 'CONFIRMED'",
+      'UQ_refinancing_successor', "r.status = 'CONFIRMED'", "OLD.status = 'CONFIRMED'",
+      "NEW.status = 'ANNULLED'", "to_jsonb(NEW) - 'status'", 'refinancing_annulment_id',
+      'refinancing_role', "IN ('ORIGIN','SUCCESSOR')", 'CHK_loan_status_history_refinancing_shape',
+      'UQ_loan_status_history_refinancing_role', 'UQ_loan_status_history_refinancing_annulment_role',
+      'UQ_cash_refinancing_annulment',
+      'loans.refinance.annul',
+    ]) expect(sql).toContain(required);
+    expect(sql).not.toContain('INSERT INTO role_permissions');
+    expect(sql).not.toContain('ADD CONSTRAINT "UQ_refinancing_origin" UNIQUE');
+
+    const down: string[] = [];
+    await migration.down({ query: async (statement: string) => { down.push(statement); return []; } } as unknown as QueryRunner);
+    expect(down[0]).toContain('Cannot roll back refinancing annulment schema while dependent data or grants exist');
+    expect(down.join('\n')).toContain('DROP TABLE "loan_refinancing_annulments"');
+    expect(down.join('\n')).toContain('ADD CONSTRAINT "UQ_refinancing_origin" UNIQUE ("origin_loan_id")');
+  });
+
   it('records only the positive new-money disbursement and linked cash through the SAME transaction manager', async () => {
     const manager = { query: jest.fn(async (sql: string, args?: unknown[]) => {
       if (sql.includes('INSERT INTO loan_disbursements')) {
@@ -70,6 +103,32 @@ describe('refinancing persistence contracts without a database connection', () =
     expect(recorder.recordWithManager).toHaveBeenCalledWith(manager, expect.objectContaining({ direction: 'OUTFLOW',
       concept: 'REFINANCING_NEW_MONEY_DISBURSEMENT', amount: '50000.00', loanDisbursementId: uuid(4),
       paymentMethodId: uuid(3), movementDate: '2026-09-30' }));
+  });
+
+  it('tags both refinancing status-history facts with their edge provenance', async () => {
+    const statements: Array<{ sql: string; args: unknown[] }> = [];
+    const manager = { query: jest.fn(async (sql: string, args: unknown[] = []) => {
+      statements.push({ sql, args });
+      if (sql.startsWith('SELECT MAX(event_sequence)')) return [{ maxSequence: 1 }];
+      return [];
+    }) };
+    const transaction = jest.fn(async (...args: unknown[]) => {
+      const work = args.at(-1) as (tx: typeof manager) => Promise<unknown>;
+      return work(manager);
+    });
+    const store = new LoanRefinancingTypeormStore({ transaction } as unknown as DataSource,
+      new LoanFinancialTotalsTypeormReader(), {} as never);
+
+    await store.transaction((tx) => tx.createStatusHistory(uuid(1),
+      { id: uuid(2), createdAt: new Date('2026-09-30T12:00:00Z') }, uuid(3), uuid(4)));
+
+    const inserts = statements.filter(({ sql }) => sql.includes('INSERT INTO loan_status_history'));
+    expect(inserts).toHaveLength(2);
+    expect(inserts[0].sql).toContain("refinancing_id, refinancing_role");
+    expect(inserts[0].sql).toContain("$5,'ORIGIN'");
+    expect(inserts[0].args.at(-1)).toBe(uuid(4));
+    expect(inserts[1].sql).toContain("$4,'SUCCESSOR'");
+    expect(inserts[1].args.at(-1)).toBe(uuid(4));
   });
 
   it('uses a locked origin and conflict-safe insertion', async () => {
@@ -150,7 +209,7 @@ describe('refinancing persistence contracts without a database connection', () =
       transitions: [{ newMoneyDisbursed: '52000.00' }] });
     expect(query).toHaveBeenCalledTimes(6);
     const edgeSql = query.mock.calls[1][0];
-    expect(edgeSql).toContain('WHERE origin.customer_id = $1 OR successor.customer_id = $1');
+    expect(edgeSql).toContain("WHERE (origin.customer_id = $1 OR successor.customer_id = $1) AND r.status = 'CONFIRMED'");
     expect(edgeSql).toContain('LIMIT $2');
     expect(edgeSql).toContain('r.capitalized_outstanding_interest::text AS "capitalizedOutstandingInterest"');
     const loanSql = query.mock.calls[2][0];
@@ -169,6 +228,7 @@ describe('refinancing persistence contracts without a database connection', () =
       expect(sql).toContain('JOIN customers c ON c.id = successor.customer_id');
       expect(sql).toContain('JOIN payment_frequencies pf ON pf.id = successor.payment_frequency_id');
       expect(sql).toContain('successor.observations');
+      expect(sql).toContain('r.status AS "refinancingStatus"');
       return [{ id: uuid(9), disbursementId: null, cashMovementId: null, disbursementPaymentMethodName: null }];
     });
     const transaction = jest.fn(async (isolation: string, work: (manager: { query: typeof query }) => Promise<unknown>) => {

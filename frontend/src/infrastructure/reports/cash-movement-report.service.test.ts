@@ -16,6 +16,10 @@ const summary: CashMovementSummary = { inflows: '1500.00', outflows: '250.00', n
 const items: CashMovement[] = [
   { id: 'internal-id-1', direction: 'INFLOW', concept: 'LOAN_DISBURSEMENT', amount: '1000.00', movementDate: '2026-09-02', loanNumber: '42', paymentMethod: { id: 'payment-id', name: 'Efectivo', isActive: true }, observations: 'Entrega', reversedMovementId: null, createdBy: { id: 'user-id', fullName: 'Ana Pérez' }, createdAt: '2026-09-02T12:00:00Z' },
   { id: 'internal-id-2', direction: 'OUTFLOW', concept: 'OPERATING_EXPENSE', amount: '250.00', movementDate: '2026-09-03', paymentMethod: { id: 'payment-id-2', name: 'Transferencia', isActive: true }, observations: null, reversedMovementId: null, createdBy: { id: 'user-id-2', fullName: 'Luis Mora' }, createdAt: '2026-09-03T12:00:00Z' },
+  { id: 'internal-id-3', direction: 'INFLOW', concept: 'REVERSAL', reversedConcept: 'REFINANCING_NEW_MONEY_DISBURSEMENT',
+    amount: '52000.00', movementDate: '2026-09-04', loanNumber: '43', paymentMethod: { id: 'payment-id', name: 'Efectivo',
+      isActive: true }, observations: 'Corrección', reversedMovementId: 'internal-id-0',
+    createdBy: { id: 'user-id', fullName: 'Ana Pérez' }, createdAt: '2026-09-04T12:00:00Z' },
 ];
 
 describe('cash movement Excel workbook', () => {
@@ -28,6 +32,8 @@ describe('cash movement Excel workbook', () => {
     expect(rows[0]).toEqual(['Fecha', 'Tipo', 'Concepto', 'Préstamo', 'Forma de pago', 'Monto', 'Registrado por', 'Observaciones']);
     expect(rows[1].slice(1)).toEqual(['INGRESO', 'Desembolso de préstamo', 'Préstamo #42', 'Efectivo', 1000, 'Ana Pérez', 'Entrega']);
     expect(rows[2].slice(1)).toEqual(['EGRESO', 'Gasto operativo', '', 'Transferencia', -250, 'Luis Mora', '']);
+    expect(rows[3].slice(1)).toEqual(['INGRESO', 'Reversión de desembolso por anulación de refinanciamiento',
+      'Préstamo #43', 'Efectivo', 52000, 'Ana Pérez', 'Corrección']);
     expect(sheet.A11.v).toEqual(new Date(2026, 8, 2));
     expect(sheet.A11.t).toBe('d');
     expect(sheet.A11.z).toBe('dd/mm/yyyy');
@@ -53,7 +59,8 @@ describe('cash movement PDF', () => {
     const reportItems: CashMovement[] = [
       { ...items[0], amount: '70000.00' },
       { ...items[1], amount: '160000.00' },
-      { ...items[0], id: 'internal-id-3', amount: '1320000.00', loanNumber: undefined },
+      { ...items[0], id: 'internal-id-4', amount: '1320000.00', loanNumber: undefined },
+      items[2],
     ];
     const reportSummary: CashMovementSummary = { ...summary, inflows: '1390000.00', outflows: '160000.00', net: '-1230000.00' };
 
@@ -62,9 +69,10 @@ describe('cash movement PDF', () => {
     expect(pdf.autoTable).toHaveBeenCalledTimes(1);
     const { body, startY } = pdf.autoTable.mock.calls[0][1];
     expect(startY).toBe(28);
-    expect(body.map((row: string[]) => row[4])).toEqual(['+¢70.000', '-¢160.000', '+¢1.320.000']);
+    expect(body.map((row: string[]) => row[4])).toEqual(['+¢70.000', '-¢160.000', '+¢1.320.000', '+¢52.000']);
     expect(body[0][2]).toBe('Desembolso de préstamo · Préstamo #42');
     expect(body[2][2]).toBe('Desembolso de préstamo');
+    expect(body[3][2]).toBe('Reversión de desembolso por anulación de refinanciamiento · Préstamo #43');
     expect(pdf.text).toHaveBeenCalledWith('Entradas: ¢1.390.000   Salidas: ¢160.000   Neto: -¢1.230.000', 10, 65);
     expect(JSON.stringify([body, pdf.text.mock.calls])).not.toContain('₡');
     expect(pdf.save).toHaveBeenCalledWith(`movimientos-caja-${new Date().toISOString().slice(0, 10)}.pdf`);

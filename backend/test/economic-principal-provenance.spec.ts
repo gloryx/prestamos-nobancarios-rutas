@@ -30,9 +30,10 @@ const payment = (paymentId: string, loanId: string, date: string, principalAppli
 
 const refinancing = (refinancingId: string, originLoanId: string, newLoanId: string, refinancingDate: string,
   outstandingPrincipalTransferred: string, capitalizedOutstandingInterest: string, newMoneyDisbursed: string,
-  newContractualPrincipal: string): EconomicRefinancingFact => ({ refinancingId, originLoanId, newLoanId,
+  newContractualPrincipal: string, lifecycle: Partial<EconomicRefinancingFact> = {}): EconomicRefinancingFact => ({ refinancingId, originLoanId, newLoanId,
   refinancingDate, outstandingPrincipalTransferred, capitalizedOutstandingInterest, newMoneyDisbursed,
-  newContractualPrincipal, createdAt: `${refinancingDate}T12:00:00.000Z` });
+  newContractualPrincipal, createdAt: `${refinancingDate}T12:00:00.000Z`, status: 'CONFIRMED',
+  annulmentType: null, annulmentEffectiveDate: null, ...lifecycle });
 
 const example = (): EconomicProvenanceFacts => ({
   loans: [
@@ -149,6 +150,84 @@ describe('economic principal provenance', () => {
       expect.objectContaining({ paymentId: 'p1', eventType: 'PAYMENT', economicGainContribution: '0.00' }),
       expect.objectContaining({ paymentId: 'p1', eventType: 'REVERSAL', economicGainContribution: '0.00' }),
     ]));
+  });
+
+  it('nets successor payment reversals before reversing a CASH_REFUND edge', () => {
+    const successorPayment = payment('p-B', 'B', '2026-09-15', '90.00', '0.00', { status: 'ANNULLED',
+      annulmentId: 'payment-annulment', reversalId: 'payment-reversal', reversalAmount: '90.00',
+      reversalDate: '2026-09-20', reversalCreatedAt: '2026-09-20T12:00:00.000Z', reversalMethodId: 'cash',
+      reversalDirection: 'OUTFLOW', reversalConcept: 'REVERSAL' });
+    const facts: EconomicProvenanceFacts = {
+      loans: [
+        loan('A', '100.00', '20.00', 'ACTIVE', 'LOAN_DISBURSEMENT', '100.00', '2026-09-01'),
+        loan('B', '100.00', '0.00', 'ANNULLED', 'REFINANCING_NEW_MONEY_DISBURSEMENT', '20.00', '2026-09-10', {
+          annulledDate: '2026-09-25', reversalId: 'disbursement-reversal', reversalAmount: '20.00',
+          reversalDate: '2026-09-25', reversalMethodId: 'cash', reversalDirection: 'INFLOW', reversalConcept: 'REVERSAL',
+        }),
+      ],
+      refinancings: [refinancing('A-B', 'A', 'B', '2026-09-10', '60.00', '20.00', '20.00', '100.00', {
+        status: 'ANNULLED', annulmentType: 'CASH_REFUND', annulmentEffectiveDate: '2026-09-25',
+      })],
+      payments: [payment('p-A', 'A', '2026-09-05', '40.00'), successorPayment],
+    };
+
+    const result = analyzeEconomicPrincipalProvenance(facts, '2026-09-30');
+    expect(result.warnings).toEqual([]);
+    expect(result.chains).toHaveLength(1);
+    expect(result.chains[0]).toMatchObject({ terminalLoanId: 'A', totalNewMoneyDisbursed: '0.00',
+      totalRealCashDisbursed: '100.00', economicPrincipalRecovered: '40.00', economicPrincipalPending: '60.00',
+      capitalizedYieldCreated: '0.00', capitalizedYieldRecovered: '0.00', capitalizedYieldPending: '0.00',
+      regularInterestRealized: '0.00', totalPaymentsReceived: '40.00', isComplete: true });
+    expect(result.chains[0].payments.map((item) => item.paymentId)).toEqual(['p-A']);
+    expect(result.gainEvents.filter((item) => item.paymentId === 'p-B')).toEqual([
+      expect.objectContaining({ eventType: 'PAYMENT', economicGainContribution: '10.00' }),
+      expect.objectContaining({ eventType: 'REVERSAL', economicGainContribution: '-10.00' }),
+    ]);
+    expect(result.gainEvents.filter((item) => item.paymentId === 'p-B')
+      .reduce((sum, item) => sum + Number(item.economicGainContribution), 0)).toBe(0);
+  });
+
+  it('reverses a zero-new-money CASH_REFUND edge without a cash adjustment', () => {
+    const facts: EconomicProvenanceFacts = {
+      loans: [
+        loan('A', '100.00', '20.00', 'ACTIVE', 'LOAN_DISBURSEMENT', '100.00', '2026-09-01'),
+        loan('B', '80.00', '0.00', 'ANNULLED', null, null, '2026-09-10', { annulledDate: '2026-09-25' }),
+      ],
+      refinancings: [refinancing('A-B', 'A', 'B', '2026-09-10', '60.00', '20.00', '0.00', '80.00', {
+        status: 'ANNULLED', annulmentType: 'CASH_REFUND', annulmentEffectiveDate: '2026-09-25',
+      })],
+      payments: [payment('p-A', 'A', '2026-09-05', '40.00')],
+    };
+
+    const result = analyzeEconomicPrincipalProvenance(facts, '2026-09-30');
+    expect(result.warnings).toEqual([]);
+    expect(result.chains[0]).toMatchObject({ terminalLoanId: 'A', totalNewMoneyDisbursed: '0.00',
+      totalRealCashDisbursed: '100.00', economicPrincipalPending: '60.00', capitalizedYieldPending: '0.00', isComplete: true });
+    expect(result.events.filter((event) => event.date === '2026-09-25')).toEqual([]);
+  });
+
+  it('keeps a CASH_REFUND edge effective before its future annulment date', () => {
+    const facts = example();
+    facts.loans[1].status = 'ACTIVE';
+    facts.loans[1].cancelledDate = null;
+    facts.payments[1] = payment('payment-B', 'B', '2026-09-20', '50000.00');
+    facts.refinancings[0] = { ...facts.refinancings[0], status: 'ANNULLED', annulmentType: 'CASH_REFUND',
+      annulmentEffectiveDate: '2026-10-10' };
+
+    const result = analyzeEconomicPrincipalProvenance(facts, '2026-09-30');
+    expect(result.warnings).toEqual([]);
+    expect(result.chains[0]).toMatchObject({ terminalLoanId: 'B', totalNewMoneyDisbursed: '52000.00',
+      economicPrincipalPending: '30000.00', capitalizedYieldPending: '20000.00', isComplete: true });
+  });
+
+  it('fails closed when an annulled edge has no consistent CASH_REFUND fact', () => {
+    const facts = example();
+    facts.refinancings[0] = { ...facts.refinancings[0], status: 'ANNULLED', annulmentType: null,
+      annulmentEffectiveDate: null };
+
+    const result = analyzeEconomicPrincipalProvenance(facts, '2026-09-30');
+    expect(result.warnings.join(' ')).toContain('grafo de refinanciamientos');
+    expect(result.chains.every((chain) => chain.integrityStatus === 'INCONSISTENT')).toBe(true);
   });
 
   it('dates chain gain when the payment realizes it rather than when refinancing was created', () => {

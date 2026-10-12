@@ -58,6 +58,7 @@ export type RefinancingChain = {
 
 export type RefinancingOperation = RefinancingAmounts & {
   id: string; originLoanId: string; originLoanNumber: string; newLoanId: string; newLoanNumber: string;
+  refinancingStatus: 'CONFIRMED' | 'ANNULLED';
   refinancingDate: string; createdByUserId: string; createdAt: Date;
   originStatus: string; newStatus: string; disbursementId: string | null; cashMovementId: string | null;
   disbursementAmount: string | null; disbursementDate: string | null; disbursementMethodId: string | null;

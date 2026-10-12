@@ -1,4 +1,4 @@
-import type { LoanRefinancingChains, LoanRefinancingList, LoanRefinancingLookup, LoanRefinancingOperations, LoanRefinancingOptions, RefinancingCustomerLookup } from '../../application/ports/loan-refinancing.repository';
+import type { LoanRefinancingAnnulments, LoanRefinancingChains, LoanRefinancingList, LoanRefinancingLookup, LoanRefinancingOperations, LoanRefinancingOptions, RefinancingCustomerLookup } from '../../application/ports/loan-refinancing.repository';
 import type { CustomerRefinancingChains, RefinancingChain, RefinancingListResult, RefinancingLoanSearchResponse, RefinancingPreview } from '../../domain/entities/loan-refinancing';
 import type { RefinancingFailure } from '../../application/use-cases/refinancing-confirmation-controller';
 import { apiClient, HttpApiError } from './api-client';
@@ -57,6 +57,37 @@ export const loanRefinancingOperations: LoanRefinancingOperations = {
   },
   detail(refinancingId) {
     return apiClient.request(`/loan-refinancings/${encodeURIComponent(refinancingId)}`, { cache: 'no-store' });
+  },
+};
+
+const annulmentParams = (query: { page: number; pageSize: number; search?: string; dateFrom?: string;
+  dateTo?: string; effectiveDate?: string; sortBy: string; sortDir: string }) => {
+  const params = new URLSearchParams({ page: String(query.page), pageSize: String(query.pageSize),
+    sortBy: query.sortBy, sortDir: query.sortDir });
+  if (query.search) params.set('search', query.search);
+  if (query.dateFrom) params.set('dateFrom', query.dateFrom);
+  if (query.dateTo) params.set('dateTo', query.dateTo);
+  if (query.effectiveDate) params.set('effectiveDate', query.effectiveDate);
+  return params;
+};
+
+export const loanRefinancingAnnulmentsApi: LoanRefinancingAnnulments = {
+  listCandidates(query) {
+    return apiClient.request(`/loan-refinancings/annullable?${annulmentParams(query)}`, { cache: 'no-store' });
+  },
+  listAnnulled(query) {
+    return apiClient.request(`/loan-refinancings/annulled?${annulmentParams(query)}`, { cache: 'no-store' });
+  },
+  detail(annulmentId) {
+    return apiClient.request(`/loan-refinancings/annulments/${encodeURIComponent(annulmentId)}`, { cache: 'no-store' });
+  },
+  paymentMethods() {
+    return apiClient.request('/loan-refinancings/annulment-payment-methods', { cache: 'no-store' });
+  },
+  annul(refinancingId, request) {
+    return apiClient.request(`/loan-refinancings/${encodeURIComponent(refinancingId)}/annul`, {
+      method: 'POST', body: JSON.stringify(request),
+    });
   },
 };
 

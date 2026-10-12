@@ -67,14 +67,26 @@ export class EconomicCapitalTypeOrmReader implements EconomicCapitalReader, Econ
       LEFT JOIN loan_disbursements d ON d.loan_id = l.id
       LEFT JOIN cash_movements cash ON cash.loan_disbursement_id = d.id
        LEFT JOIN cash_movements reversal ON reversal.reversed_movement_id = cash.id AND reversal.movement_date <= $1::date
-      WHERE l.start_date <= $1::date ORDER BY l.start_date, l.created_at, l.id LIMIT $2`, [toDate, MAX_ECONOMIC_PROVENANCE_LOANS + 1]);
+      WHERE l.start_date <= $1::date
+        AND NOT EXISTS (SELECT 1 FROM loan_refinancings corrected
+          JOIN loan_refinancing_annulments correction ON correction.refinancing_id = corrected.id
+          WHERE corrected.new_loan_id = l.id AND correction.annulment_type = 'DATA_CORRECTION')
+      ORDER BY l.start_date, l.created_at, l.id LIMIT $2`, [toDate, MAX_ECONOMIC_PROVENANCE_LOANS + 1]);
     const refinancings: EconomicRefinancingFact[] = await manager.query(`SELECT id AS "refinancingId",
       origin_loan_id AS "originLoanId", new_loan_id AS "newLoanId", refinancing_date::text AS "refinancingDate",
       created_at::text AS "createdAt",
       outstanding_principal_transferred::text AS "outstandingPrincipalTransferred",
       capitalized_outstanding_interest::text AS "capitalizedOutstandingInterest",
-      new_money_disbursed::text AS "newMoneyDisbursed", new_contractual_principal::text AS "newContractualPrincipal"
-      FROM loan_refinancings WHERE refinancing_date <= $1::date ORDER BY refinancing_date, created_at, id LIMIT $2`,
+      new_money_disbursed::text AS "newMoneyDisbursed", new_contractual_principal::text AS "newContractualPrincipal",
+      r.status AS status, annulment.annulment_type AS "annulmentType",
+      annulment.effective_date::text AS "annulmentEffectiveDate"
+      FROM loan_refinancings r
+      LEFT JOIN loan_refinancing_annulments annulment ON annulment.refinancing_id = r.id
+      WHERE r.refinancing_date <= $1::date
+        AND annulment.annulment_type IS DISTINCT FROM 'DATA_CORRECTION'
+        AND ((r.status = 'CONFIRMED' AND annulment.refinancing_id IS NULL)
+          OR (r.status = 'ANNULLED' AND annulment.annulment_type = 'CASH_REFUND'))
+      ORDER BY r.refinancing_date, r.created_at, r.id LIMIT $2`,
     [toDate, MAX_ECONOMIC_PROVENANCE_REFINANCINGS + 1]);
     const payments: EconomicPaymentFact[] = await manager.query(`SELECT p.id AS "paymentId", p.loan_id AS "loanId",
       p.payment_date::text AS date, p.created_at::text AS "createdAt", p.amount::text AS amount,

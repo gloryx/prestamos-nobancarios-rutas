@@ -116,6 +116,7 @@ class FakeStore implements RefinancingStore {
             row.newLoanId === input.newLoanId || row.key === input.idempotencyKey)) return undefined;
           const id = uuid(300 + Object.keys(draft.operations).length);
           draft.operations[id] = { ...input, id, key: input.idempotencyKey, fingerprint: input.idempotencyFingerprint,
+            refinancingStatus: 'CONFIRMED',
             originLoanNumber: draft.loans[input.originLoanId].loanNumber, newLoanNumber: draft.loans[input.newLoanId].loanNumber,
             originStartDate: draft.loans[input.originLoanId].startDate, newStartDate: draft.loans[input.newLoanId].startDate,
             customerId: draft.loans[input.newLoanId].customerId, customerName: draft.loans[input.newLoanId].customerName,

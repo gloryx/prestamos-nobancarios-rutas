@@ -30,7 +30,8 @@ const refinancing = (id: string, origin: string, successor: string, date: string
   capitalized: string, newMoney: string, principal: string): EconomicRefinancingFact => ({ refinancingId: id,
   originLoanId: origin, newLoanId: successor, refinancingDate: date, createdAt: `${date}T12:00:00.000Z`,
   outstandingPrincipalTransferred: transferred, capitalizedOutstandingInterest: capitalized,
-  newMoneyDisbursed: newMoney, newContractualPrincipal: principal });
+  newMoneyDisbursed: newMoney, newContractualPrincipal: principal, status: 'CONFIRMED', annulmentType: null,
+  annulmentEffectiveDate: null });
 const mandatoryFacts = (): EconomicProvenanceFacts => ({
   loans: [
     loan('A', '100000.00', '20000.00', 'REFINANCED', '2026-09-01', '100000.00', 'LOAN_DISBURSEMENT'),
@@ -182,6 +183,11 @@ describe('customer financial analysis application and reader', () => {
     expect(query.mock.calls[1][0]).toContain('r.refinancing_date AS effective_date');
     expect(query.mock.calls[1][0]).not.toContain('COALESCE(snapshot.status');
     expect(query.mock.calls[1][0]).toContain('reversal.movement_date <= $2::date');
+    expect(query.mock.calls[1][0]).toContain('corrected.new_loan_id = l.id');
+    expect(query.mock.calls[1][0]).toContain("correction.annulment_type = 'DATA_CORRECTION'");
+    expect(query.mock.calls[2][0]).toContain('r.status AS status');
+    expect(query.mock.calls[2][0]).toContain('annulment.effective_date::text AS "annulmentEffectiveDate"');
+    expect(query.mock.calls[2][0]).toContain("annulment.annulment_type IS DISTINCT FROM 'DATA_CORRECTION'");
     expect(query.mock.calls[3][0]).toContain('annulment.annulled_at');
     expect(query.mock.calls[3][0]).toContain("annulment.annulment_type IS DISTINCT FROM 'DATA_CORRECTION'");
     expect(result).toEqual({ customer, facts: { loans: [], refinancings: [], payments: [] } });

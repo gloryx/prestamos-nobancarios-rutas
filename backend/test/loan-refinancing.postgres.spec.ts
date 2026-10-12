@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { DataSource, type QueryRunner } from 'typeorm';
 import { LoanRefinancingUseCase, RefinancingConflictError, RefinancingValidationError, type RefinancingRequest } from '../src/application/loan-refinancing/refinancing.use-case';
+import { LoanRefinancingAnnulmentUseCase, RefinancingAnnulmentConflictError } from '../src/application/loan-refinancing/refinancing-annulment.use-case';
 import { RegisterPaymentUseCase, PaymentConflictError } from '../src/application/payment/payment.use-case';
 import { GetLoanEditContextUseCase, LoanEditContextConflictError } from '../src/application/loan/loan-edit-context.use-case';
 import { CreateLoanUseCase } from '../src/application/loan/loan.use-case';
@@ -12,6 +13,7 @@ import { CashMovementTypeOrmRepository } from '../src/infrastructure/database/ty
 import { LoanEditContextTypeormReader } from '../src/infrastructure/database/typeorm/repositories/loan-edit-context.reader';
 import { LoanFinancialTotalsTypeormReader } from '../src/infrastructure/database/typeorm/repositories/loan-financial-totals.reader';
 import { LoanRefinancingTypeormStore } from '../src/infrastructure/database/typeorm/repositories/loan-refinancing.store';
+import { LoanRefinancingAnnulmentTypeormStore } from '../src/infrastructure/database/typeorm/repositories/loan-refinancing-annulment.store';
 import { CreateDta2026Tables1760000000000 } from '../src/infrastructure/database/typeorm/migrations/1760000000000-create-dta-2026-tables';
 import { SimplifyDtaTerritorialKeys1760100000000 } from '../src/infrastructure/database/typeorm/migrations/1760100000000-simplify-dta-territorial-keys';
 
@@ -39,19 +41,28 @@ suite('refinancing on an isolated PostgreSQL 18 cluster', () => {
   jest.setTimeout(45000);
   let db: DataSource;
   let refinancing: LoanRefinancingUseCase;
+  let annulments: LoanRefinancingAnnulmentUseCase;
   let payment: RegisterPaymentUseCase;
   let cash: CashMovementTypeOrmRepository;
   const totals = new LoanFinancialTotalsTypeormReader();
   const ids = { role: randomUUID(), actor: randomUUID(), customer: randomUUID(), otherCustomer: randomUUID(),
-    method: randomUUID(), frequency: randomUUID(), collector: randomUUID() };
+    method: randomUUID(), refundMethod: randomUUID(), frequency: randomUUID(), collector: randomUUID() };
   const day = new Date().toISOString().slice(0, 10);
   const later = (days: number) => new Date(Date.parse(`${day}T00:00:00Z`) + days * 86400000).toISOString().slice(0, 10);
+  const collectionDay = (position: number) => {
+    let date = day;
+    for (let remaining = position; remaining > 0;) {
+      date = new Date(Date.parse(`${date}T00:00:00Z`) + 86400000).toISOString().slice(0, 10);
+      if (new Date(`${date}T00:00:00Z`).getUTCDay() !== 0) remaining -= 1;
+    }
+    return date;
+  };
   const invoice = (originLoanId: string, baseline: string, key: string, newMoney = zero,
     newInterestAmount = '20000.00', total = '170000.00'): RefinancingRequest => ({
     originLoanId, refinancingDate: day, newMoney, ...(newMoney !== zero ? { disbursementPaymentMethodId: ids.method } : {}),
     newInterestAmount, paymentFrequencyId: ids.frequency, preferredPaymentMethodId: ids.method,
-    plan: [{ sequence: 1, dueDate: later(1), pendingAmount: String(Number(total) / 2) },
-      { sequence: 2, dueDate: later(2), pendingAmount: String(Number(total) / 2) }],
+    plan: [{ sequence: 1, dueDate: collectionDay(1), pendingAmount: String(Number(total) / 2) },
+      { sequence: 2, dueDate: collectionDay(2), pendingAmount: String(Number(total) / 2) }],
     baseline, idempotencyKey: key,
   });
   async function newOrigin(customerId = ids.customer, startDate = day) {
@@ -61,7 +72,7 @@ suite('refinancing on an isolated PostgreSQL 18 cluster', () => {
     [customerId, ids.frequency, ids.method, startDate, ids.actor]);
     await db.query(`INSERT INTO loan_status_history (loan_id,event_sequence,event_kind,from_status,to_status,changed_at,changed_by_user_id)
       VALUES ($1,1,'CREATED',NULL,'ACTIVE',now(),$2)`, [loan.id, ids.actor]);
-    for (const [index, due] of [later(1), later(2)].entries()) await db.query(
+    for (const [index, due] of [collectionDay(1), collectionDay(2)].entries()) await db.query(
       `INSERT INTO payment_plan_entries (loan_id,sequence,due_date,pending_amount) VALUES ($1,$2,$3,90000)`, [loan.id, index + 1, due]);
     return loan.id;
   }
@@ -104,11 +115,12 @@ suite('refinancing on an isolated PostgreSQL 18 cluster', () => {
     const [state] = await db.query(`SELECT (SELECT COUNT(*)::int FROM migrations) AS migrations,
       (SELECT COUNT(*)::int FROM loans) AS loans, (SELECT COUNT(*)::int FROM payments) AS payments,
       (SELECT COUNT(*)::int FROM customers) AS customers, (SELECT COUNT(*)::int FROM loan_refinancings) AS refinancings`);
-    if (Object.entries(state).some(([name, count]) => count !== (name === 'migrations' ? 24 : 0))) {
+    if (Object.entries(state).some(([name, count]) => count !== (name === 'migrations' ? 25 : 0))) {
       throw new Error('Refinancing tests require all migrations and zero business rows.');
     }
     cash = new CashMovementTypeOrmRepository(db.getRepository(CashMovementOrmEntity), db);
     refinancing = new LoanRefinancingUseCase(new LoanRefinancingTypeormStore(db, totals, cash));
+    annulments = new LoanRefinancingAnnulmentUseCase(new LoanRefinancingAnnulmentTypeormStore(db));
     payment = new RegisterPaymentUseCase(db, totals);
     await db.transaction(async (manager) => {
       await manager.query(`INSERT INTO roles (id,code,name) VALUES ($1,'REFINANCING_TEST','Refinancing Test')`, [ids.role]);
@@ -119,7 +131,8 @@ suite('refinancing on an isolated PostgreSQL 18 cluster', () => {
           gender,birth_date,primary_phone,nationality)
           VALUES ($1,'NATIONAL',$2,'TEST REFINANCING','CUSTOMER','MALE','2000-01-01','00000000','COSTA_RICAN')`, [id, identification]);
       }
-      await manager.query(`INSERT INTO payment_methods (id,name,display_order) VALUES ($1,'TEST REFINANCING METHOD',1)`, [ids.method]);
+      await manager.query(`INSERT INTO payment_methods (id,name,display_order) VALUES
+        ($1,'TEST REFINANCING METHOD',1),($2,'TEST REFUND METHOD',2)`, [ids.method, ids.refundMethod]);
       await manager.query(`INSERT INTO collectors (id,identification,first_name,first_last_name,phone,birth_date,address,is_active)
         VALUES ($1,'TEST-REFINANCING-COLLECTOR','TEST','COLLECTOR','00000000','2000-01-01','TEST',true)`, [ids.collector]);
       await manager.query(`INSERT INTO payment_frequencies (id,name,interval_unit,interval_value,display_order)
@@ -149,18 +162,25 @@ suite('refinancing on an isolated PostgreSQL 18 cluster', () => {
     const constraints: Array<{ conname: string; contype: string }> = await db.query(`SELECT conname, contype
       FROM pg_constraint WHERE conrelid = 'loan_refinancings'::regclass`);
     for (const [name, type] of [['FK_refinancing_origin','f'],['FK_refinancing_successor','f'],
-      ['UQ_refinancing_origin','u'],['UQ_refinancing_successor','u'],['UQ_refinancing_key','u'],
+      ['UQ_refinancing_successor','u'],['UQ_refinancing_key','u'],
       ['CHK_refinancing_amounts','c'],['CHK_refinancing_distinct','c']]) {
       expect(constraints).toContainEqual({ conname: name, contype: type });
     }
     const triggers: Array<{ tgname: string }> = await db.query(`SELECT tgname FROM pg_trigger
       WHERE tgrelid = 'loan_refinancings'::regclass AND NOT tgisinternal`);
     expect(triggers.map(({ tgname }) => tgname)).toEqual(expect.arrayContaining(['trg_refinancing_chain','trg_refinancing_immutable']));
+    const indexes: Array<{ indexname: string }> = await db.query(`SELECT indexname FROM pg_indexes
+      WHERE tablename IN ('loan_refinancings','loan_refinancing_annulments')`);
+    expect(indexes.map(({ indexname }) => indexname)).toEqual(expect.arrayContaining([
+      'UQ_refinancing_confirmed_origin', 'UQ_refinancing_annulment_refinancing', 'UQ_refinancing_annulment_key',
+    ]));
     const [cashCheck] = await db.query(`SELECT pg_get_constraintdef(oid) AS rule FROM pg_constraint
       WHERE conrelid = 'cash_movements'::regclass AND conname = 'CHK_cash_loan_disbursement_pair'`);
     expect(cashCheck.rule).toContain('REFINANCING_NEW_MONEY_DISBURSEMENT');
     const permissions = await db.query(`SELECT code FROM permissions WHERE code LIKE 'loans.refinance.%'`);
-    expect(permissions.map((row: { code: string }) => row.code).sort()).toEqual(['loans.refinance.create','loans.refinance.view']);
+    expect(permissions.map((row: { code: string }) => row.code).sort()).toEqual([
+      'loans.refinance.annul','loans.refinance.create','loans.refinance.view',
+    ]);
     const [grants] = await db.query(`SELECT COUNT(*)::int AS count FROM role_permissions`);
     expect(grants.count).toBe(0);
   });
@@ -209,8 +229,8 @@ suite('refinancing on an isolated PostgreSQL 18 cluster', () => {
     const [disbursements] = await db.query(`SELECT COUNT(*)::int AS count FROM loan_disbursements WHERE loan_id=$1`, [receipt.newLoanId]);
     expect(disbursements.count).toBe(1);
     const rows = await db.query(`SELECT sequence,due_date::text,pending_amount::text FROM payment_plan_entries WHERE loan_id=$1 ORDER BY sequence`, [receipt.newLoanId]);
-    expect(rows).toEqual([{ sequence: 1, due_date: later(1), pending_amount: '120000.00' },
-      { sequence: 2, due_date: later(2), pending_amount: '120000.00' }]);
+    expect(rows).toEqual([{ sequence: 1, due_date: collectionDay(1), pending_amount: '120000.00' },
+      { sequence: 2, due_date: collectionDay(2), pending_amount: '120000.00' }]);
     expect(await db.query(`SELECT id,pending_amount::text AS amount FROM payment_plan_entries WHERE loan_id=$1 ORDER BY sequence`, [id])).toEqual(originalPlan);
     expect(await db.query(`SELECT row_to_json(p)::text AS value FROM payments p WHERE id=$1`, [paymentId])).toEqual(historical);
     expect(await db.query(`SELECT row_to_json(pa)::text AS value FROM payment_applications pa WHERE payment_id=$1`, [paymentId])).toEqual(applied);
@@ -383,7 +403,7 @@ suite('refinancing on an isolated PostgreSQL 18 cluster', () => {
     const freeB = await newOrigin();
     const other = await newOrigin(ids.otherCustomer);
     const before = await counts();
-    await expect(insert(caseA.origin, freeA)).rejects.toMatchObject({ driverError: { code: '23505', constraint: 'UQ_refinancing_origin' } });
+    await expect(insert(caseA.origin, freeA)).rejects.toMatchObject({ driverError: { code: '23505', constraint: 'UQ_refinancing_confirmed_origin' } });
     await expect(insert(freeA, caseA.successor)).rejects.toMatchObject({ driverError: { code: '23505', constraint: 'UQ_refinancing_successor' } });
     await expect(insert(freeA, other)).rejects.toThrow('Refinancing loans must belong to the same customer');
     await expect(insert(freeA, freeB, randomUUID(), '2.00')).rejects.toMatchObject({ driverError: { constraint: 'CHK_refinancing_amounts' } });
@@ -463,5 +483,99 @@ suite('refinancing on an isolated PostgreSQL 18 cluster', () => {
       await expect(runner.query(`UPDATE payment_annulments SET annulment_type = 'UNSUPPORTED' WHERE payment_id = $1`,
         [caseB.paymentId])).rejects.toMatchObject({ driverError: { constraint: 'CHK_payment_annulment_type' } });
     } finally { await runner.rollbackTransaction(); await runner.release(); }
+  });
+
+  it('compensates a non-delivered correction once and permits one real new disbursement after restoration', async () => {
+    const { id } = await paidOrigin();
+    const first = await refinancing.confirm(invoice(id, (await refinancing.preview(id)).baseline, randomUUID(),
+      '50000.00', '40000.00', '240000.00'), ids.actor);
+    const beforeCash = (await counts()).cash;
+    const correctionKey = randomUUID();
+    const correctionRequest = { annulmentType: 'DATA_CORRECTION' as const,
+      disbursementResolution: 'NOT_DELIVERED' as const, reason: 'TEST incorrect refinancing data',
+      idempotencyKey: correctionKey };
+    const result = await annulments.annul(first.id, correctionRequest, ids.actor);
+    const replay = await annulments.annul(first.id, correctionRequest, ids.actor);
+    expect(replay.annulmentId).toBe(result.annulmentId);
+    expect(result).toMatchObject({ annulmentType: 'DATA_CORRECTION', effectiveDate: day,
+      originLoan: { id, status: 'ACTIVE' }, successorLoan: { id: first.newLoanId, status: 'ANNULLED' } });
+    expect(result.cashMovementId).not.toBeNull();
+    expect((await counts()).cash).toBe(beforeCash + 1);
+    const [correction] = await db.query(`SELECT direction,concept,amount::text,movement_date::text AS date,
+      payment_method_id AS method,reversed_movement_id AS original FROM cash_movements WHERE id=$1`, [result.cashMovementId]);
+    expect(correction).toEqual({ direction: 'INFLOW', concept: 'REVERSAL', amount: '50000.00', date: day,
+      method: ids.method, original: first.cashMovementId });
+    const second = await refinancing.confirm(invoice(id, (await refinancing.preview(id)).baseline, randomUUID(),
+      '30000.00', '20000.00', '200000.00'), ids.actor);
+    expect(second.originLoanId).toBe(id);
+    const [cashNet] = await db.query(`SELECT
+      SUM(CASE WHEN direction='INFLOW' THEN amount ELSE -amount END)::text AS net,
+      COUNT(*) FILTER(WHERE direction='INFLOW' AND concept='REVERSAL')::int AS reversals,
+      COUNT(*) FILTER(WHERE direction='OUTFLOW' AND concept='REFINANCING_NEW_MONEY_DISBURSEMENT')::int AS outflows
+      FROM cash_movements WHERE id=ANY($1::uuid[])`, [[first.cashMovementId, result.cashMovementId, second.cashMovementId]]);
+    expect(cashNet).toEqual({ net: '-30000.00', reversals: 1, outflows: 2 });
+    const edges = await db.query(`SELECT status FROM loan_refinancings WHERE origin_loan_id=$1 ORDER BY created_at,id`, [id]);
+    expect(edges.map((row: { status: string }) => row.status).sort()).toEqual(['ANNULLED', 'CONFIRMED']);
+  });
+
+  it('records a full real cash refund with its receiving method and replays idempotently', async () => {
+    const { id } = await paidOrigin();
+    const edge = await refinancing.confirm(invoice(id, (await refinancing.preview(id)).baseline, randomUUID(),
+      '50000.00', '40000.00', '240000.00'), ids.actor);
+    const key = randomUUID();
+    const request = { annulmentType: 'CASH_REFUND' as const, effectiveDate: day,
+      disbursementResolution: 'RETURNED_IN_FULL' as const, refundPaymentMethodId: ids.refundMethod,
+      reason: 'TEST customer returned all new money', idempotencyKey: key };
+    const first = await annulments.annul(edge.id, request, ids.actor);
+    const replay = await annulments.annul(edge.id, request, ids.actor);
+    expect(replay.annulmentId).toBe(first.annulmentId);
+    const [cashRefund] = await db.query(`SELECT direction,concept,amount::text,movement_date::text AS date,
+      payment_method_id AS method FROM cash_movements WHERE refinancing_annulment_id=$1`, [first.annulmentId]);
+    expect(cashRefund).toEqual({ direction: 'INFLOW', concept: 'REVERSAL', amount: '50000.00',
+      date: day, method: ids.refundMethod });
+    const [movement] = await db.query(`SELECT payment_id FROM cash_movements WHERE id=$1`, [first.cashMovementId]);
+    expect(movement.payment_id).toBeNull();
+  });
+
+  it('accepts a fully reconciled annulled successor payment but blocks a valid one', async () => {
+    const reconciledOrigin = await paidOrigin();
+    const reconciledEdge = await refinancing.confirm(invoice(reconciledOrigin.id,
+      (await refinancing.preview(reconciledOrigin.id)).baseline, randomUUID()), ids.actor);
+    const paymentReceipt = await payment.execute({ loanId: reconciledEdge.newLoanId, amount: '1000.00', paymentDate: day,
+      methodId: ids.method, collectorId: ids.collector, idempotencyKey: randomUUID() }, ids.actor);
+    await payment.annul(paymentReceipt.id as string, 'TEST reconcile successor payment', randomUUID(), ids.actor, 'DATA_CORRECTION');
+    await expect(annulments.annul(reconciledEdge.id, { annulmentType: 'DATA_CORRECTION',
+      reason: 'TEST corrected refinancing', idempotencyKey: randomUUID() }, ids.actor))
+      .resolves.toMatchObject({ refinancingId: reconciledEdge.id });
+
+    const validOrigin = await paidOrigin();
+    const validEdge = await refinancing.confirm(invoice(validOrigin.id,
+      (await refinancing.preview(validOrigin.id)).baseline, randomUUID()), ids.actor);
+    await payment.execute({ loanId: validEdge.newLoanId, amount: '1000.00', paymentDate: day,
+      methodId: ids.method, collectorId: ids.collector, idempotencyKey: randomUUID() }, ids.actor);
+    await expect(annulments.annul(validEdge.id, { annulmentType: 'DATA_CORRECTION',
+      reason: 'TEST blocked refinancing', idempotencyKey: randomUUID() }, ids.actor))
+      .rejects.toMatchObject({ reasonCode: 'VALID_SUCCESSOR_PAYMENT' });
+  });
+
+  it('serializes an annulment racing with a successor payment and leaves one valid outcome', async () => {
+    const { id } = await paidOrigin();
+    const edge = await refinancing.confirm(invoice(id, (await refinancing.preview(id)).baseline, randomUUID()), ids.actor);
+    const [annulment, successorPayment] = await Promise.allSettled([
+      annulments.annul(edge.id, { annulmentType: 'DATA_CORRECTION', reason: 'TEST concurrent correction',
+        idempotencyKey: randomUUID() }, ids.actor),
+      payment.execute({ loanId: edge.newLoanId, amount: '1000.00', paymentDate: day, methodId: ids.method,
+        collectorId: ids.collector, idempotencyKey: randomUUID() }, ids.actor),
+    ]);
+    expect([annulment, successorPayment].filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    const [state] = await db.query(`SELECT r.status AS edge, origin.status AS origin, successor.status AS successor,
+      (SELECT COUNT(*)::int FROM payments p WHERE p.loan_id=r.new_loan_id AND p.status='VALID') AS payments
+      FROM loan_refinancings r JOIN loans origin ON origin.id=r.origin_loan_id
+      JOIN loans successor ON successor.id=r.new_loan_id WHERE r.id=$1`, [edge.id]);
+    expect(state.edge === 'ANNULLED'
+      ? state.origin === 'ACTIVE' && state.successor === 'ANNULLED' && state.payments === 0
+      : state.edge === 'CONFIRMED' && state.origin === 'REFINANCED' && state.successor === 'ACTIVE' && state.payments === 1)
+      .toBe(true);
+    if (annulment.status === 'rejected') expect(annulment.reason).toBeInstanceOf(RefinancingAnnulmentConflictError);
   });
 });

@@ -26,10 +26,11 @@ const payment = (id: string, loanId: string, date: string, principal: string, in
     reversalDirection: null, reversalConcept: null };
 };
 const refinancing = (id: string, origin: string, successor: string, date: string, transferred: string,
-  capitalized: string, newMoney: string, principal: string): EconomicRefinancingFact => ({ refinancingId: id,
+  capitalized: string, newMoney: string, principal: string, lifecycle: Partial<EconomicRefinancingFact> = {}): EconomicRefinancingFact => ({ refinancingId: id,
   originLoanId: origin, newLoanId: successor, refinancingDate: date, createdAt: `${date}T12:00:00Z`,
   outstandingPrincipalTransferred: transferred, capitalizedOutstandingInterest: capitalized,
-  newMoneyDisbursed: newMoney, newContractualPrincipal: principal });
+  newMoneyDisbursed: newMoney, newContractualPrincipal: principal, status: 'CONFIRMED', annulmentType: null,
+  annulmentEffectiveDate: null, ...lifecycle });
 const analyzed = (facts: EconomicProvenanceFacts, throughDate: string) => ({ provenance: analyzeEconomicPrincipalProvenance(facts, throughDate), facts });
 const openingFacts: EconomicProvenanceFacts = { loans: [loan('A', '100000.00', '20000.00', 'ACTIVE', '2026-01-01', '100000.00', 'LOAN_DISBURSEMENT')],
   refinancings: [], payments: [payment('P-A', 'A', '2026-01-15', '72000.00', '0.00')] };
@@ -128,6 +129,54 @@ describe('financial close V2 economic model', () => {
     expect(values.get('RESULTADO_ECONOMICO_MES')).toBe('30000.00');
   });
 
+  it('reconciles a CASH_REFUND by restoring the origin, retiring the successor and reversing new money', () => {
+    const opening = analyzed(openingFacts, '2026-01-31');
+    const finalFacts: EconomicProvenanceFacts = {
+      loans: [
+        { ...februaryFacts.loans[0], status: 'ACTIVE' },
+        { ...februaryFacts.loans[1], status: 'ANNULLED', annulledDate: '2026-02-20', reversalId: 'refund-cash',
+          reversalAmount: '52000.00', reversalDate: '2026-02-20', reversalMethodId: 'cash',
+          reversalDirection: 'INFLOW', reversalConcept: 'REVERSAL' },
+      ],
+      refinancings: [refinancing('R-AB', 'A', 'B', '2026-02-10', '28000.00', '20000.00', '52000.00', '100000.00', {
+        status: 'ANNULLED', annulmentType: 'CASH_REFUND', annulmentEffectiveDate: '2026-02-20',
+      })],
+      payments: openingFacts.payments,
+    };
+    const final = analyzed(finalFacts, '2026-02-28');
+    const result = calculateFinancialClose({ period: '2026-02', openingDate: '2026-01-01', initialAvailableAmount: '100000.00',
+      initialPortfolio: '0.00', initialUncollectibleAmount: '0.00', openingEconomic: opening, finalEconomic: final,
+      profitability: profitability('2026-02', final),
+      cashFacts: [cashFact('OUTFLOW', 'REFINANCING_NEW_MONEY_DISBURSEMENT', '52000.00', '2026-02-10'),
+        cashFact('INFLOW', 'REVERSAL', '52000.00', '2026-02-20', 'REFINANCING_NEW_MONEY_DISBURSEMENT')],
+      cashBalances: { opening: '72000.00', closing: '72000.00' }, statusTransitions: [] });
+    const values = concepts(result);
+
+    expect(result.modelVersion).toBe(3);
+    expect(values.get('SALDO_ORIGEN_RESTAURADO_ANULACION_REFINANCIACION')).toBe('48000.00');
+    expect(values.get('SALDO_SUCESOR_RETIRADO_ANULACION_REFINANCIACION')).toBe('120000.00');
+    expect(values.get('DINERO_NUEVO_REVERTIDO_ANULACION_REFINANCIACION')).toBe('52000.00');
+    expect(values.get('CARTERA_CONTRACTUAL_TOTAL_FINAL')).toBe('48000.00');
+    expect(values.get('CAPITAL_ECONOMICO_FINAL')).toBe('28000.00');
+    expect(result.integrity).toMatchObject({ status: 'COMPLETE', blockingIssues: [] });
+  });
+
+  it('nets a same-date DATA_CORRECTION disbursement reversal without inventing a physical refund', () => {
+    const opening = analyzed(openingFacts, '2026-01-31');
+    const final = analyzed(openingFacts, '2026-02-28');
+    const result = calculateFinancialClose({ period: '2026-02', openingDate: '2026-01-01',
+      initialAvailableAmount: '100000.00', initialPortfolio: '0.00', initialUncollectibleAmount: '0.00',
+      openingEconomic: opening, finalEconomic: final, profitability: profitability('2026-02', final),
+      cashFacts: [cashFact('OUTFLOW', 'REFINANCING_NEW_MONEY_DISBURSEMENT', '52000.00', '2026-02-10'),
+        cashFact('INFLOW', 'REVERSAL', '52000.00', '2026-02-10', 'REFINANCING_NEW_MONEY_DISBURSEMENT')],
+      cashBalances: { opening: '72000.00', closing: '72000.00' }, statusTransitions: [] });
+    const values = concepts(result);
+    expect(values.get('DESEMBOLSOS_DINERO_NUEVO_REFINANCIACION')).toBe('0.00');
+    expect(values.get('AJUSTE_CAPITAL_ECONOMICO')).toBe('-52000.00');
+    expect(values.get('VARIACION_CONCILIACION_CAJA')).toBe('0.00');
+    expect(result.integrity).toMatchObject({ status: 'COMPLETE', blockingIssues: [] });
+  });
+
   it('enforces ended periods, sequence, transactional recalculation and blocking integrity', async () => {
     const opening = analyzed(openingFacts, '2026-01-31'); const final = analyzed(februaryFacts, '2026-02-28');
     const source: FinancialCloseSourceSnapshot = { opening: { openingDate: '2026-01-01', initialAvailableAmount: '100000.00',
@@ -144,7 +193,7 @@ describe('financial close V2 economic model', () => {
     const useCases = new FinancialCloseUseCases(store, () => '2026-04-01');
     await expect(useCases.preview('2026-04')).rejects.toThrow(FinancialCloseValidationError);
     await expect(useCases.preview('2026-01')).rejects.toThrow(FinancialCloseConflictError);
-    await expect(useCases.confirm('2026-02', 'actor')).resolves.toMatchObject({ sequence: 2, modelVersion: 2 });
+    await expect(useCases.confirm('2026-02', 'actor')).resolves.toMatchObject({ sequence: 2, modelVersion: 3 });
     expect(tx.lock).toHaveBeenCalled(); expect(tx.source).toHaveBeenCalledWith('2026-02-01', '2026-02-28');
     const broken = structuredClone(source); broken.cashBalances.closing = '20001.00';
     (tx.source as jest.Mock).mockResolvedValueOnce(broken);

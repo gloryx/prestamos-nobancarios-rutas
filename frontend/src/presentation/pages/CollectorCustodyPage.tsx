@@ -1,0 +1,74 @@
+import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react';
+import { collectorCustody } from '../../app/collector-custody';
+import { collectorUseCases } from '../../app/collectors';
+import type { Collector } from '../../domain/entities/collector';
+import type { CollectorCustodyDirection, CollectorCustodyEntry, CollectorCustodySummary } from '../../domain/entities/collector-custody';
+import { costaRicaDateOnly, formatDateOnlyForDisplay, formatDateTimeForDisplay } from '../../shared/utils/date';
+import { formatCRC } from '../../shared/utils/money';
+import { MoneyInput } from '../components/MoneyInput';
+import { useAuth } from '../hooks/auth-context';
+import { allowedOperationalDate, errorMessage, positiveMoney, retryKeyFor, type RetryKeyState } from '../helpers/stage3b';
+import { custodyOperationsFor, type CustodyOperation } from '../helpers/stage3b-actions';
+
+type Operation = CustodyOperation;
+const entryLabels: Record<CollectorCustodyEntry['entryType'], string> = { CUSTOMER_COLLECTION: 'Cobro recibido y bajo custodia', REMITTANCE_TO_COMPANY: 'Remesa entregada a la empresa', COMPANY_TOP_UP: 'Aporte de la empresa', AUTHORIZED_ADJUSTMENT: 'Ajuste autorizado', REVERSAL: 'Reversión', LOAN_DISBURSEMENT: 'Desembolso de préstamo' };
+
+function walletMovementDetail(entry: CollectorCustodyEntry): string {
+  if (entry.reason) return entry.reason;
+  if (entry.reference) return `Referencia: ${entry.reference}`;
+  if (entry.notes) return entry.notes;
+  return entry.entryType === 'CUSTOMER_COLLECTION' ? 'Cobro registrado bajo custodia.' : 'Sin detalle adicional registrado.';
+}
+
+type CollectorWalletContentProps = {
+  summary?: CollectorCustodySummary;
+  entries: CollectorCustodyEntry[];
+  loading: boolean;
+  error: string;
+  onRetry: () => void;
+};
+
+export function CollectorWalletContent({ summary, entries, loading, error, onRetry }: CollectorWalletContentProps): ReactElement {
+  if (loading) return <div className="catalog-message" role="status">Cargando Mi billetera…</div>;
+  if (!summary) return <div className="catalog-message catalog-message--error" role="alert"><strong>No pudimos cargar Mi billetera.</strong><span>{error || 'No hay información de custodia disponible.'}</span><button className="button button--secondary" type="button" onClick={onRetry}>Reintentar</button></div>;
+  const entryCount = entries.filter((entry) => entry.direction === 'CREDIT').length;
+  const exitCount = entries.filter((entry) => entry.direction === 'DEBIT').length;
+  return <>
+    {error && <div className="catalog-message catalog-message--error" role="alert">{error}</div>}
+    <section className="wallet-balance" aria-labelledby="wallet-balance-title">
+      <span className="wallet-balance__caption">CUSTODIA REGISTRADA</span>
+      <h2 id="wallet-balance-title">Saldo registrado bajo tu responsabilidad</h2>
+      <strong className="wallet-balance__amount">{formatCRC(summary.declaredBalance)}</strong>
+      <p>Este importe refleja movimientos registrados en custodia. No confirma efectivo físico, conciliación administrativa ni saldo bancario disponible.</p>
+    </section>
+    <div className="wallet-activity" aria-label="Resumen de movimientos registrados">
+      <article><span>Entradas registradas</span><strong>{entryCount}</strong></article>
+      <article><span>Salidas registradas</span><strong>{exitCount}</strong></article>
+    </div>
+    <section className="stage3b__panel wallet-history" aria-labelledby="wallet-history-title">
+      <div className="wallet-history__heading"><div><span className="wallet-balance__caption">TRAZABILIDAD</span><h2 id="wallet-history-title">Historial de movimientos</h2></div><span>{entries.length} {entries.length === 1 ? 'movimiento' : 'movimientos'}</span></div>
+      {!entries.length ? <p className="stage3b__message">Todavía no hay entradas ni salidas registradas en tu custodia.</p> : <div className="stage3b__movement-list">{entries.map((entry) => <article key={entry.id} className="stage3b-movement wallet-movement"><span className={`stage3b-movement__direction stage3b-movement__direction--${entry.direction.toLowerCase()}`}>{entry.direction === 'CREDIT' ? 'Entrada' : 'Salida'}</span><div className="wallet-movement__detail"><strong>{entryLabels[entry.entryType]}</strong><span>{formatDateOnlyForDisplay(entry.effectiveDate)}</span><small>{walletMovementDetail(entry)}</small></div><strong>{entry.direction === 'CREDIT' ? '+' : '−'}{formatCRC(entry.amount)}</strong></article>)}</div>}
+    </section>
+  </>;
+}
+
+export function CollectorCustodyPage(): ReactElement { return <CustodyView mine />; }
+export function CustodyManagementPage(): ReactElement { return <CustodyView mine={false} />; }
+
+function CustodyView({ mine }: { mine: boolean }): ReactElement {
+  const { can } = useAuth(); const [collectorId, setCollectorId] = useState(''); const [collectors, setCollectors] = useState<Collector[]>([]);
+  const [summary, setSummary] = useState<CollectorCustodySummary>(); const [entries, setEntries] = useState<CollectorCustodyEntry[]>([]); const [loading, setLoading] = useState(true); const [error, setError] = useState('');
+  const [operation, setOperation] = useState<Operation>(); const [busy, setBusy] = useState(false); const retry = useRef<RetryKeyState | undefined>(undefined);
+  const [form, setForm] = useState({ amount: '', date: costaRicaDateOnly(), paymentMethodId: '', reference: '', reason: '', notes: '', direction: 'CREDIT' as CollectorCustodyDirection });
+  useEffect(() => { if (!mine && can('collectors.view')) void collectorUseCases.list.execute({ search: '', status: 'ACTIVE', page: 1, pageSize: 50 }).then((result) => setCollectors(result.items)).catch(() => setCollectors([])); }, [can, mine]);
+  const load = useCallback(async () => { if (!mine && !collectorId) { setSummary(undefined); setEntries([]); setLoading(false); return; } setLoading(true); setError(''); try { const target = mine ? undefined : collectorId; const [nextSummary, nextEntries] = await Promise.all([collectorCustody.summary(target), collectorCustody.movements(target)]); setSummary(nextSummary); setEntries(nextEntries); } catch (cause) { setError(errorMessage(cause, 'No se pudo cargar la custodia.')); } finally { setLoading(false); } }, [collectorId, mine]);
+  useEffect(() => { void load(); }, [load]);
+  const open = (value: Operation) => { setOperation(value); setForm({ amount: '', date: costaRicaDateOnly(), paymentMethodId: '', reference: '', reason: '', notes: '', direction: 'CREDIT' }); retry.current = undefined; setError(''); };
+  const save = async () => { if (!operation || busy) return; const amount = positiveMoney(form.amount); if (!amount || !allowedOperationalDate(form.date) || !form.paymentMethodId.trim() || !form.reference.trim() || !form.reason.trim()) { setError('Completá monto, fecha, forma de pago, referencia y motivo con valores válidos.'); return; } const request = { collectorId: mine ? undefined : collectorId, amount, effectiveDate: form.date, paymentMethodId: form.paymentMethodId.trim(), reference: form.reference.trim(), reason: form.reason.trim(), notes: form.notes.trim() || undefined }; const fingerprint = { operation, ...request, ...(operation === 'adjust' ? { direction: form.direction } : {}) }; const key = retryKeyFor(fingerprint, retry.current); retry.current = key; setBusy(true); setError(''); try { const input = { ...request, idempotencyKey: key.key }; if (operation === 'adjust') await collectorCustody.adjust({ ...input, direction: form.direction }); else if (operation === 'topUp') await collectorCustody.topUp(input); else await collectorCustody.remit(input); setOperation(undefined); retry.current = undefined; await load(); } catch (cause) { setError(errorMessage(cause, 'No se pudo registrar el movimiento de custodia.')); } finally { setBusy(false); } };
+  const permissions = custodyOperationsFor(mine, can);
+  return <section className={`stage3b ${mine ? 'stage3b--collector wallet' : 'stage3b--admin'}`} aria-labelledby="custody-title"><header className="stage3b__heading"><div><span className="eyebrow">{mine ? 'COBRADOR' : 'CUSTODIA'}</span><h1 id="custody-title">{mine ? 'Mi billetera' : 'Custodia de cobradores'}</h1><p>{mine ? 'Consultá tu saldo registrado de custodia y el detalle de las entradas y salidas asociadas a tu usuario.' : 'Resumen e historial completo del cobrador seleccionado. El servidor no ofrece filtros ni paginación para este historial.'}</p></div><div className="stage3b__actions">{permissions.map((entry) => <button className="button button--primary" type="button" disabled={!mine && !collectorId} key={entry.operation} onClick={() => open(entry.operation)}>{entry.label}</button>)}</div></header>
+    {!mine && <div className="stage3b__filters"><label>Cobrador<select value={collectorId} onChange={(event) => setCollectorId(event.target.value)}><option value="">Seleccionar</option>{collectors.map((collector) => <option value={collector.id} key={collector.id}>{collector.firstName} {collector.firstLastName} · {collector.identification}</option>)}</select></label>{!can('collectors.view') && <label>ID de cobrador<input value={collectorId} placeholder="Identificador exacto" onChange={(event) => setCollectorId(event.target.value)} /></label>}</div>}
+    {mine ? <CollectorWalletContent summary={summary} entries={entries} loading={loading} error={error} onRetry={() => void load()} /> : <>{error && <div className="catalog-message catalog-message--error" role="alert">{error}</div>}{loading ? <div className="catalog-message">Cargando custodia…</div> : !collectorId ? <div className="catalog-message">Seleccioná un cobrador para consultar su custodia.</div> : <>{summary && <div className="stage3b__summary"><article><span>Saldo declarado</span><strong>{formatCRC(summary.declaredBalance)}</strong></article><article><span>Saldo confirmado</span><strong>{formatCRC(summary.confirmedBalance)}</strong></article><article><span>Pendiente</span><strong>{formatCRC(summary.pendingAmount)}</strong></article><article><span>Diferencia</span><strong>{formatCRC(summary.differenceAmount)}</strong></article></div>}<section className="stage3b__panel"><h2>Historial de movimientos</h2>{!entries.length ? <p className="stage3b__message">No hay movimientos de custodia registrados.</p> : <div className="stage3b__movement-list">{entries.map((entry) => <article key={entry.id} className="stage3b-movement"><span className={`stage3b-movement__direction stage3b-movement__direction--${entry.direction.toLowerCase()}`}>{entry.direction === 'CREDIT' ? 'Entrada' : 'Salida'}</span><div><strong>{entryLabels[entry.entryType] ?? entry.entryType}</strong><span>{formatDateOnlyForDisplay(entry.effectiveDate)} · creado {formatDateTimeForDisplay(entry.createdAt)}</span><small>{entry.entryType === 'CUSTOMER_COLLECTION' ? 'Dinero recibido por el cobrador; los cobros directos a empresa no generan esta entrada.' : entry.reason || entry.reference || 'Sin detalle adicional'}</small></div><strong>{entry.direction === 'CREDIT' ? '+' : '−'}{formatCRC(entry.amount)}</strong></article>)}</div>}</section></>}</>}
+    {operation && <div className="dialog-backdrop"><div className="dialog stage3b-dialog" role="dialog" aria-modal="true" aria-labelledby="custody-operation-title"><h3 id="custody-operation-title">{operation === 'remit' ? 'Registrar remesa a la empresa' : operation === 'topUp' ? 'Registrar aporte de la empresa' : 'Registrar ajuste autorizado'}</h3><p>Esta pantalla no permite registrar desembolsos de préstamos.</p>{operation === 'adjust' && <label>Dirección<select value={form.direction} onChange={(event) => setForm({ ...form, direction: event.target.value as CollectorCustodyDirection })}><option value="CREDIT">Entrada</option><option value="DEBIT">Salida</option></select></label>}<label>Monto<MoneyInput value={form.amount} onChange={(amount) => setForm({ ...form, amount })} /></label><label>Fecha efectiva<input type="date" max={costaRicaDateOnly()} value={form.date} onChange={(event) => setForm({ ...form, date: event.target.value })} /></label><label>ID de forma de pago<input value={form.paymentMethodId} onChange={(event) => setForm({ ...form, paymentMethodId: event.target.value })} /></label><label>Referencia<input value={form.reference} onChange={(event) => setForm({ ...form, reference: event.target.value })} /></label><label>Motivo<input value={form.reason} onChange={(event) => setForm({ ...form, reason: event.target.value })} /></label><label>Notas (opcional)<textarea value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} /></label><div className="dialog-actions"><button className="button button--secondary" disabled={busy} onClick={() => setOperation(undefined)}>Volver</button><button className="button button--primary" disabled={busy} onClick={() => void save()}>{busy ? 'Registrando…' : 'Registrar movimiento'}</button></div></div></div>}
+    </section>;
+}

@@ -25,6 +25,15 @@ export async function seedSecurity(manager: EntityManager): Promise<void> {
   await addMissingDefaults(managerRole.id, COLLECTION_MANAGER_DEFAULTS);
   const collectorRole = await roleRepository.findOneByOrFail({ code: 'COLLECTOR' });
   await addMissingDefaults(collectorRole.id, COLLECTOR_DEFAULTS);
+  const collectorModulePermissions = await permissionRepository.findBy({ code: In(PERMISSIONS.map(([code]) => code)
+    .filter((code) => code.startsWith('collector-precollections.') || code.startsWith('collector-settlements.')
+      || code.startsWith('collector-custody.'))) });
+  const authorizedCollectorCodes = new Set<string>(COLLECTOR_DEFAULTS);
+  const unauthorizedCollectorPermissionIds = collectorModulePermissions
+    .filter((permission) => !authorizedCollectorCodes.has(permission.code)).map((permission) => permission.id);
+  if (unauthorizedCollectorPermissionIds.length) {
+    await rolePermissionRepository.delete({ roleId: collectorRole.id, permissionId: In(unauthorizedCollectorPermissionIds) });
+  }
   const username = (process.env.BOOTSTRAP_ADMIN_USERNAME ?? 'admin').trim().toLowerCase();
   const existing = await manager.getRepository(UserOrmEntity).createQueryBuilder('u').where('lower(u.username) = :username', { username }).getOne();
   const admin = await roleRepository.findOneByOrFail({ code: 'ADMIN' });

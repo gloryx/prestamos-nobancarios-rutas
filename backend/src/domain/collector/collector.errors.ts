@@ -5,3 +5,6 @@ export class CollectorUserAlreadyLinkedError extends Error { constructor() { sup
 export class CollectorUserNotEligibleError extends Error { constructor() { super('El usuario debe estar activo y tener el rol COBRADOR.'); this.name = 'CollectorUserNotEligibleError'; } }
 export class CollectorUnauthorizedAssociationError extends Error { constructor() { super('No tiene permiso para vincular usuarios a cobradores.'); this.name = 'CollectorUnauthorizedAssociationError'; } }
 export class CollectorPhotoNotFoundError extends Error { constructor() { super('La fotografía del cobrador no existe.'); this.name = 'CollectorPhotoNotFoundError'; } }
+export class CollectorReassignmentConflictError extends Error {
+  constructor(message: string, readonly reasonCode: string) { super(message); this.name = 'CollectorReassignmentConflictError'; }
+}

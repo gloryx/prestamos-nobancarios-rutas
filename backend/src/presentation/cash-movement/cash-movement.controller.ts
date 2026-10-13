@@ -25,6 +25,16 @@ export class CashMovementController {
   @Get('profitability/payments') @RequirePermissions('cash-movements.view') async getProfitabilityPayments(@Query() query: ProfitabilityPaymentQueryDto) { return this.profitability!.payments(query.period, this.profitabilityPage(query), { source: query.source, loanId: query.loanId, rootLoanId: query.rootLoanId }); }
   @Post() @HttpCode(HttpStatus.CREATED) @RequirePermissions('cash-movements.create') async createMovement(@Body() body: CreateCashMovementDto, @CurrentUser() actor: CurrentIdentity) { try { return response(await this.create.execute(body as never, actor.id)); } catch (error) { this.mapError(error); } }
   @Post(':id/reverse') @HttpCode(HttpStatus.CREATED) @RequirePermissions('cash-movements.reverse') async reverseMovement(@Param('id') id: string, @Body() body: ReverseCashMovementDto, @CurrentUser() actor: CurrentIdentity) { try { return response(await this.reverse.execute(id, body, actor.id)); } catch (error) { this.mapError(error); } }
-  private mapError(error: unknown): never { if (error instanceof CashMovementConflictError) throw new ConflictException(error.message); if (error instanceof CashMovementValidationError) throw new BadRequestException(error.message); if (error instanceof CashMovementNotFoundError) throw new BadRequestException(error.message); throw error; }
+  private mapError(error: unknown): never {
+    if (error instanceof CashMovementConflictError) throw new ConflictException({ message: error.message,
+      errorCode: error.reasonCode === 'CLOSED_FINANCIAL_PERIOD' ? 'CLOSED_FINANCIAL_PERIOD' : 'RESOURCE_STATE_CONFLICT',
+      reasonCode: error.reasonCode });
+    if (error instanceof CashMovementValidationError) throw new BadRequestException({ message: error.message,
+      errorCode: 'VALIDATION_FAILED', reasonCode: error.reasonCode,
+      ...(error.field && { data: { fields: [{ field: error.field, codes: [error.reasonCode], message: error.message }] } }) });
+    if (error instanceof CashMovementNotFoundError) throw new BadRequestException({ message: error.message,
+      errorCode: 'VALIDATION_FAILED', reasonCode: 'CASH_MOVEMENT_NOT_FOUND' });
+    throw error;
+  }
   private profitabilityPage(query: ProfitabilityQueryDto) { return { page: query.page ?? 1, pageSize: query.pageSize ?? 20 as 10 | 20 | 50 }; }
 }

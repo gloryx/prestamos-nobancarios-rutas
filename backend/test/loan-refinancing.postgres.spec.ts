@@ -115,7 +115,7 @@ suite('refinancing on an isolated PostgreSQL 18 cluster', () => {
     const [state] = await db.query(`SELECT (SELECT COUNT(*)::int FROM migrations) AS migrations,
       (SELECT COUNT(*)::int FROM loans) AS loans, (SELECT COUNT(*)::int FROM payments) AS payments,
       (SELECT COUNT(*)::int FROM customers) AS customers, (SELECT COUNT(*)::int FROM loan_refinancings) AS refinancings`);
-    if (Object.entries(state).some(([name, count]) => count !== (name === 'migrations' ? 25 : 0))) {
+    if (Object.entries(state).some(([name, count]) => count !== (name === 'migrations' ? 28 : 0))) {
       throw new Error('Refinancing tests require all migrations and zero business rows.');
     }
     cash = new CashMovementTypeOrmRepository(db.getRepository(CashMovementOrmEntity), db);

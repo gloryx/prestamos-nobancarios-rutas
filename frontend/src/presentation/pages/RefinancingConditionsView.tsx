@@ -111,8 +111,11 @@ export function RefinancingConditionsView({ state, controller, onBack, onContinu
       {state.optionsLoaded && (!conditions.paymentFrequencyId || !draft.methodsValid) &&
         <p className="refinancing-conditions__warning">Selecciona una periodicidad y las formas de pago requeridas.</p>}
       {draft.plan.length > 0 && (!draft.planValid || draft.difference !== 0n) &&
-        <p className="refinancing-conditions__warning">{paymentPlanDateIssueMessage(draft.planDateIssue) ??
-          'Las cuotas deben ser positivas, tener fechas posteriores en orden y sumar exactamente el nuevo total.'}</p>}
+        <p className="refinancing-conditions__warning">{conditions.mode === 'personalized' ?
+          `El plan personalizado se conservó, pero requiere correcciones antes de continuar. ${paymentPlanDateIssueMessage(draft.planDateIssue) ??
+            'Las cuotas deben ser positivas, tener fechas posteriores en orden y sumar exactamente el nuevo total.'}` :
+          paymentPlanDateIssueMessage(draft.planDateIssue) ??
+            'Las cuotas deben ser positivas, tener fechas posteriores en orden y sumar exactamente el nuevo total.'}</p>}
     </>}
     <section className="loan-confirmation__disbursement" aria-label="Desembolso real">
       <h3>DESEMBOLSO REAL</h3><strong>{newMoney !== null ? formatCRC(conditions.newMoney) : '—'}</strong>

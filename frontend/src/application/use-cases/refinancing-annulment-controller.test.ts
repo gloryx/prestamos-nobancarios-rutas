@@ -66,7 +66,7 @@ describe('RefinancingAnnulmentController', () => {
     vi.mocked(api.annul).mockRejectedValueOnce(Object.assign(new Error('SQL internals'), { status: 409 }));
     expect(await controller.submit()).toBe(false);
     expect(api.listCandidates).toHaveBeenCalledTimes(2);
-    expect(controller.getSnapshot().attempt?.error).toBe('La elegibilidad cambió. Revisa los datos actualizados.');
+    expect(controller.getSnapshot().attempt?.error).toBe('La elegibilidad cambió mientras realizabas la operación. Revisa los datos actualizados.');
   });
 
   it('blocks a positive correction until non-delivery is confirmed and sends that exact resolution', async () => {

@@ -54,6 +54,6 @@ import { AssignedLoansTypeormReader } from '../../infrastructure/database/typeor
   { provide: ANNUL_LOAN_WRITER, inject: [DataSource], useFactory: (ds: DataSource) => new AnnulLoanTypeormWriter(ds) },
   { provide: AnnulLoanUseCase, inject: [ANNUL_LOAN_WRITER, LOAN_FINANCIAL_TOTALS_READER], useFactory: (writer: AnnulLoanWriter, totals: LoanFinancialTotalsReader) => new AnnulLoanUseCase(writer, totals) },
   { provide: ExportActiveLoansUseCase, inject: [DataSource], useFactory: (ds: DataSource) => new ExportActiveLoansUseCase(new ActiveLoanExportTypeormReader(ds) as ActiveLoanExportReader) },
-  { provide: ASSIGNED_LOANS_READER, inject: [DataSource], useFactory: (ds: DataSource) => new AssignedLoansTypeormReader(ds) },
+  { provide: ASSIGNED_LOANS_READER, inject: [DataSource, LOAN_FINANCIAL_TOTALS_READER], useFactory: (ds: DataSource, totals: LoanFinancialTotalsReader) => new AssignedLoansTypeormReader(ds, totals) },
   { provide: AssignedLoansUseCase, inject: [ASSIGNED_LOANS_READER], useFactory: (reader: AssignedLoansReader) => new AssignedLoansUseCase(reader) },
 ] }) export class LoanModule {}

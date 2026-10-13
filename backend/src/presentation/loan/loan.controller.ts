@@ -16,7 +16,7 @@ import { ListAnnulledLoansUseCase, AnnulledLoansIntegrityError, AnnulledLoansVal
 import { PaymentConflictError, PaymentValidationError } from '../../application/payment/payment.errors';
 import { AnnulledLoansQueryDto, AnnulLoanDto, CancelledLoansQueryDto, CreateLoanDto, LoanEditDto, LoanListQueryDto, MarkUncollectibleDto, OverdueLoansQueryDto, ReactivateLoanDto, UncollectibleLoansQueryDto } from './loan.dto';
 import { ActiveLoanExportIntegrityError, ExportActiveLoansUseCase } from '../../application/loan/export-active-loans.use-case';
-import { AssignedLoansForbiddenError, AssignedLoansUseCase, AssignedLoansValidationError } from '../../application/loan/assigned-loans.use-case';
+import { AssignedLoansForbiddenError, AssignedLoansIntegrityError, AssignedLoansUseCase, AssignedLoansValidationError } from '../../application/loan/assigned-loans.use-case';
 import { AssignedLoanListQueryDto } from './loan.dto';
 @Controller('loans') export class LoanController {
   constructor(private readonly create: CreateLoanUseCase, private readonly list: ListLoansUseCase, private readonly customers: ListActiveLoanCustomersUseCase, private readonly cancelled: ListCancelledLoansUseCase, private readonly markUncollectible: MarkUncollectibleUseCase, private readonly reactivateLoan: ReactivateLoanUseCase, private readonly overdue?: ListOverdueLoansUseCase, private readonly uncollectible?: ListUncollectibleLoansUseCase, private readonly edit?: EditLoanUseCase, private readonly editContext?: GetLoanEditContextUseCase, @Optional() private readonly annulList?: ListAnnulledLoansUseCase, @Optional() private readonly annul?: AnnulLoanUseCase, @Optional() private readonly exportActive?: ExportActiveLoansUseCase, @Optional() private readonly assigned?: AssignedLoansUseCase) {}
@@ -29,7 +29,7 @@ import { AssignedLoanListQueryDto } from './loan.dto';
     try { return await this.assigned!.detail(id, actor); }
     catch (error) { return this.mapAssigned(error); }
   }
-  private mapAssigned(error: unknown): never { if (error instanceof AssignedLoansValidationError) throw new BadRequestException(error.message); if (error instanceof AssignedLoansForbiddenError) throw new ForbiddenException(error.message); throw error; }
+  private mapAssigned(error: unknown): never { if (error instanceof AssignedLoansValidationError) throw new BadRequestException(error.message); if (error instanceof AssignedLoansForbiddenError) throw new ForbiddenException(error.message); if (error instanceof AssignedLoansIntegrityError) throw new InternalServerErrorException('No se pudo reconciliar el saldo operativo del préstamo.'); throw error; }
   @Get() @RequirePermissions('loans.view') listLoans(@Query() query: LoanListQueryDto) { return this.list.execute({ page: Math.max(1, Number(query.page) || 1), pageSize: Math.min(100, Math.max(20, Number(query.pageSize) || 20)), search: query.search, frequencyId: query.frequencyId, fromDate: query.fromDate, toDate: query.toDate, sortBy: query.sortBy, sortOrder: query.sortOrder }); }
   @Get('summary') @RequirePermissions('loans.view') async activeLoanSummary() {
     return this.readActivePortfolio(() => this.exportActive!.executeSummary());
@@ -96,9 +96,12 @@ import { AssignedLoanListQueryDto } from './loan.dto';
   @Post(':id/annul') @RequirePermissions('loans.status.annul') async annulLoan(@Param('id', new ParseUUIDPipe()) id: string, @Body() body: AnnulLoanDto, @CurrentUser() actor: CurrentIdentity) {
     try { return await this.annul!.execute(id, body, actor.id); }
     catch (error) {
-      if (error instanceof AnnulLoanValidationError) throw new BadRequestException(error.message);
+      if (error instanceof AnnulLoanValidationError) throw new BadRequestException({ message: error.message,
+        errorCode: 'VALIDATION_FAILED', reasonCode: error.reasonCode,
+        ...(error.field && { data: { fields: [{ field: error.field, codes: [error.reasonCode], message: error.message }] } }) });
       if (error instanceof AnnulLoanNotFoundError) throw new NotFoundException(error.message);
-      if (error instanceof AnnulLoanConflictError) throw new ConflictException(error.message);
+      if (error instanceof AnnulLoanConflictError) throw new ConflictException({ message: error.message,
+        errorCode: 'RESOURCE_STATE_CONFLICT', reasonCode: error.reasonCode });
       if (error instanceof AnnulLoanIntegrityError) throw new InternalServerErrorException(error.message);
       throw new InternalServerErrorException('No se pudo anular el préstamo.');
     }

@@ -48,6 +48,10 @@ import { CollectorLoansPage } from '../pages/CollectorLoansPage';
 import { CollectorDailyCollectionsPage } from '../pages/DailyCollectionsPage';
 import { CollectorFinancialSummaryPage } from '../pages/CollectorFinancialSummaryPage';
 import { CustomerAgendaPage } from '../pages/CustomerAgendaPage';
+import { CollectorPrecollectionCapturePage } from '../pages/CollectorPrecollectionCapturePage';
+import { CollectorPrecollectionsPage, PrecollectionManagementPage } from '../pages/CollectorPrecollectionsPage';
+import { CollectorSettlementsPage, SettlementManagementPage } from '../pages/CollectorSettlementsPage';
+import { CollectorCustodyPage, CustodyManagementPage } from '../pages/CollectorCustodyPage';
 
 export function AppRouter(): ReactElement {
   return <BrowserRouter><AuthProvider><Routes><Route path="/login" element={<LoginPage />} /><Route element={<RouteGuard><AppLayout /></RouteGuard>}>
@@ -67,11 +71,18 @@ export function AppRouter(): ReactElement {
      <Route path="/collector/loans" element={<RouteGuard permission="loans.assigned.view"><CollectorLoansPage /></RouteGuard>} />
      <Route path="/collector/financial-summary" element={<RouteGuard permission="collectors.financial-summary.view"><CollectorFinancialSummaryPage /></RouteGuard>} />
      <Route path="/collector/daily-collections" element={<RouteGuard permission="daily-collections.assigned.view"><CollectorDailyCollectionsPage /></RouteGuard>} />
+     <Route path="/collector/precollections/new" element={<RouteGuard anyPermissions={['collector-precollections.create']}><CollectorPrecollectionCapturePage /></RouteGuard>} />
+     <Route path="/collector/precollections" element={<RouteGuard anyPermissions={['collector-precollections.assigned.view']}><CollectorPrecollectionsPage /></RouteGuard>} />
+     <Route path="/collector/settlements" element={<RouteGuard anyPermissions={['collector-settlements.self.view', 'collector-settlements.self.create', 'collector-settlements.self.submit', 'collector-settlements.self.cancel']}><CollectorSettlementsPage /></RouteGuard>} />
+     <Route path="/collector/custody" element={<RouteGuard anyPermissions={['collector-custody.self.view', 'collector-custody.self.remit']}><CollectorCustodyPage /></RouteGuard>} />
       <Route path="/collectors/statistics" element={<RouteGuard permission="payments.view"><CollectorStatisticsPage /></RouteGuard>} />
       <Route path="/collectors/route-assignments" element={<RouteGuard permission="collectors.view"><RouteAssignmentsPage /></RouteGuard>} />
        <Route path="/collectors/customer-agenda" element={<RouteGuard anyPermissions={['customers.view', 'customers.assigned.view']}><CustomerAgendaPage /></RouteGuard>} />
       <Route path="/collectors/collection-agenda" element={<RouteGuard permission="collection-agenda.view"><CollectionAgendaPage /></RouteGuard>} />
       <Route path="/collectors" element={<RouteGuard permission="collectors.view"><CollectorsPage /></RouteGuard>} />
+      <Route path="/collector-precollections" element={<RouteGuard anyPermissions={['collector-precollections.view', 'collector-precollections.cancel']}><PrecollectionManagementPage /></RouteGuard>} />
+      <Route path="/collector-settlements" element={<RouteGuard anyPermissions={['collector-settlements.view', 'collector-settlements.create', 'collector-settlements.submit', 'collector-settlements.review', 'collector-settlements.confirm', 'collector-settlements.reject', 'collector-settlements.cancel']}><SettlementManagementPage /></RouteGuard>} />
+      <Route path="/collector-custody" element={<RouteGuard anyPermissions={['collector-custody.view', 'collector-custody.remit', 'collector-custody.topup', 'collector-custody.adjust']}><CustodyManagementPage /></RouteGuard>} />
     <Route path="/settings/provinces" element={<RouteGuard permission="territorial.view"><ProvincesPage /></RouteGuard>} />
     <Route path="/settings/cantons" element={<RouteGuard permission="territorial.view"><CantonsPage /></RouteGuard>} />
     <Route path="/settings/districts" element={<RouteGuard permission="territorial.view"><DistrictsPage /></RouteGuard>} />

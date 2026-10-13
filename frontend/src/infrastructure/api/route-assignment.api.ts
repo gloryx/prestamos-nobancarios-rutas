@@ -1,10 +1,11 @@
+import { ApiConnectionError } from '../../application/errors/application-error';
 import { RouteAssignmentRepositoryError, type RouteAssignmentRepository } from '../../application/ports/route-assignment.repository';
 import type { AssignmentBatchRequest, AssignmentBatchResult, AssignmentWorkspace, AssignmentWorkspaceQuery, CollectorRouteAssignmentInput, CustomerRouteAssignmentInput, RouteAssignmentOptions } from '../../domain/entities/route-assignment';
 import { apiClient, HttpApiError } from './api-client';
 
 const mapError = (error: unknown): never => {
   if (error instanceof HttpApiError) throw new RouteAssignmentRepositoryError(error.status === 409 ? 'CONFLICT' : error.status === 403 ? 'FORBIDDEN' : 'SERVER', error.message);
-  if (error instanceof TypeError) throw new RouteAssignmentRepositoryError('NETWORK', 'No fue posible conectar con el servidor.');
+  if (error instanceof ApiConnectionError) throw new RouteAssignmentRepositoryError('NETWORK', error.message);
   throw error;
 };
 

@@ -51,6 +51,25 @@ export function allocatePayment(amount: string, entries: PaymentAllocationEntry[
   const principalPending = ordered.reduce((sum, entry) => sum + cents(entry.principalPending), 0n);
   principalApplied = remainingAmount < principalPending ? remainingAmount : principalPending;
   interestApplied = remainingAmount - principalApplied;
+
+  const firstPositiveIndex = ordered.findIndex((entry) => cents(entry.principalPending) + cents(entry.interestPending) > 0n);
+  const firstPositive = ordered[firstPositiveIndex];
+  if (firstPositive) {
+    const firstPending = cents(firstPositive.principalPending) + cents(firstPositive.interestPending);
+    if (remainingAmount < firstPending) {
+      const next = ordered.slice(firstPositiveIndex + 1)
+        .find((entry) => cents(entry.principalPending) + cents(entry.interestPending) > 0n);
+      if (next) {
+        const nextPending = cents(next.principalPending) + cents(next.interestPending);
+        const carry = firstPending - remainingAmount;
+        return { principalApplied: money(principalApplied), interestApplied: money(interestApplied), applications: [
+          { planEntryId: firstPositive.id, amountApplied: money(remainingAmount), pendingBefore: money(firstPending), pendingAfter: '0.00', carriedForwardAmount: money(carry), carriedToPlanEntryId: next.id },
+          { planEntryId: next.id, amountApplied: '0.00', pendingBefore: money(nextPending), pendingAfter: money(nextPending + carry), carriedForwardAmount: '0.00', carriedToPlanEntryId: null },
+        ] };
+      }
+    }
+  }
+
   for (const entry of ordered) {
     if (remaining === 0n) break;
     const pendingBefore = cents(entry.principalPending) + cents(entry.interestPending);

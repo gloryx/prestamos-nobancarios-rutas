@@ -5,6 +5,7 @@ export type NavigationLink = {
   path: string;
   icon: NavigationIcon;
   requiredPermission?: string;
+  anyPermissions?: string[];
   activeExcludes?: string[];
 };
 
@@ -15,18 +16,32 @@ export type NavigationGroup = {
   icon: NavigationIcon;
   items: NavigationEntry[];
   requiredPermission?: string;
+  anyPermissions?: string[];
 };
 
 export type NavigationEntry = NavigationLink | NavigationGroup;
 
 export type NavigationIcon =
   | 'administration'
+  | 'calendar'
+  | 'collection-agenda'
+  | 'collections'
+  | 'create'
+  | 'custody'
   | 'dashboard'
+  | 'home'
+  | 'loan'
+  | 'portfolio'
+  | 'registered'
   | 'users'
   | 'roles'
   | 'location'
   | 'payment'
   | 'route'
+  | 'schedule'
+  | 'settlements'
+  | 'summary'
+  | 'wallet'
   | 'settings';
 
 export type NavigationPermissionChecker = (permission: string) => boolean;
@@ -43,6 +58,7 @@ export function filterNavigationEntries(
       : entry)
     .filter((entry) => {
       if (entry.requiredPermission && !can(entry.requiredPermission)) return false;
+      if (entry.anyPermissions?.length && !entry.anyPermissions.some(can)) return false;
       return entry.type === 'link' || entry.items.length > 0;
     });
 }
@@ -59,6 +75,21 @@ export function getActiveGroupIds(entries: NavigationEntry[], pathname: string):
     if (entry.type !== 'group' || !isNavigationEntryActive(entry, pathname)) return [];
     return [entry.id, ...getActiveGroupIds(entry.items, pathname)];
   });
+}
+
+export function getActiveNavigationLinkId(entries: NavigationEntry[], pathname: string): string | undefined {
+  const links = entries.flatMap((entry): NavigationLink[] => entry.type === 'link'
+    ? [entry]
+    : collectNavigationLinks(entry.items));
+  const matches = links.filter((entry) => isNavigationEntryActive(entry, pathname));
+
+  return matches.sort((left, right) => right.path.length - left.path.length)[0]?.id;
+}
+
+function collectNavigationLinks(entries: NavigationEntry[]): NavigationLink[] {
+  return entries.flatMap((entry) => entry.type === 'link'
+    ? [entry]
+    : collectNavigationLinks(entry.items));
 }
 
 export function toggleExpandedGroup(groupIds: string[], groupId: string): string[] {
@@ -93,7 +124,7 @@ export const navigationEntries: NavigationEntry[] = [
     path: '/dashboard',
     icon: 'dashboard',
   },
-  { id: 'loans', type: 'group', label: 'PRÉSTAMOS', icon: 'payment', items: [{ id: 'loans.list', type: 'link', label: 'Préstamos', path: '/loans', icon: 'payment', requiredPermission: 'loans.view' }, { id: 'loans.new', type: 'link', label: 'Nuevo préstamo', path: '/loans/new', icon: 'payment', requiredPermission: 'loans.create' }, { id: 'loans.cancelled', type: 'link', label: 'Préstamos cancelados', path: '/loans/cancelled', icon: 'payment', requiredPermission: 'loans.view' }, { id: 'loans.uncollectible', type: 'link', label: 'Préstamos incobrables', path: '/loans/uncollectible-management', icon: 'payment', requiredPermission: 'loans.view' }, { id: 'loans.annulments', type: 'link', label: 'Préstamos anulados', path: '/loans/annulments', icon: 'payment', requiredPermission: 'loans.view' }, { id: 'loans.refinancings', type: 'group', label: 'Refinanciamientos', icon: 'payment', requiredPermission: 'loans.refinance.view', items: [{ id: 'loans.refinancings.list', type: 'link', label: 'Refinanciamientos', path: '/loan-refinancings', icon: 'payment', requiredPermission: 'loans.refinance.view', activeExcludes: ['/loan-refinancings/new', '/loan-refinancings/chains', '/loan-refinancings/annulments'] }, { id: 'loans.refinancings.new', type: 'link', label: 'Nuevo refinanciamiento', path: '/loan-refinancings/new', icon: 'payment', requiredPermission: 'loans.refinance.view' }, { id: 'loans.refinancings.chains', type: 'link', label: 'Cadenas de refinanciamiento', path: '/loan-refinancings/chains', icon: 'payment', requiredPermission: 'loans.refinance.view' }, { id: 'loans.refinancings.annulments', type: 'link', label: 'Refinanciamientos anulados', path: '/loan-refinancings/annulments', icon: 'payment', requiredPermission: 'loans.refinance.view' }] }] },
+  { id: 'loans', type: 'group', label: 'PRÉSTAMOS', icon: 'payment', items: [{ id: 'loans.list', type: 'link', label: 'Préstamos', path: '/loans', icon: 'payment', requiredPermission: 'loans.view' }, { id: 'loans.new', type: 'link', label: 'Nuevo préstamo', path: '/loans/new', icon: 'payment', requiredPermission: 'loans.create' }, { id: 'loans.cancelled', type: 'link', label: 'Préstamos cancelados', path: '/loans/cancelled', icon: 'payment', requiredPermission: 'loans.view' }, { id: 'loans.uncollectible', type: 'link', label: 'Préstamos incobrables', path: '/loans/uncollectible-management', icon: 'payment', requiredPermission: 'loans.view' }, { id: 'loans.annulments', type: 'link', label: 'Préstamos anulados', path: '/loans/annulments', icon: 'payment', requiredPermission: 'loans.view' }, { id: 'loans.refinancings', type: 'group', label: 'Refinanciamientos', icon: 'payment', requiredPermission: 'loans.refinance.view', items: [{ id: 'loans.refinancings.list', type: 'link', label: 'Refinanciamientos', path: '/loan-refinancings', icon: 'payment', requiredPermission: 'loans.refinance.view', activeExcludes: ['/loan-refinancings/new', '/loan-refinancings/chains', '/loan-refinancings/annulments'] }, { id: 'loans.refinancings.new', type: 'link', label: 'Nuevo refinanciamiento', path: '/loan-refinancings/new', icon: 'payment', requiredPermission: 'loans.refinance.view' }, { id: 'loans.refinancings.chains', type: 'link', label: 'Cadenas de refinanciamiento', path: '/loan-refinancings/chains', icon: 'payment', requiredPermission: 'loans.refinance.view' }, { id: 'loans.refinancings.annulments', type: 'link', label: 'Ref. anulados', path: '/loan-refinancings/annulments', icon: 'payment', requiredPermission: 'loans.refinance.view' }] }] },
   {
     id: 'customers',
     type: 'group',
@@ -117,7 +148,10 @@ export const navigationEntries: NavigationEntry[] = [
        { id: 'collector.customer-agenda', type: 'link', label: 'Agenda de clientes', path: '/collectors/customer-agenda', icon: 'users', requiredPermission: 'customers.view' },
        { id: 'collector.collection-agenda', type: 'link', label: 'Agenda de cobros', path: '/collectors/collection-agenda', icon: 'payment', requiredPermission: 'collection-agenda.view' },
        { id: 'payments.collector-report', type: 'link', label: 'Cobros por cobrador', path: '/payments/collector-report', icon: 'dashboard', requiredPermission: 'payments.view' },
-       { id: 'collector.statistics', type: 'link', label: 'Estadísticas', path: '/collectors/statistics', icon: 'dashboard', requiredPermission: 'payments.view' },
+        { id: 'collector.statistics', type: 'link', label: 'Estadísticas', path: '/collectors/statistics', icon: 'dashboard', requiredPermission: 'payments.view' },
+        { id: 'collector.precollections', type: 'link', label: 'Cobros preliminares', path: '/collector-precollections', icon: 'payment', anyPermissions: ['collector-precollections.view', 'collector-precollections.cancel'] },
+        { id: 'collector.settlements', type: 'link', label: 'Gestión de liquidaciones', path: '/collector-settlements', icon: 'payment', anyPermissions: ['collector-settlements.view', 'collector-settlements.create', 'collector-settlements.submit', 'collector-settlements.review', 'collector-settlements.confirm', 'collector-settlements.reject', 'collector-settlements.cancel'] },
+        { id: 'collector.custody', type: 'link', label: 'Custodia de cobradores', path: '/collector-custody', icon: 'payment', anyPermissions: ['collector-custody.view', 'collector-custody.remit', 'collector-custody.topup', 'collector-custody.adjust'] },
      ],
    },
    { id: 'payments', type: 'group', label: 'PAGOS', icon: 'payment', items: [{ id: 'payments.new', type: 'link', label: 'Registrar pago', path: '/payments/new', icon: 'payment', requiredPermission: 'payments.view' }, { id: 'payments.portfolio-tracking', type: 'link', label: 'Seguimiento de cartera', path: '/payments/portfolio-tracking', icon: 'payment', requiredPermission: 'payments.view' }, { id: 'payments.daily-collections', type: 'link', label: 'Cobros del día', path: '/payments/daily-collections', icon: 'payment', requiredPermission: 'payments.view' }, { id: 'payments.history', type: 'link', label: 'Historial de pagos', path: '/payments/history', icon: 'payment', requiredPermission: 'payments.view' }] },
@@ -164,16 +198,25 @@ export const navigationEntries: NavigationEntry[] = [
   },
 ];
 
-export const collectorNavigationEntries: NavigationEntry[] = [{
-  id: 'collector', type: 'group', label: 'COBRADOR', icon: 'users', items: [
+export const collectorNavigationEntries: NavigationEntry[] = [
+  { id: 'collector.home', type: 'link', label: 'Inicio', path: '/dashboard', icon: 'home' },
+  { id: 'collector.portfolio', type: 'group', label: 'Mi cartera', icon: 'portfolio', items: [
     { id: 'collector.my-customers', type: 'link', label: 'Mis clientes', path: '/collector/customers', icon: 'users', requiredPermission: 'customers.assigned.view' },
-    { id: 'collector.customer-agenda', type: 'link', label: 'Agenda de clientes', path: '/collectors/customer-agenda', icon: 'users', requiredPermission: 'customers.assigned.view' },
-    { id: 'collector.my-loans', type: 'link', label: 'Mis préstamos activos', path: '/collector/loans', icon: 'payment', requiredPermission: 'loans.assigned.view' },
-    { id: 'collector.financial-summary', type: 'link', label: 'Mi resumen financiero', path: '/collector/financial-summary', icon: 'dashboard', requiredPermission: 'collectors.financial-summary.view' },
-    { id: 'collector.daily-collections', type: 'link', label: 'Mis cobros del día', path: '/collector/daily-collections', icon: 'payment', requiredPermission: 'daily-collections.assigned.view' },
-    { id: 'collector.collection-agenda', type: 'link', label: 'Mi agenda de cobros', path: '/collectors/collection-agenda', icon: 'payment', requiredPermission: 'collection-agenda.view' },
-  ],
-}];
+    { id: 'collector.customer-agenda', type: 'link', label: 'Agenda de clientes', path: '/collectors/customer-agenda', icon: 'calendar', requiredPermission: 'customers.assigned.view' },
+    { id: 'collector.my-loans', type: 'link', label: 'Mis préstamos', path: '/collector/loans', icon: 'loan', requiredPermission: 'loans.assigned.view' },
+    { id: 'collector.financial-summary', type: 'link', label: 'Mi resumen financiero', path: '/collector/financial-summary', icon: 'summary', requiredPermission: 'collectors.financial-summary.view' },
+  ] },
+  { id: 'collector.collections', type: 'group', label: 'Cobros', icon: 'collections', items: [
+    { id: 'collector.precollection-capture', type: 'link', label: 'Registrar cobro', path: '/collector/precollections/new', icon: 'create', requiredPermission: 'collector-precollections.create' },
+    { id: 'collector.my-precollections', type: 'link', label: 'Mis cobros del día', path: '/collector/precollections', icon: 'registered', requiredPermission: 'collector-precollections.assigned.view', activeExcludes: ['/collector/precollections/new'] },
+    { id: 'collector.daily-collections', type: 'link', label: 'Cobros programados', path: '/collector/daily-collections', icon: 'schedule', requiredPermission: 'daily-collections.assigned.view' },
+    { id: 'collector.collection-agenda', type: 'link', label: 'Agenda de cobros', path: '/collectors/collection-agenda', icon: 'collection-agenda', requiredPermission: 'collection-agenda.view' },
+  ] },
+  { id: 'collector.custody', type: 'group', label: 'Custodia y liquidaciones', icon: 'custody', items: [
+    { id: 'collector.my-settlements', type: 'link', label: 'Mis liquidaciones', path: '/collector/settlements', icon: 'settlements', anyPermissions: ['collector-settlements.self.view', 'collector-settlements.self.create', 'collector-settlements.self.submit', 'collector-settlements.self.cancel'] },
+    { id: 'collector.my-custody', type: 'link', label: 'Mi billetera', path: '/collector/custody', icon: 'wallet', anyPermissions: ['collector-custody.self.view', 'collector-custody.self.remit'] },
+  ] },
+];
 
 export function navigationEntriesFor(identity?: NavigationIdentity): NavigationEntry[] {
   return identity?.role.code === 'COLLECTOR' && !identity.role.isSuperAdmin ? collectorNavigationEntries : navigationEntries;

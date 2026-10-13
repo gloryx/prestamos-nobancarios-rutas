@@ -66,16 +66,16 @@ describe('persisted refinancing detail', () => {
     expect(hooks.navigate).toHaveBeenCalledExactlyOnceWith('/loan-refinancings/new');
   });
 
-  it('downloads the fresh refinanced payment plan for the origin loan', async () => {
-    const origin = { id: 'origin-1', loanNumber: '101', status: 'REFINANCED' } as Awaited<ReturnType<typeof loanApi.detail>>;
+  it('downloads the payment plan for the successor loan', async () => {
+    const successor = { id: 'new-1', loanNumber: '102', status: 'ACTIVE' } as Awaited<ReturnType<typeof loanApi.detail>>;
     vi.mocked(loanRefinancingOperations.detail).mockResolvedValueOnce(result);
-    vi.mocked(loanApi.detail).mockResolvedValueOnce(origin);
+    vi.mocked(loanApi.detail).mockResolvedValueOnce(successor);
     render(); hooks.effects[0]();
     await vi.waitFor(() => expect(hooks.states[1]).toMatchObject({ id: 'ref-1', value: result }));
     const detail = render();
     (detail.props as { onDownload: () => void }).onDownload();
-    await vi.waitFor(() => expect(generateLoanPaymentPlanReport).toHaveBeenCalledExactlyOnceWith(origin));
-    expect(loanApi.detail).toHaveBeenCalledExactlyOnceWith('origin-1');
+    await vi.waitFor(() => expect(generateLoanPaymentPlanReport).toHaveBeenCalledExactlyOnceWith(successor));
+    expect(loanApi.detail).toHaveBeenCalledExactlyOnceWith('new-1');
     expect(hooks.states[3]).toBe(false);
   });
 

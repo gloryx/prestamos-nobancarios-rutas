@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   filterNavigationEntries,
   getActiveGroupIds,
+  getActiveNavigationLinkId,
   isNavigationEntryActive,
   navigationEntries,
   collectorNavigationEntries,
@@ -159,6 +160,9 @@ describe('sidebar navigation configuration', () => {
       { label: 'Agenda de cobros', path: '/collectors/collection-agenda', requiredPermission: 'collection-agenda.view' },
       { label: 'Cobros por cobrador', path: '/payments/collector-report', requiredPermission: 'payments.view' },
       { label: 'Estadísticas', path: '/collectors/statistics', requiredPermission: 'payments.view' },
+      { label: 'Cobros preliminares', path: '/collector-precollections', anyPermissions: ['collector-precollections.view', 'collector-precollections.cancel'] },
+      { label: 'Gestión de liquidaciones', path: '/collector-settlements' },
+      { label: 'Custodia de cobradores', path: '/collector-custody' },
     ]);
     expect(JSON.stringify(collectors.items)).not.toContain('/collector/customers');
     expect(JSON.stringify(collectors.items)).not.toContain('/collector/loans');
@@ -189,23 +193,32 @@ describe('sidebar navigation configuration', () => {
       { label: 'Agenda de clientes', path: '/collectors/customer-agenda' },
     ] });
   });
-  it('adds Agenda de clientes without replacing the five existing scoped links for a non-superadmin COLLECTOR', () => {
+  it('organizes the COLLECTOR projection by portfolio, collections and custody', () => {
     const collector = { role: { code: 'COLLECTOR', isSuperAdmin: false } };
     const entries = navigationEntriesFor(collector);
     expect(entries).toBe(collectorNavigationEntries);
-    expect(entries).toMatchObject([{ type: 'group', label: 'COBRADOR', items: [
-      { label: 'Mis clientes', path: '/collector/customers', requiredPermission: 'customers.assigned.view' },
-      { label: 'Agenda de clientes', path: '/collectors/customer-agenda', requiredPermission: 'customers.assigned.view' },
-      { label: 'Mis préstamos activos', path: '/collector/loans', requiredPermission: 'loans.assigned.view' },
-      { label: 'Mi resumen financiero', path: '/collector/financial-summary', requiredPermission: 'collectors.financial-summary.view' },
-      { label: 'Mis cobros del día', path: '/collector/daily-collections', requiredPermission: 'daily-collections.assigned.view', icon: 'payment' },
-      { label: 'Mi agenda de cobros', path: '/collectors/collection-agenda', requiredPermission: 'collection-agenda.view', icon: 'payment' },
-    ] }]);
-    const visible = filterNavigationEntries(entries, () => true);
-    expect(visible[0]?.type === 'group' && visible[0].items.map((entry) => entry.label)).toEqual([
-      'Mis clientes', 'Agenda de clientes', 'Mis préstamos activos', 'Mi resumen financiero', 'Mis cobros del día', 'Mi agenda de cobros',
+    expect(entries).toMatchObject([
+      { type: 'link', label: 'Inicio', path: '/dashboard', icon: 'home' },
+      { type: 'group', label: 'Mi cartera', icon: 'portfolio', items: [
+        { label: 'Mis clientes', path: '/collector/customers', requiredPermission: 'customers.assigned.view' },
+        { label: 'Agenda de clientes', path: '/collectors/customer-agenda', requiredPermission: 'customers.assigned.view' },
+        { label: 'Mis préstamos', path: '/collector/loans', requiredPermission: 'loans.assigned.view' },
+        { label: 'Mi resumen financiero', path: '/collector/financial-summary', requiredPermission: 'collectors.financial-summary.view' },
+      ] },
+      { type: 'group', label: 'Cobros', icon: 'collections', items: [
+        { label: 'Registrar cobro', path: '/collector/precollections/new', requiredPermission: 'collector-precollections.create' },
+        { label: 'Mis cobros del día', path: '/collector/precollections', requiredPermission: 'collector-precollections.assigned.view' },
+        { label: 'Cobros programados', path: '/collector/daily-collections', requiredPermission: 'daily-collections.assigned.view' },
+        { label: 'Agenda de cobros', path: '/collectors/collection-agenda', requiredPermission: 'collection-agenda.view' },
+      ] },
+      { type: 'group', label: 'Custodia y liquidaciones', icon: 'custody', items: [
+        { label: 'Mis liquidaciones', path: '/collector/settlements' },
+        { label: 'Mi billetera', path: '/collector/custody' },
+      ] },
     ]);
-    expect(JSON.stringify(visible)).not.toContain('Inicio');
+    expect(entries.map((entry) => entry.label)).toEqual([
+      'Inicio', 'Mi cartera', 'Cobros', 'Custodia y liquidaciones',
+    ]);
   });
   it('filters each new COLLECTOR link by its scoped permission', () => {
     const collector = { role: { code: 'COLLECTOR', isSuperAdmin: false } };
@@ -215,18 +228,37 @@ describe('sidebar navigation configuration', () => {
       (permission) => permission === 'collection-agenda.view');
     const customers = filterNavigationEntries(navigationEntriesFor(collector),
       (permission) => permission === 'customers.assigned.view');
-    expect(daily).toMatchObject([{ type: 'group', items: [
-      { label: 'Mis cobros del día', path: '/collector/daily-collections', requiredPermission: 'daily-collections.assigned.view' },
-    ] }]);
-    expect(JSON.stringify(daily)).not.toContain('Mi agenda de cobros');
-    expect(agenda).toMatchObject([{ type: 'group', items: [
-      { label: 'Mi agenda de cobros', path: '/collectors/collection-agenda', requiredPermission: 'collection-agenda.view' },
-    ] }]);
-    expect(JSON.stringify(agenda)).not.toContain('Mis cobros del día');
-    expect(customers).toMatchObject([{ type: 'group', items: [
+    expect(daily.find((entry) => entry.label === 'Cobros')).toMatchObject({ type: 'group', items: [
+      { label: 'Cobros programados', path: '/collector/daily-collections', requiredPermission: 'daily-collections.assigned.view' },
+    ] });
+    expect(JSON.stringify(daily)).not.toContain('Agenda de cobros');
+    expect(agenda.find((entry) => entry.label === 'Cobros')).toMatchObject({ type: 'group', items: [
+      { label: 'Agenda de cobros', path: '/collectors/collection-agenda', requiredPermission: 'collection-agenda.view' },
+    ] });
+    expect(JSON.stringify(agenda)).not.toContain('/collector/precollections');
+    expect(customers.find((entry) => entry.label === 'Mi cartera')).toMatchObject({ type: 'group', items: [
       { label: 'Mis clientes', path: '/collector/customers', requiredPermission: 'customers.assigned.view' },
       { label: 'Agenda de clientes', path: '/collectors/customer-agenda', requiredPermission: 'customers.assigned.view' },
-    ] }]);
+    ] });
+    const precollections = filterNavigationEntries(navigationEntriesFor(collector),
+      (permission) => permission === 'collector-precollections.assigned.view');
+    expect(precollections.find((entry) => entry.label === 'Cobros')).toMatchObject({ type: 'group', items: [
+      { label: 'Mis cobros del día', path: '/collector/precollections' },
+    ] });
+    expect(filterNavigationEntries(navigationEntriesFor(collector), () => false)).toMatchObject([
+      { type: 'link', label: 'Inicio', path: '/dashboard' },
+    ]);
+  });
+  it('expands the active COLLECTOR branch and resolves exactly one active link', () => {
+    expect(getActiveGroupIds(collectorNavigationEntries, '/collector/loans/loan-id')).toEqual(['collector.portfolio']);
+    expect(getActiveGroupIds(collectorNavigationEntries, '/collector/precollections/new')).toEqual(['collector.collections']);
+    expect(getActiveGroupIds(collectorNavigationEntries, '/collector/custody')).toEqual(['collector.custody']);
+    expect(getActiveNavigationLinkId(collectorNavigationEntries, '/collector/precollections/new'))
+      .toBe('collector.precollection-capture');
+    expect(getActiveNavigationLinkId(collectorNavigationEntries, '/collector/precollections'))
+      .toBe('collector.my-precollections');
+    expect(getActiveNavigationLinkId(collectorNavigationEntries, '/collector/loans/loan-id'))
+      .toBe('collector.my-loans');
   });
   it('uses the administrative projection without personal collector options for ADMIN, manager and SUPERADMIN', () => {
     const adminEntries = navigationEntriesFor({ role: { code: 'ADMIN', isSuperAdmin: false } });
@@ -256,7 +288,7 @@ describe('sidebar navigation configuration', () => {
       items: [{ label: 'Refinanciamientos', path: '/loan-refinancings', requiredPermission: 'loans.refinance.view' },
         { label: 'Nuevo refinanciamiento', path: '/loan-refinancings/new', requiredPermission: 'loans.refinance.view' },
         { label: 'Cadenas de refinanciamiento', path: '/loan-refinancings/chains', requiredPermission: 'loans.refinance.view' },
-        { label: 'Refinanciamientos anulados', path: '/loan-refinancings/annulments', requiredPermission: 'loans.refinance.view' }] });
+        { label: 'Ref. anulados', path: '/loan-refinancings/annulments', requiredPermission: 'loans.refinance.view' }] });
     expect(getActiveGroupIds(navigationEntries, '/loan-refinancings')).toEqual(['loans', 'loans.refinancings']);
     expect(getActiveGroupIds(navigationEntries, '/loan-refinancings/new')).toEqual(['loans', 'loans.refinancings']);
     expect(getActiveGroupIds(navigationEntries, '/loan-refinancings/operation-id')).toEqual(['loans', 'loans.refinancings']);
@@ -284,7 +316,7 @@ describe('sidebar navigation configuration', () => {
     expect(refinanceOnly?.type === 'group' && refinanceOnly.items.map((entry) => entry.label)).toEqual(['Refinanciamientos']);
     if (refinanceOnly?.type === 'group' && refinanceOnly.items[0].type === 'group') {
       expect(refinanceOnly.items[0].items.map((entry) => entry.label)).toEqual([
-        'Refinanciamientos', 'Nuevo refinanciamiento', 'Cadenas de refinanciamiento', 'Refinanciamientos anulados',
+        'Refinanciamientos', 'Nuevo refinanciamiento', 'Cadenas de refinanciamiento', 'Ref. anulados',
       ]);
     }
   });

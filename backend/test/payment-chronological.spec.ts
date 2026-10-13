@@ -1,5 +1,5 @@
 import type { DataSource } from 'typeorm';
-import { PaymentConflictError, PaymentValidationError, RegisterPaymentUseCase } from '../src/application/payment/payment.use-case';
+import { PaymentConflictError, PaymentValidationError, RegisterPaymentUseCase, TransactionalPaymentRegistrar } from '../src/application/payment/payment.use-case';
 import { PaymentController } from '../src/presentation/payment/payment.controller';
 import { LoanFinancialTotalsTypeormReader } from '../src/infrastructure/database/typeorm/repositories/loan-financial-totals.reader';
 import { CreatePaymentDto } from '../src/presentation/payment/payment.dto';
@@ -18,7 +18,7 @@ const money = (value: bigint) => `${value / 100n}.${(value % 100n).toString().pa
 const initial = (count: number, loanId = 'loan'): State => ({ status: 'ACTIVE', rows: Array.from({ length: count }, (_, index) => ({ id: `entry-${index + 1}`, dueDate: `2026-0${index + 2}-01`, sequence: index + 1, pendingAmount: '60000.00' })).reverse(), payments: [], applications: [], cash: [], history: [{ sql: 'CREATED', params: [loanId, 1] }] });
 const input = (amount: string) => ({ loanId: 'loan', amount, methodId: 'method', collectorId, paymentDate: '2026-01-10', idempotencyKey: 'key' });
 
-function store(count: number, options: { staleFirstKeyRead?: boolean; postPending?: string; failCash?: boolean; failReceiver?: boolean; principal?: string; firstOverdue?: boolean; cancelResult?: 'zero' | 'ambiguous' | 'wrong-id' | 'flat' | 'no-id' | 'duplicate'; failHistory?: boolean; persistedActor?: string; loanId?: string; validCollector?: boolean } = {}) {
+function store(count: number, options: { staleFirstKeyRead?: boolean; postPending?: string; failCash?: boolean; failReceiver?: boolean; principal?: string; firstOverdue?: boolean; cancelResult?: 'zero' | 'ambiguous' | 'wrong-id' | 'flat' | 'no-id' | 'duplicate'; failHistory?: boolean; persistedActor?: string; loanId?: string; validCollector?: boolean; collectorAssigned?: boolean; collectorUserId?: string; actorRoleCode?: string; actorCollectorId?: string | null; reservedPrecollections?: string; earliestPrecollectionDate?: string | null } = {}) {
   const loanId = options.loanId ?? 'loan';
   let state = initial(count, loanId);
   if (options.firstOverdue) state.rows.find((row) => row.id === 'entry-1')!.dueDate = '2026-01-05';
@@ -33,11 +33,16 @@ function store(count: number, options: { staleFirstKeyRead?: boolean; postPendin
         const fact = draft.payments.find((item) => item.key === params[0]);
         return fact ? [{ id: fact.id, fingerprint: fact.fingerprint }] : [];
       }
+      if (sql.includes("pg_advisory_xact_lock_shared(hashtext('financial-closes-v2'))")) return [];
       if (sql.includes('FROM loans WHERE id = $1 FOR UPDATE')) return String(params[0]).toLowerCase() === loanId ? [{ id: loanId, status: draft.status, startDate: '2026-01-01', principal: options.principal ?? money(BigInt(count) * 5000000n), interestAmount: money(BigInt(count) * 6000000n - (options.principal ? cents(options.principal) : BigInt(count) * 5000000n)), totalAmount: money(BigInt(count) * 6000000n) }] : [];
       if (sql.includes('FROM financial_openings')) return [{ openingDate: '2026-01-01' }];
       if (sql.includes('ORDER BY payment_date DESC, created_at DESC, id DESC LIMIT 1')) return draft.payments.length ? [{ paymentDate: '2026-01-10' }] : [];
+      if (sql.includes('FROM collector_precollections')) return [{ reserved: options.reservedPrecollections ?? '0.00',
+        earliestEffectiveDate: options.earliestPrecollectionDate ?? null }];
        if (sql.includes('FROM payment_methods')) return [{ id: 'method' }];
-       if (sql.includes('FROM collectors')) return options.validCollector === false ? [] : [{ id: collectorId }];
+       if (sql.includes('FROM collectors')) return options.validCollector === false ? [] : [{ id: collectorId,
+         userId: options.collectorUserId ?? 'collector-user', actorRoleCode: options.actorRoleCode ?? 'COLLECTION_MANAGER',
+         actorCollectorId: options.actorCollectorId ?? null, assigned: options.collectorAssigned !== false }];
       if (sql.includes('FROM payment_plan_entries') && sql.includes('FOR UPDATE')) return draft.rows.filter((row) => cents(row.pendingAmount) > 0n).sort((a, b) => a.dueDate.localeCompare(b.dueDate) || a.sequence - b.sequence || a.id.localeCompare(b.id)).map((row) => ({ ...row }));
       if (sql.includes('SUM(principal_applied)')) {
         const valid = draft.payments.filter((fact) => fact.status === 'VALID');
@@ -82,10 +87,12 @@ function store(count: number, options: { staleFirstKeyRead?: boolean; postPendin
       }
       if (sql.includes('FROM payments WHERE id = $1')) {
         const fact = draft.payments.find((item) => item.id === params[0]);
-        return fact ? [{ id: fact.id, amount: fact.amount, principalApplied: fact.principal, interestApplied: fact.interest, status: fact.status, loanId }] : [];
+        return fact ? [{ id: fact.id, amount: fact.amount, principalApplied: fact.principal, interestApplied: fact.interest,
+          paymentDate: '2026-01-10', methodId: 'method', status: fact.status, loanId }] : [];
       }
       if (sql.includes('FROM payment_applications WHERE payment_id = $1 ORDER BY')) return draft.applications.filter((item) => item.paymentId === params[0]);
-      if (sql.includes('FROM cash_movements WHERE payment_id = $1')) return draft.cash.filter((cash) => cash.paymentId === params[0]).map(({ id }) => ({ id }));
+      if (sql.includes('FROM cash_movements WHERE payment_id = $1')) return draft.cash.filter((cash) => cash.paymentId === params[0]).map(({ id, amount }) => ({ id, amount,
+        movementDate: '2026-01-10', methodId: 'method', fingerprint: draft.payments.find((payment) => payment.id === params[0])?.fingerprint }));
       throw new Error(`Unexpected query: ${sql}`);
     };
     const result = await callback({ query });
@@ -123,6 +130,65 @@ describe('chronological multi-obligation payment registration', () => {
     const testStore = store(1);
     await register(testStore, '100.00');
     expect(testStore.calls.find(({ sql }) => sql.startsWith('INSERT INTO payments'))?.params[6]).toBe(collectorId);
+  });
+
+  it('rejects an active collector who is not assigned to the payment customer', async () => {
+    const testStore = store(1, { collectorAssigned: false });
+    await expect(register(testStore, '100.00')).rejects.toMatchObject({ reasonCode: 'COLLECTOR_NOT_ASSIGNED' });
+    expect(writes(testStore)).toEqual([]);
+  });
+
+  it('delegates the public payment contract to the reusable registrar with the outer transaction manager', async () => {
+    const manager = { query: jest.fn() };
+    const transaction = jest.fn(async (run: (value: typeof manager) => Promise<unknown>) => run(manager));
+    const registrar = { assertInput: jest.fn(), register: jest.fn().mockResolvedValue({ id: 'payment' }), detail: jest.fn() };
+    const result = await new RegisterPaymentUseCase({ transaction } as never, totalsReader, undefined,
+      registrar as unknown as TransactionalPaymentRegistrar).execute(input('100.00'), 'actor-user');
+    expect(result).toEqual({ id: 'payment' });
+    expect(transaction).toHaveBeenCalledTimes(1);
+    expect(registrar.register).toHaveBeenCalledWith(manager, input('100.00'), 'actor-user');
+  });
+
+  it('replays a cross-loan idempotency race only after the failed transaction rolls back', async () => {
+    const manager = { query: jest.fn() };
+    const unique = Object.assign(new Error('duplicate'), { code: '23505', constraint: 'UQ_payments_idempotency' });
+    const registrar = { assertInput: jest.fn(), register: jest.fn().mockRejectedValue(unique),
+      replayByKey: jest.fn().mockResolvedValue({ id: 'winner' }), detail: jest.fn() };
+    const transaction = jest.fn(async (run: (value: typeof manager) => Promise<unknown>) => run(manager));
+    const result = await new RegisterPaymentUseCase({ transaction } as never, totalsReader, undefined,
+      registrar as unknown as TransactionalPaymentRegistrar).execute(input('100.00'), 'actor-user');
+    expect(result).toEqual({ id: 'winner' });
+    expect(transaction).toHaveBeenCalledTimes(2);
+    expect(registrar.replayByKey).toHaveBeenCalledWith(manager, input('100.00'));
+  });
+
+  it('rejects an idempotent replay with a different fingerprint', async () => {
+    const registrar = new TransactionalPaymentRegistrar(totalsReader);
+    const manager = { query: jest.fn(async (sql: string) => sql.includes('idempotency_key')
+      ? [{ id: 'payment', fingerprint: 'mismatch' }] : []) };
+    await expect(registrar.replayByKey(manager as never, input('100.00'))).rejects.toBeInstanceOf(PaymentConflictError);
+  });
+
+  it('rejects a collector actor attempting to attribute a payment to another collector', async () => {
+    const testStore = store(1, { actorRoleCode: 'COLLECTOR', actorCollectorId: 'another-collector' });
+    await expect(new RegisterPaymentUseCase(testStore.source, totalsReader).execute(input('100.00'), 'another-user'))
+      .rejects.toMatchObject({ reasonCode: 'COLLECTOR_SCOPE_FORBIDDEN' });
+    expect(writes(testStore)).toEqual([]);
+  });
+
+  it('allows a collector actor only for the linked profile and assigned customer', async () => {
+    const testStore = store(1, { collectorUserId: 'collector-user', actorRoleCode: 'COLLECTOR', actorCollectorId: collectorId });
+    await expect(new RegisterPaymentUseCase(testStore.source, totalsReader).execute(input('100.00'), 'collector-user')).resolves.toMatchObject({ status: 'VALID' });
+    expect(testStore.state().payments).toHaveLength(1);
+  });
+
+  it('reserves pending precollections and rejects later canonical payments', async () => {
+    const reserved = store(1, { reservedPrecollections: '59950.00', earliestPrecollectionDate: '2026-01-10' });
+    await expect(register(reserved, '100.00')).rejects.toMatchObject({ reasonCode: 'PAYMENT_AMOUNT_EXCEEDS_OPERATIONAL_BALANCE' });
+    expect(writes(reserved)).toEqual([]);
+    const chronology = store(1, { reservedPrecollections: '100.00', earliestPrecollectionDate: '2026-01-09' });
+    await expect(register(chronology, '100.00')).rejects.toMatchObject({ reasonCode: 'PENDING_PRECOLLECTION_CHRONOLOGY' });
+    expect(writes(chronology)).toEqual([]);
   });
 
   it.each([
@@ -169,10 +235,10 @@ describe('chronological multi-obligation payment registration', () => {
   });
 
   it.each([
-    [3, '20000.00', ['40000.00', '60000.00', '60000.00']],
-    [2, '1.00', ['59999.00', '60000.00']],
-    [2, '59999.00', ['1.00', '60000.00']],
-  ] as const)('keeps a partial payment on the oldest of %s rows for %s', async (count, amount, pending) => {
+    [3, '20000.00', ['0.00', '100000.00', '60000.00'], '40000.00'],
+    [2, '1.00', ['0.00', '119999.00'], '59999.00'],
+    [2, '59999.00', ['0.00', '60001.00'], '1.00'],
+  ] as const)('carries a %s-row payment of %s with exactly two audited mutations and one cash inflow', async (count, amount, pending, carry) => {
     const testStore = store(count);
     const opening = initial(count);
     const result = await register(testStore, amount);
@@ -181,15 +247,18 @@ describe('chronological multi-obligation payment registration', () => {
     expect(ordered.map((row) => row.pendingAmount)).toEqual(pending);
     expect(ordered.map(({ id, dueDate, sequence }) => [id, dueDate, sequence]))
       .toEqual([...opening.rows].sort((a, b) => a.sequence - b.sequence).map(({ id, dueDate, sequence }) => [id, dueDate, sequence]));
-    expect(state.applications).toEqual([{ paymentId: 'payment-1', planEntryId: 'entry-1', amountApplied: amount, pendingBefore: '60000.00', pendingAfter: pending[0], carriedForwardAmount: '0.00', carriedToPlanEntryId: null }]);
+    expect(state.applications).toEqual([
+      { paymentId: 'payment-1', planEntryId: 'entry-1', amountApplied: amount, pendingBefore: '60000.00', pendingAfter: '0.00', carriedForwardAmount: carry, carriedToPlanEntryId: 'entry-2' },
+      { paymentId: 'payment-1', planEntryId: 'entry-2', amountApplied: '0.00', pendingBefore: '60000.00', pendingAfter: pending[1], carriedForwardAmount: '0.00', carriedToPlanEntryId: null },
+    ]);
     expect(result.applications).toEqual(state.applications);
     expect(state.payments).toMatchObject([{ amount, principal: amount, interest: '0.00', status: 'VALID' }]);
     expect(state.cash).toEqual([{ id: 'cash-1', paymentId: 'payment-1', amount }]);
     expect(state.applications.reduce((sum, item) => sum + cents(item.amountApplied), 0n)).toBe(cents(amount));
     expect(ordered.reduce((sum, row) => sum + cents(row.pendingAmount), 0n) + cents(amount)).toBe(BigInt(count) * 6000000n);
     expect(testStore.calls.filter(({ sql }) => sql.startsWith('INSERT INTO payment_applications')).every(({ sql }) => sql.includes("MAX(created_at) + interval '1 microsecond'"))).toBe(true);
-    expect(testStore.calls.filter(({ sql }) => sql.startsWith('INSERT INTO payment_applications')).map(({ params }) => params[1])).toEqual(['entry-1']);
-    expect(testStore.calls.filter(({ sql }) => sql.startsWith('UPDATE payment_plan_entries')).map(({ params }) => params[1])).toEqual(['entry-1']);
+    expect(testStore.calls.filter(({ sql }) => sql.startsWith('INSERT INTO payment_applications')).map(({ params }) => params[1])).toEqual(['entry-1', 'entry-2']);
+    expect(testStore.calls.filter(({ sql }) => sql.startsWith('UPDATE payment_plan_entries')).map(({ params }) => params[1])).toEqual(['entry-1', 'entry-2']);
     expect(writes(testStore).filter(({ sql }) => sql.startsWith('INSERT INTO payment_plan_entries'))).toHaveLength(0);
   });
 
@@ -202,21 +271,21 @@ describe('chronological multi-obligation payment registration', () => {
     expect(writes(testStore).filter(({ sql }) => sql.startsWith('INSERT INTO payment_plan_entries'))).toHaveLength(0);
   });
 
-  it('keeps capital-first principal and interest while preserving the oldest partial balance', async () => {
+  it('keeps capital-first principal and interest on real cash when carrying a mixed balance', async () => {
     const testStore = store(2, { principal: '15000.00' });
     await register(testStore, '20000.00');
     expect(testStore.state().payments).toMatchObject([{ amount: '20000.00', principal: '15000.00', interest: '5000.00' }]);
-    expect([...testStore.state().rows].sort((a, b) => a.sequence - b.sequence).map((row) => row.pendingAmount)).toEqual(['40000.00', '60000.00']);
-    expect(testStore.state().applications.map((item) => item.amountApplied)).toEqual(['20000.00']);
+    expect([...testStore.state().rows].sort((a, b) => a.sequence - b.sequence).map((row) => row.pendingAmount)).toEqual(['0.00', '100000.00']);
+    expect(testStore.state().applications.map((item) => item.amountApplied)).toEqual(['20000.00', '0.00']);
     expect(testStore.state().cash).toEqual([{ id: 'cash-1', paymentId: 'payment-1', amount: '20000.00' }]);
   });
 
-  it('keeps an overdue partial obligation on its original date', async () => {
+  it('closes an overdue first obligation without moving its date or the later due date', async () => {
     const testStore = store(2, { firstOverdue: true });
     await register(testStore, '20000.00');
     expect(testStore.state().rows.map(({ id, dueDate, sequence }) => [id, dueDate, sequence]))
       .toEqual([['entry-2', '2026-03-01', 2], ['entry-1', '2026-01-05', 1]]);
-    expect(testStore.state().applications.map((item) => [item.planEntryId, item.pendingAfter])).toEqual([['entry-1', '40000.00']]);
+    expect(testStore.state().applications.map((item) => [item.planEntryId, item.pendingAfter])).toEqual([['entry-1', '0.00'], ['entry-2', '100000.00']]);
   });
 
   it('replays paired carry even when the first key lookup was stale without any additional writes', async () => {
@@ -227,18 +296,32 @@ describe('chronological multi-obligation payment registration', () => {
     expect(await register(testStore, '20000.00')).toEqual(first);
     expect(writes(testStore)).toHaveLength(count);
     expect(testStore.state().payments).toHaveLength(1);
-    expect(testStore.state().applications).toHaveLength(1);
+    expect(testStore.state().applications).toHaveLength(2);
     expect(testStore.state().cash).toHaveLength(1);
     expect(testStore.state().history).toHaveLength(1);
   });
 
-  it('rolls back the oldest plan mutation, payment, application and cash on cash or reconciliation failure', async () => {
-    for (const options of [{ failCash: true }, { postPending: '159999.99' }]) {
+  it('rolls back both plan mutations, the payment, applications and cash on receiver, cash, or reconciliation failure', async () => {
+    for (const options of [{ failReceiver: true }, { failCash: true }, { postPending: '159999.99' }]) {
       const testStore = store(3, options);
       await expect(register(testStore, '20000.00')).rejects.toThrow();
       expect(testStore.state()).toEqual(initial(3));
-      expect(writes(testStore).filter(({ sql }) => sql.startsWith('UPDATE payment_plan_entries'))).toHaveLength(1);
+      expect(writes(testStore).filter(({ sql }) => sql.startsWith('UPDATE payment_plan_entries'))).toHaveLength(2);
     }
+  });
+
+  it('adapts consecutive variable payments without changing contractual order or inventing cash', async () => {
+    const testStore = store(3);
+    await register(testStore, '20000.00');
+    await new RegisterPaymentUseCase(testStore.source, totalsReader).execute({ ...input('70000.00'), idempotencyKey: 'key-2' }, 'actor');
+    const state = testStore.state();
+    const ordered = [...state.rows].sort((a, b) => a.sequence - b.sequence);
+    expect(ordered.map((row) => row.pendingAmount)).toEqual(['0.00', '0.00', '90000.00']);
+    expect(ordered.map(({ id, sequence }) => [id, sequence])).toEqual([['entry-1', 1], ['entry-2', 2], ['entry-3', 3]]);
+    expect(state.payments.map((payment) => payment.amount)).toEqual(['20000.00', '70000.00']);
+    expect(state.cash.map((movement) => movement.amount)).toEqual(['20000.00', '70000.00']);
+    expect(state.applications.reduce((sum, application) => sum + cents(application.amountApplied), 0n)).toBe(9000000n);
+    expect(ordered.reduce((sum, row) => sum + cents(row.pendingAmount), 0n)).toBe(9000000n);
   });
 
   it('rejects overbalance before writes and rolls back all facts on a final mismatch or cash failure', async () => {

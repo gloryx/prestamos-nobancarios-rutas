@@ -42,6 +42,7 @@ function harness(value = snapshot()) {
     successorLoan: { id: value.successorLoanId, loanNumber: value.successorLoanNumber, status: 'ANNULLED' as const } };
   const tx = {
     context: {}, lockSnapshot: jest.fn(async (_id: string) => value),
+    hasPendingPrecollection: jest.fn(async (_ids: string[]) => false),
     lockActivePaymentMethod: jest.fn(async (_id: string) => true),
     findByKey: jest.fn(async (_key: string) => undefined),
     detail: jest.fn(async (_id: string) => created), create: jest.fn(async (_input: unknown) => created),
@@ -95,6 +96,12 @@ describe('refinancing annulment command and eligibility', () => {
       .toContainEqual(expect.objectContaining({ code: 'EFFECTIVE_DATE_BEFORE_REFINANCING' }));
     expect(evaluateRefinancingAnnulmentEligibility(snapshot(), '2999-01-01').types.CASH_REFUND.reasons)
       .toContainEqual(expect.objectContaining({ code: 'EFFECTIVE_DATE_IN_FUTURE' }));
+  });
+
+  it('rejects impossible calendar dates as validation errors', async () => {
+    const { useCase } = harness();
+    await expect(useCase.annullable({ effectiveDate: '2026-99-99', page: 1, pageSize: 20 }))
+      .rejects.toBeInstanceOf(RefinancingAnnulmentValidationError);
   });
 
   it('includes closed-period blockers in candidate eligibility by modality', async () => {

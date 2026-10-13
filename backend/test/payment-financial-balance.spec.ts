@@ -31,7 +31,7 @@ function paymentStore(initial: State, options: { postPending?: string; postTotal
         return latest ? [{ paymentDate: latest.paymentDate ?? '2026-01-02' }] : [];
       }
       if (sql.includes('FROM payment_methods')) return [{ id: 'method-1' }];
-      if (sql.includes('FROM collectors')) return [{ id: collectorId }];
+      if (sql.includes('FROM collectors')) return [{ id: collectorId, userId: 'collector-user', actorRoleCode: 'COLLECTION_MANAGER', actorCollectorId: null, assigned: true }];
       if (sql.includes('FROM payment_plan_entries') && sql.includes('FOR UPDATE')) return cents(draft.pending) > 0n ? [{ id: 'entry-1', dueDate: '2026-02-01', sequence: 1, pendingAmount: draft.pending }] : [];
       if (sql.includes('SUM(principal_applied)')) {
         const valid = draft.payments.filter((payment) => payment.status === 'VALID');
@@ -65,6 +65,7 @@ function paymentStore(initial: State, options: { postPending?: string; postTotal
         const payment = draft.payments.find((fact) => fact.id === params[0]);
         return payment ? [{ id: payment.id, loanId: 'loan-1', amount: payment.amount, principalApplied: payment.principal, interestApplied: payment.interest, status: payment.status }] : [];
       }
+      if (sql.includes('FROM collector_precollections')) return [{ reserved: '0.00', earliestEffectiveDate: null }];
       if (sql.includes('FROM payment_applications')) return [];
       throw new Error(`Unexpected query: ${sql}`);
     };

@@ -26,10 +26,10 @@ export function fingerprint(input: Omit<CreateCashMovement, 'idempotencyFingerpr
 function validate(input: Omit<CreateCashMovement, 'createdByUserId' | 'idempotencyFingerprint'>, openingDate: string | null,
   originalDate?: string): Omit<CreateCashMovement, 'createdByUserId' | 'idempotencyFingerprint'> {
   if (!isStrictIsoDate(input.movementDate) || input.movementDate > today() || (openingDate && input.movementDate < openingDate)
-    || (originalDate && input.movementDate < originalDate)) throw new CashMovementValidationError('La fecha del movimiento no es válida.');
+    || (originalDate && input.movementDate < originalDate)) throw new CashMovementValidationError('La fecha del movimiento no es válida.', 'CASH_MOVEMENT_DATE_INVALID', 'movementDate');
   if (!MONEY.test(input.amount) || Number(input.amount) <= 0)
-    throw new CashMovementValidationError('El importe debe ser mayor que cero y tener hasta 2 decimales.');
-  if (!input.paymentMethodId?.trim()) throw new CashMovementValidationError('La forma de pago es requerida.');
+    throw new CashMovementValidationError('El importe debe ser mayor que cero y tener hasta 2 decimales.', 'CASH_MOVEMENT_AMOUNT_INVALID', 'amount');
+  if (!input.paymentMethodId?.trim()) throw new CashMovementValidationError('Selecciona una forma de pago para continuar.', 'PAYMENT_METHOD_REQUIRED', 'paymentMethodId');
   return { ...input, amount: money(input.amount), observations: input.observations?.trim().toUpperCase() || null };
 }
 
@@ -53,9 +53,9 @@ export class RecordManualCashMovementUseCase {
     if (!MANUAL_CASH_MOVEMENT_CONCEPTS.includes(input.concept as never))
       throw new CashMovementValidationError('El concepto no está disponible para movimientos manuales.');
     const opening = await this.opening.find();
-    if (!opening) throw new CashMovementConflictError('Debe realizar la apertura financiera antes de registrar movimientos.');
+    if (!opening) throw new CashMovementConflictError('Debe realizar la apertura financiera antes de registrar movimientos.', 'FINANCIAL_OPENING_REQUIRED');
     const method = await this.paymentMethods.findById(input.paymentMethodId);
-    if (!method || !method.isActive) throw new CashMovementValidationError('La forma de pago no existe o está inactiva.');
+    if (!method || !method.isActive) throw new CashMovementValidationError('La forma de pago seleccionada está inactiva o ya no existe. Selecciona otra para continuar.', 'PAYMENT_METHOD_INACTIVE', 'paymentMethodId');
     const base = validate({ ...input, direction: directionForManualConcept(input.concept), observations: input.observations ?? null }, opening.openingDate);
     const key = input.idempotencyKey?.trim() || null; const fp = fingerprint(base);
     if (key) {
@@ -69,7 +69,7 @@ export class RecordManualCashMovementUseCase {
       return await this.repository.create({ ...base, createdByUserId: actorId, idempotencyKey: key, idempotencyFingerprint: fp },
         (context) => this.closedPeriods?.assertDateAllowed(input.movementDate, context) ?? Promise.resolve());
     } catch (error) {
-      if (error instanceof ClosedFinancialPeriodError) throw new CashMovementConflictError(error.message);
+      if (error instanceof ClosedFinancialPeriodError) throw new CashMovementConflictError(error.message, 'CLOSED_FINANCIAL_PERIOD');
       if (key && (error as { code?: string }).code === '23505') {
         const existing = await this.repository.findByIdempotencyKey(key);
         if (existing?.idempotencyFingerprint === fp) return existing;
@@ -89,8 +89,8 @@ export class ReverseCashMovementUseCase {
     if (!MANUAL_CASH_MOVEMENT_CONCEPTS.includes(original.concept as never))
       throw new CashMovementValidationError('Solo se pueden reversar movimientos manuales.');
     const opening = await this.opening.find();
-    if (!opening) throw new CashMovementConflictError('Debe realizar la apertura financiera antes de registrar movimientos.');
-    if (!input.reason?.trim()) throw new CashMovementValidationError('La razón de reversión es requerida.');
+    if (!opening) throw new CashMovementConflictError('Debe realizar la apertura financiera antes de registrar movimientos.', 'FINANCIAL_OPENING_REQUIRED');
+    if (!input.reason?.trim()) throw new CashMovementValidationError('Indica el motivo de la reversión para continuar.', 'REVERSAL_REASON_REQUIRED', 'reason');
     const base = validate({ direction: original.direction === 'INFLOW' ? 'OUTFLOW' : 'INFLOW', concept: 'REVERSAL',
       amount: original.amount, movementDate: input.movementDate, paymentMethodId: original.paymentMethodId,
       observations: input.reason }, opening.openingDate, original.movementDate);
@@ -98,7 +98,7 @@ export class ReverseCashMovementUseCase {
       return await this.repository.reverse(original, { ...base, createdByUserId: actorId, reversedMovementId: original.id },
         (context) => this.closedPeriods?.assertDateAllowed(input.movementDate, context) ?? Promise.resolve());
     } catch (error) {
-      if (error instanceof ClosedFinancialPeriodError) throw new CashMovementConflictError(error.message);
+      if (error instanceof ClosedFinancialPeriodError) throw new CashMovementConflictError(error.message, 'CLOSED_FINANCIAL_PERIOD');
       throw error;
     }
   }

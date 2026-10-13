@@ -5,9 +5,13 @@ import { getNextLoanStatusEventSequence, LoanStatusHistorySequenceError } from '
 import type { DisbursementResolution } from './annulled-loans.use-case';
 import { isDateOnly } from './uncollectible-eligibility.use-case';
 
-export class AnnulLoanValidationError extends Error {}
+export class AnnulLoanValidationError extends Error {
+  constructor(message: string, readonly reasonCode = 'LOAN_ANNULMENT_INVALID', readonly field?: string) { super(message); }
+}
 export class AnnulLoanNotFoundError extends Error {}
-export class AnnulLoanConflictError extends Error {}
+export class AnnulLoanConflictError extends Error {
+  constructor(message: string, readonly reasonCode = 'LOAN_ANNULMENT_CONFLICT') { super(message); }
+}
 export class AnnulLoanIntegrityError extends Error {}
 export type AnnulmentEvent = { id: string; loanId: string; eventSequence: number; eventKind: string;
   fromStatus: string | null; toStatus: string; actorId: string | null; reason: string | null;
@@ -26,6 +30,7 @@ export interface AnnulLoanTransaction {
   findByKey(key: string): Promise<AnnulmentEvent | undefined>;
   latestEvent(id: string): Promise<AnnulmentEvent | undefined>;
   hasValidPayment(id: string): Promise<boolean>;
+  hasPendingPrecollection(id: string): Promise<boolean>;
   isRefinancingSuccessor(id: string): Promise<boolean>;
   readLedger(id: string): Promise<AnnulmentLedger | undefined>;
   updateActiveLoan(id: string): Promise<boolean>;
@@ -67,7 +72,7 @@ export class AnnulLoanUseCase {
     const resolution = input?.disbursementResolution;
     if (!UUID.test(loanId) || !UUID.test(actorId) || !KEY.test(key) || !reason || reason.length > 500 ||
       !['NOT_DELIVERED', 'RETURNED_IN_FULL'].includes(resolution)) {
-      throw new AnnulLoanValidationError('Los datos para anular el préstamo no son válidos.');
+      throw new AnnulLoanValidationError('Revisa la situación del desembolso y el motivo antes de continuar.', 'LOAN_ANNULMENT_INVALID');
     }
     return this.writer.transaction(async (tx) => {
       const loan = await tx.lockLoan(loanId);
@@ -88,12 +93,14 @@ export class AnnulLoanUseCase {
         assertLedger(ledger, existing);
         return receipt(existing);
       }
-      if (loan.status !== 'ACTIVE') throw new AnnulLoanConflictError('Solo se puede anular un préstamo activo.');
-      if (await tx.isRefinancingSuccessor(loan.id)) throw new AnnulLoanConflictError('Un préstamo sucesor de refinanciamiento no puede anularse de forma aislada.');
-      if (await tx.hasValidPayment(loan.id)) throw new AnnulLoanConflictError('El préstamo tiene pagos válidos.');
+      if (loan.status !== 'ACTIVE') throw new AnnulLoanConflictError('Solo se puede anular un préstamo activo.', 'LOAN_NOT_ACTIVE');
+      if (await tx.hasPendingPrecollection(loan.id)) throw new AnnulLoanConflictError(
+        'El préstamo tiene cobros preliminares pendientes de resolución.', 'LOAN_HAS_PENDING_PRECOLLECTIONS');
+      if (await tx.isRefinancingSuccessor(loan.id)) throw new AnnulLoanConflictError('Un préstamo sucesor de refinanciamiento no puede anularse de forma aislada.', 'REFINANCING_SUCCESSOR_LOAN');
+      if (await tx.hasValidPayment(loan.id)) throw new AnnulLoanConflictError('El préstamo tiene pagos válidos.', 'LOAN_HAS_VALID_PAYMENTS');
       const ledger = await tx.readLedger(loan.id);
       assertLedger(ledger);
-      if (ledger.reversalId) throw new AnnulLoanConflictError('El desembolso ya fue reversado.');
+      if (ledger.reversalId) throw new AnnulLoanConflictError('El desembolso ya fue reversado.', 'DISBURSEMENT_ALREADY_REVERSED');
       const totals = await this.totals.readValidTotals(tx.executor, loan.id);
       const valid = (v: ValidPaymentTotals | undefined): v is ValidPaymentTotals => !!v &&
         money(v.paidAmount) && money(v.paidPrincipal) && money(v.paidInterest) && Number.isSafeInteger(v.invalidCount);

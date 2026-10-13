@@ -23,3 +23,6 @@ export * from './loan-edit-operation.orm-entity';
 export * from './loan-status-history.orm-entity';
 export * from './payment.orm-entities';
 export * from './financial-close.orm-entities';
+export * from './collector-precollection.orm-entity';
+export * from './collector-settlement.orm-entities';
+export * from './collector-custody-entry.orm-entity';

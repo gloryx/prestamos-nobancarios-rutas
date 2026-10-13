@@ -49,13 +49,15 @@ describe('payment selector and context', () => {
        if (sql.includes('FROM payment_plan_entries')) return [{ id: 'e1', dueDate: '2026-01-01', sequence: 1, pendingAmount: '60.00', isProtected: true }];
       if (sql.includes('FROM payment_methods')) return [{ id: 'method-1', name: 'Cash' }];
       if (sql.includes('FROM collectors')) return [];
-      if (sql.includes('FROM payment_applications pa')) return [];
+      if (sql.includes('FROM payment_applications pa')) return [{ paymentId: 'p1', planEntryId: 'paid-entry-15', sequence: 15,
+        amountApplied: '40.00', carriedForwardAmount: '0.00', carriedToPlanEntryId: null, sourceDueDate: '2025-12-31', createdAt: new Date('2026-01-02') }];
       throw new Error(`Unexpected query: ${sql}`);
     });
     const context = await new PaymentContextUseCase({ query } as unknown as DataSource, totalsReader).execute('loan-1');
     expect(context.summary).toMatchObject({ customerName: 'Ana', identification: '101', loanNumber: '7' });
     expect(context.balances).toEqual({ outstandingPrincipal: '30.00', outstandingInterest: '30.00', financialBalance: '60.00' });
-    expect(context.validPayments).toEqual([{ id: 'p1', paymentDate: '2026-01-02', amount: '40.00', status: 'VALID' }]);
+    expect(context.validPayments).toEqual([{ id: 'p1', paymentDate: '2026-01-02', amount: '40.00', status: 'VALID',
+      applications: [{ planEntryId: 'paid-entry-15', sequence: 15, amountApplied: '40.00' }] }]);
     expect(context.combinedPlan).toEqual([{ id: 'e1', dueDate: '2026-01-01', sequence: 1, pendingAmount: '60.00' }]);
     expect(context.protectedPlanEntryIds).toEqual(['e1']);
     expect(context.firstOperationalRow).toEqual(context.combinedPlan[0]);
@@ -72,5 +74,9 @@ describe('payment selector and context', () => {
     expect(planSql).toContain("applied_payment.status = 'VALID'");
     expect(planSql).toContain('pa.carried_to_plan_entry_id = e.id');
     expect(query.mock.calls.find(([sql]) => String(sql).includes('FROM payments WHERE loan_id'))![0]).toContain('payment_date::text AS "paymentDate"');
+    const applicationsSql = query.mock.calls.find(([sql]) => String(sql).includes('JOIN payments p ON p.id = pa.payment_id'))![0];
+    expect(applicationsSql).toContain('source.sequence');
+    expect(applicationsSql).toContain("p.status = 'VALID'");
+    expect(applicationsSql).toContain('ORDER BY p.payment_date, p.created_at, p.id, pa.created_at, pa.id');
   });
 });

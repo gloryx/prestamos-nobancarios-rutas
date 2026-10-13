@@ -96,7 +96,7 @@ describe('loan annulment action', () => {
     api.annulLoan.mockRejectedValueOnce(new HttpApiError(409, 'El préstamo tiene pagos válidos.'));
     expect(await controller.submit()).toBe(false);
     expect(api.getAnnullableLoans).toHaveBeenCalledTimes(2);
-    expect(view()).toContain('El préstamo tiene pagos válidos.');
+    expect(view()).toContain('La información cambió mientras realizabas la operación.');
     expect(view()).toContain('role="dialog"');
     expect(controller.getSnapshot().items[0].loanId).toBe('loan-1');
   });
@@ -107,7 +107,7 @@ describe('loan annulment action', () => {
     api.annulLoan.mockRejectedValueOnce(new HttpApiError(404, 'El préstamo no existe.'));
     expect(await controller.submit()).toBe(false);
     expect(view()).not.toContain('role="dialog"');
-    expect(view()).toContain('El préstamo no existe.');
+    expect(view()).toContain('La información solicitada no está disponible.');
     expect(api.getAnnullableLoans).toHaveBeenCalledTimes(2);
   });
 

@@ -13,8 +13,9 @@ describe('loan presentation helpers', () => {
   });
 
   it('applies the payment plan condition precedence', () => {
-    expect(getLoanPlanCondition({ dueDate: '2026-09-01', pendingAmount: '0.00' }, '2026-09-25')).toBe('PAGADO');
-    expect(getLoanPlanCondition({ dueDate: '2026-09-01', pendingAmount: '10.00' }, '2026-09-25')).toBe('VENCIDO');
+    expect(getLoanPlanCondition({ dueDate: '2026-09-01', pendingAmount: '0.00' }, '2026-09-25')).toBe('REPROGRAMADA');
+    expect(getLoanPlanCondition({ dueDate: '2026-09-01', pendingAmount: '0.00' }, true, '2026-09-25')).toBe('PAGADA');
+    expect(getLoanPlanCondition({ dueDate: '2026-09-01', pendingAmount: '10.00' }, '2026-09-25')).toBe('VENCIDA');
     expect(getLoanPlanCondition({ dueDate: '2026-09-25', pendingAmount: '10.00' }, '2026-09-25')).toBe('PENDIENTE');
   });
 });

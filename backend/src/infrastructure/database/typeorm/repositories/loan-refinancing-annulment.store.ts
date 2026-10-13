@@ -155,6 +155,9 @@ export class LoanRefinancingAnnulmentTypeormStore implements RefinancingAnnulmen
       const tx: RefinancingAnnulmentTransaction = {
         context: manager,
         lockSnapshot: async (id) => { locked = await this.snapshot(manager, id, true); return locked; },
+        hasPendingPrecollection: async (loanIds) => Boolean((await manager.query(`SELECT EXISTS (
+          SELECT 1 FROM collector_precollections WHERE loan_id = ANY($1::uuid[])
+            AND status IN ('RECORDED','SUBMITTED')) AS present`, [loanIds]))[0]?.present),
         lockActivePaymentMethod: async (id) => {
           const active = (await manager.query(`SELECT id FROM payment_methods
             WHERE id = $1 AND is_active = true FOR UPDATE`, [id]))[0]?.id === id;

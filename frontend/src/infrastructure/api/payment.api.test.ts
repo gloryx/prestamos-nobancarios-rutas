@@ -15,6 +15,18 @@ describe('payment loan selector API', () => {
       expect(fetchMock.mock.calls[1][1]).toMatchObject({ credentials: 'include', cache: 'no-store' });
     } finally { fetchMock.mockRestore(); }
   });
+  it('preserves verified applications and remains compatible with payments that have no historical applications', async () => {
+    const result = { validPayments: [
+      { id: 'payment-4664', paymentDate: '2026-10-12', amount: '20000.00', status: 'VALID',
+        applications: [{ planEntryId: 'entry-15', sequence: 15, amountApplied: '20000.00' }] },
+      { id: 'historical', paymentDate: '2026-09-01', amount: '10000.00', status: 'VALID' },
+    ] };
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true, status: 200, json: async () => result } as Response);
+    try {
+      await expect(paymentApi.context('loan-4664')).resolves.toEqual(result);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    } finally { fetchMock.mockRestore(); }
+  });
 });
 
 describe('payment capture transport', () => {
@@ -53,9 +65,9 @@ describe('payment annulment transport', () => {
     } finally { fetchMock.mockRestore(); }
   });
 
-  it('exposes a controlled 409 response instead of swallowing it', async () => {
+  it('exposes a safe controlled 409 response instead of swallowing it', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: false, status: 409, json: async () => ({ message: 'Solo se puede anular el último pago válido.' }) } as Response);
-    try { await expect(paymentApi.annul('old', { reason: 'Corrección', annulmentType: 'CASH_REFUND', idempotencyKey: 'key' })).rejects.toThrow('Solo se puede anular el último pago válido.'); }
+    try { await expect(paymentApi.annul('old', { reason: 'Corrección', annulmentType: 'CASH_REFUND', idempotencyKey: 'key' })).rejects.toThrow('La información cambió mientras realizabas la operación. Actualiza los datos e intenta nuevamente.'); }
     finally { fetchMock.mockRestore(); }
   });
 });

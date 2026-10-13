@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { FinancialClosePreview } from '../../domain/entities/financial-close';
+import { ApiConnectionError } from '../errors/application-error';
 import { FinancialCloseController, type FinancialClosePort } from './financial-close-controller';
 
 const section = { values: {} };
@@ -37,6 +38,15 @@ describe('FinancialCloseController', () => {
     const { api, controller } = setup([{ message: 'Conciliación pendiente', section: 'reconciliations' }]);
     await controller.load(); controller.requestConfirmation(); await controller.confirm();
     expect(controller.getSnapshot().confirmationOpen).toBe(false); expect(api.confirm).not.toHaveBeenCalled();
+  });
+
+  it('keeps the confirmation context and reports typed connection failures without duplicating the action', async () => {
+    const { api, controller } = setup(); await controller.load(); controller.requestConfirmation();
+    vi.mocked(api.confirm).mockRejectedValueOnce(new ApiConnectionError());
+    await controller.confirm();
+    expect(controller.getSnapshot()).toMatchObject({ period: '2026-10', confirmationOpen: true, confirming: false,
+      error: 'No se pudo conectar al servidor. Intenta nuevamente.' });
+    expect(api.confirm).toHaveBeenCalledOnce();
   });
 
   it('loads immutable history detail by id', async () => {

@@ -7,6 +7,7 @@ import type { CashMovement } from '../../domain/entities/cash-movement';
 import type { AuthIdentity } from '../../domain/entities/auth';
 import { TableActions, type TableAction } from '../components/TableActions';
 import { canAccess } from '../hooks/auth-permissions';
+import { cashMovementFieldErrors, cashMovementFormErrors, cashReversalError, cashReversalFieldErrors } from '../helpers/cash-movement-validation';
 import { CashMovementsPage } from './CashMovementsPage';
 
 const harness = vi.hoisted(() => ({
@@ -186,5 +187,30 @@ describe('cash movement export actions', () => {
     harness.identity = { ...harness.identity, permissions: [], role: { ...harness.identity.role, isSuperAdmin: true } };
     expect(canAccess(harness.identity, 'cash-movements.view')).toBe(true);
     expect(elements(renderPage()).filter((item) => item.type === 'button' && 'aria-busy' in (item.props as object))).toHaveLength(2);
+  });
+});
+
+describe('cash movement form validation', () => {
+  it('explains invalid amount, date and inactive payment method before sending', () => {
+    const form = { concept: 'CAPITAL_CONTRIBUTION' as const, amount: '0', movementDate: '2026-99-99',
+      paymentMethodId: 'inactive', observations: 'draft' };
+    expect(cashMovementFormErrors(form, [{ id: 'inactive', isActive: false }], '2026-10-11'))
+      .toEqual(['Ingresa un importe mayor que cero y con hasta dos decimales.',
+        'Selecciona una fecha válida que no esté en el futuro.', 'Selecciona una forma de pago activa para continuar.']);
+    expect(cashMovementFieldErrors(form, [{ id: 'inactive', isActive: false }], '2026-10-11')).toEqual({
+      amount: 'Ingresa un importe mayor que cero y con hasta dos decimales.',
+      movementDate: 'Selecciona una fecha válida que no esté en el futuro.',
+      paymentMethodId: 'Selecciona una forma de pago activa para continuar.',
+    });
+  });
+
+  it('keeps reversal validation specific to its reason and allowed date range', () => {
+    expect(cashReversalError('2026-10-11', '', '2026-10-01', '2026-10-11')).toContain('motivo');
+    expect(cashReversalError('2026-09-30', 'Corrección', '2026-10-01', '2026-10-11')).toContain('no anterior');
+    expect(cashReversalError('2026-10-11', 'Corrección', '2026-10-01', '2026-10-11')).toBeNull();
+    expect(cashReversalFieldErrors('2026-09-30', '', '2026-10-01', '2026-10-11')).toEqual({
+      reason: 'Indica el motivo de la reversión para continuar.',
+      movementDate: 'Selecciona una fecha válida, no anterior al movimiento ni futura.',
+    });
   });
 });

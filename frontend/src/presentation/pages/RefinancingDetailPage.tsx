@@ -29,7 +29,7 @@ export function RefinancingDetailPage(): ReactElement {
   const download = async (refinancing: RefinancingResult) => {
     if (downloading) return;
     setDownloading(true); setDownloadError('');
-    try { await generateLoanPaymentPlanReport(await loanApi.detail(refinancing.originLoan.id)); }
+    try { await generateLoanPaymentPlanReport(await loanApi.detail(refinancing.newLoan.id)); }
     catch { setDownloadError('No se pudo descargar el plan de pagos. Intenta nuevamente.'); }
     finally { setDownloading(false); }
   };

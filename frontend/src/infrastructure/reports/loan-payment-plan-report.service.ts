@@ -9,6 +9,7 @@ const HEIGHT = 180;
 const MARGIN = 4;
 const CONTENT_BOTTOM = 165;
 const ROW_HEIGHT = 8;
+const SECTION_HEIGHT = 7;
 const WATERMARK_ANGLE = 38;
 const REFINANCED_WATERMARK_MARGIN = MARGIN + 1;
 const REFINANCED_WATERMARK_MAX_FONT_SIZE = 30;
@@ -52,15 +53,12 @@ export async function createLoanPaymentPlanDocument(loan: LoanOperationalDetail,
   const fullNameLines = doc.splitTextToSize(loan.customerName, WIDTH - 2 * MARGIN) as string[];
   const nameChunks = Array.from({ length: Math.max(1, Math.ceil(fullNameLines.length / 12)) }, (_, index) => fullNameLines.slice(index * 12, (index + 1) * 12));
   const today = dateKey(now);
-  const payments = loan.validPayments.filter((payment) => payment.status === 'VALID');
-  const rows = [
-    ...payments.map((payment) => ({ kind: 'PAYMENT' as const, id: payment.id, date: payment.paymentDate, amount: payment.amount })),
-    ...loan.plan.filter((entry) => (parseMoneyCents(entry.pendingAmount) ?? 0n) > 0n)
-      .map((entry) => ({ kind: 'PLAN_ENTRY' as const, id: entry.id, date: entry.dueDate, amount: entry.pendingAmount })),
-  ].sort((a, b) => a.date.localeCompare(b.date)
-    || (a.kind === b.kind ? a.id.localeCompare(b.id) : a.kind === 'PAYMENT' ? -1 : 1));
+  const payments = loan.validPayments.filter((payment) => payment.status === 'VALID')
+    .sort((a, b) => a.paymentDate.localeCompare(b.paymentDate) || a.id.localeCompare(b.id));
+  const pendingEntries = loan.plan.filter((entry) => (parseMoneyCents(entry.pendingAmount) ?? 0n) > 0n)
+    .sort((a, b) => a.dueDate.localeCompare(b.dueDate) || a.sequence - b.sequence || a.id.localeCompare(b.id));
 
-  function header(nameLines: string[], continuation = false): number {
+  function header(nameLines: string[], continuation = false, compact = false): number {
     const status = STATUS_LABELS[loan.status] ?? loan.status;
     if (['CANCELLED', 'REFINANCED', 'UNCOLLECTIBLE'].includes(loan.status)) {
       const cancelled = loan.status === 'CANCELLED';
@@ -100,6 +98,14 @@ export async function createLoanPaymentPlanDocument(loan: LoanOperationalDetail,
     doc.text('Plan de pago', MARGIN, 9);
     let y = 14;
     for (const line of limitedLines(doc, `Préstamo #${loan.loanNumber}`, 2)) { doc.text(line, MARGIN, y); y += 4.5; }
+    if (compact) {
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      for (const line of limitedLines(doc, `Cliente: ${loan.customerName}`, 1)) { doc.text(line, MARGIN, y + 1); y += 4; }
+      doc.setLineWidth(0.2);
+      doc.line(MARGIN, y + 2, WIDTH - MARGIN, y + 2);
+      return y + 5;
+    }
     doc.setFontSize(8);
     doc.text(continuation ? 'CLIENTE (continuación)' : 'CLIENTE', MARGIN, y + 1); y += 3.5;
     doc.setFont('helvetica', 'bold');
@@ -134,22 +140,31 @@ export async function createLoanPaymentPlanDocument(loan: LoanOperationalDetail,
     }
     doc.setLineWidth(0.2);
     doc.line(MARGIN, y + 2, WIDTH - MARGIN, y + 2);
-    doc.setFont('helvetica', 'bold');
-    doc.text('Movimientos y obligaciones pendientes', MARGIN, y + 6);
-    doc.setFont('helvetica', 'normal');
-    return y + 9;
+    return y + 5;
   }
 
   let y = header(nameChunks[0]);
   for (const continuation of nameChunks.slice(1)) { doc.addPage([WIDTH, HEIGHT], 'portrait'); y = header(continuation, true); }
-  for (const [index, row] of rows.entries()) {
-    if (y + ROW_HEIGHT > CONTENT_BOTTOM) { doc.addPage([WIDTH, HEIGHT], 'portrait'); y = header(nameChunks[0]); }
-    const payment = row.kind === 'PAYMENT';
-    const condition = payment ? 'PAGADO' : row.date < today ? 'VENCIDA' : 'PENDIENTE';
+
+  function addPage(): void {
+    doc.addPage([WIDTH, HEIGHT], 'portrait');
+    y = header(nameChunks[0], false, true);
+  }
+
+  function section(title: string): void {
+    if (y + SECTION_HEIGHT + ROW_HEIGHT > CONTENT_BOTTOM) addPage();
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.text(title, MARGIN, y + 4);
+    doc.line(MARGIN, y + 5.5, WIDTH - MARGIN, y + 5.5);
+    doc.setFont('helvetica', 'normal');
+    y += SECTION_HEIGHT;
+  }
+
+  function row(prefix: string, condition: string, amountValue: string): void {
     doc.setFontSize(7.5);
     doc.setFont('helvetica', 'bold');
-    const prefix = `${index + 1}.  ${formatDateOnlyForDisplay(row.date)}  `;
-    const amount = getPdfMoneyText(row.amount);
+    const amount = getPdfMoneyText(amountValue);
     const labelWidth = doc.getTextWidth(prefix) + doc.getTextWidth(condition);
     doc.setFont('helvetica', 'normal');
     const amountWidth = doc.getTextWidth(amount);
@@ -163,17 +178,30 @@ export async function createLoanPaymentPlanDocument(loan: LoanOperationalDetail,
     if (stateRight + 2 > amountLeft) throw new Error('Receipt row exceeds printable width.');
     doc.setFont('helvetica', 'bold');
     doc.text(prefix, MARGIN, y + 4.5);
-    if (condition === 'PAGADO') doc.setTextColor(24, 99, 55);
+    if (condition === 'PAGO RECIBIDO') doc.setTextColor(24, 99, 55);
     if (condition === 'PENDIENTE' || condition === 'VENCIDA') doc.setTextColor(220, 38, 38);
     doc.text(condition, MARGIN + prefixWidth, y + 4.5);
     doc.setTextColor(0);
     doc.setFont('helvetica', 'normal');
     doc.text(amount, WIDTH - MARGIN, y + 4.5, { align: 'right' });
-    doc.line(MARGIN, y + 6.5, WIDTH - MARGIN, y + 6.5);
+    doc.line(MARGIN, y + ROW_HEIGHT - 1.5, WIDTH - MARGIN, y + ROW_HEIGHT - 1.5);
     y += ROW_HEIGHT;
   }
-  if (!rows.length) { doc.setFontSize(7.5); doc.text('Sin pagos válidos ni cuotas pendientes.', MARGIN, y + 4); y += 10; }
-  if (y + 15 > CONTENT_BOTTOM) { doc.addPage([WIDTH, HEIGHT], 'portrait'); y = header(nameChunks[0]); }
+
+  section('PAGOS RECIBIDOS');
+  if (!payments.length) { doc.setFontSize(7.5); doc.text('No hay pagos recibidos.', MARGIN, y + 4); y += ROW_HEIGHT; }
+  for (const payment of payments) {
+    if (y + ROW_HEIGHT > CONTENT_BOTTOM) { addPage(); section('PAGOS RECIBIDOS (CONTINUACIÓN)'); }
+    row(`${formatDateOnlyForDisplay(payment.paymentDate)}  `, 'PAGO RECIBIDO', payment.amount);
+  }
+
+  section('CUOTAS PENDIENTES');
+  if (!pendingEntries.length) { doc.setFontSize(7.5); doc.text('No hay cuotas pendientes.', MARGIN, y + 4); y += ROW_HEIGHT; }
+  for (const entry of pendingEntries) {
+    if (y + ROW_HEIGHT > CONTENT_BOTTOM) { addPage(); section('CUOTAS PENDIENTES (CONTINUACIÓN)'); }
+    row(`CUOTA ${entry.sequence}  ${formatDateOnlyForDisplay(entry.dueDate)}  `, entry.dueDate < today ? 'VENCIDA' : 'PENDIENTE', entry.pendingAmount);
+  }
+  if (y + 15 > CONTENT_BOTTOM) addPage();
   const paid = payments.reduce((sum, payment) => sum + (parseMoneyCents(payment.amount) ?? 0n), 0n);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8);

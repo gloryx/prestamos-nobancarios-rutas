@@ -14,6 +14,8 @@ import { PaymentController } from '../src/presentation/payment/payment.controlle
 import { LoanController } from '../src/presentation/loan/loan.controller';
 import { SecurityService } from '../src/application/security/security.service';
 import { SESSION_COOKIE } from '../src/shared/constants/security';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 const context = (handler: object, request: Record<string, unknown>): ExecutionContext => ({ getHandler: () => handler, getClass: () => Object, switchToHttp: () => ({ getRequest: () => request }) } as unknown as ExecutionContext);
 const identity = (permissions: string[], isSuperAdmin = false) => ({ id: 'u', username: 'u', fullName: 'U', role: { id: 'r', code: 'R', name: 'R', isSuperAdmin }, permissions, sessionId: 's' });
@@ -86,7 +88,9 @@ describe('security guards and permission metadata', () => {
        'customers.view', 'customers.create', 'customers.update', 'customers.status.change', 'customers.summary.view', 'customers.analysis.view', 'customers.files.view', 'customers.export', 'customers.assigned.view', 'customers.site.view', 'customers.site.capture', 'customers.site.replace', 'customers.site.replace.authorize',
        'users.view', 'users.create', 'users.update', 'users.status.change', 'users.password.reset', 'users.role.assign', 'roles.view', 'roles.permissions.update',
        'collectors.view', 'collectors.create', 'collectors.update', 'collectors.status.change', 'collectors.user.assign', 'collectors.photo.view', 'collectors.financial-summary.view',
-             'financial-opening.view', 'financial-opening.perform', 'cash-movements.view', 'cash-movements.create', 'cash-movements.reverse', 'cash-movements.export', 'financial-closes.view', 'financial-closes.confirm', 'loans.view', 'loans.assigned.view', 'loans.create', 'loans.update', 'loans.export', 'loans.status.annul', 'loans.status.uncollectible', 'loans.status.reactivate', 'loans.refinance.view', 'loans.refinance.create', 'loans.refinance.annul', 'payments.view', 'payments.create', 'payments.annul', 'payments.plan.customize', 'collection-agenda.view', 'daily-collections.assigned.view',
+              'financial-opening.view', 'financial-opening.perform', 'cash-movements.view', 'cash-movements.create', 'cash-movements.reverse', 'cash-movements.export', 'financial-closes.view', 'financial-closes.confirm', 'loans.view', 'loans.assigned.view', 'loans.create', 'loans.update', 'loans.export', 'loans.status.annul', 'loans.status.uncollectible', 'loans.status.reactivate', 'loans.refinance.view', 'loans.refinance.create', 'loans.refinance.annul', 'payments.view', 'payments.create', 'payments.annul', 'payments.plan.customize', 'collection-agenda.view', 'daily-collections.assigned.view', 'collector-precollections.create', 'collector-precollections.assigned.view', 'collector-precollections.view', 'collector-precollections.cancel',
+       'collector-settlements.self.create', 'collector-settlements.create', 'collector-settlements.self.view', 'collector-settlements.view', 'collector-settlements.self.submit', 'collector-settlements.submit', 'collector-settlements.review', 'collector-settlements.confirm', 'collector-settlements.reject', 'collector-settlements.self.cancel', 'collector-settlements.cancel',
+       'collector-custody.self.view', 'collector-custody.view', 'collector-custody.self.remit', 'collector-custody.remit', 'collector-custody.topup', 'collector-custody.adjust',
     ]));
     expect(Reflect.getMetadata(PERMISSIONS_KEY, CustomerController.prototype.list)).toEqual(['customers.view']);
     expect(Reflect.getMetadata(PERMISSIONS_KEY, CustomerController.prototype.summary)).toEqual(['customers.summary.view']);
@@ -113,7 +117,17 @@ describe('security guards and permission metadata', () => {
       'collectors.financial-summary.view',
       'daily-collections.assigned.view',
       'collection-agenda.view',
+      'collector-precollections.create',
+      'collector-precollections.assigned.view',
+      'collector-precollections.cancel',
+      'collector-settlements.self.create',
+      'collector-settlements.self.view',
+      'collector-settlements.self.submit',
+      'collector-settlements.self.cancel',
+      'collector-custody.self.view',
+      'collector-custody.self.remit',
     ]);
+    expect(COLLECTOR_DEFAULTS).not.toContain('collector-precollections.view');
     expect(PERMISSIONS.find(([code]) => code === 'customers.view')?.[1]).toBe('Acceso global a clientes — Ver');
     expect(PERMISSIONS.find(([code]) => code === 'customers.assigned.view')?.[1]).toBe('Ver clientes asignados');
     expect(PERMISSIONS.find(([code]) => code === 'loans.view')?.[1]).toBe('Acceso global a préstamos — Ver');
@@ -132,6 +146,15 @@ describe('security guards and permission metadata', () => {
     expect(() => guard.canActivate(context(LoanController.prototype.editLoan, { currentUser: identity(['loans.view']) }))).toThrow(ForbiddenException);
     expect(guard.canActivate(context(LoanController.prototype.editLoan, { currentUser: identity(['loans.update']) }))).toBe(true);
     expect(guard.canActivate(context(LoanController.prototype.editLoan, { currentUser: identity([], true) }))).toBe(true);
+  });
+
+  it('reconciles only collector-precollection grants for the collector role', () => {
+    const seed = readFileSync(join(__dirname, '../src/infrastructure/database/typeorm/seeds/seed-security.ts'), 'utf8');
+    expect(seed).toContain("code.startsWith('collector-precollections.')");
+    expect(seed).toContain("code.startsWith('collector-settlements.')");
+    expect(seed).toContain("code.startsWith('collector-custody.')");
+    expect(seed).toContain('unauthorizedCollectorPermissionIds');
+    expect(seed).not.toContain("code.startsWith('cash-movements.')");
   });
 });
 

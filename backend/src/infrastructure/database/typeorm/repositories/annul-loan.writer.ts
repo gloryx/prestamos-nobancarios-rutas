@@ -25,6 +25,12 @@ export class AnnulLoanTypeormWriter implements AnnulLoanWriter {
         if (typeof result !== 'boolean') throw new Error('Valid payment guard is unavailable.');
         return result;
       },
+      hasPendingPrecollection: async (id) => {
+        const result = (await manager.query(`SELECT EXISTS (SELECT 1 FROM collector_precollections
+          WHERE loan_id = $1 AND status IN ('RECORDED','SUBMITTED')) AS present`, [id]))[0]?.present;
+        if (typeof result !== 'boolean') throw new Error('Pending precollection guard is unavailable.');
+        return result;
+      },
       readLedger: async (id) => (await manager.query(`SELECT l.principal::text AS principal, l.interest_amount::text AS "interestAmount",
         l.total_amount::text AS "totalAmount", l.start_date::text AS "startDate",
         (SELECT COUNT(*)::int FROM payment_plan_entries WHERE loan_id = l.id) AS "planCount",

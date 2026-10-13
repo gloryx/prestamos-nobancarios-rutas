@@ -3,8 +3,8 @@ import type { DailyCollectionPage, DailyCollectionsReader, DailyCollectionsScope
   ValidDailyQuery } from '../../../../application/payment/daily-collections.use-case';
 
 const customerName = "concat_ws(' ', c.first_name, c.middle_name, c.first_last_name, c.second_last_name)";
-const searchFields = `(l.loan_number::text ILIKE $2 OR c.identification ILIKE $2 OR ${customerName} ILIKE $2
-  OR c.primary_phone ILIKE $2 OR c.secondary_phone ILIKE $2)`;
+const searchFields = (parameter: number) => `(l.loan_number::text ILIKE $${parameter} OR c.identification ILIKE $${parameter} OR ${customerName} ILIKE $${parameter}
+  OR c.primary_phone ILIKE $${parameter} OR c.secondary_phone ILIKE $${parameter})`;
 const dueSort: Record<DailyDueSort, string> = {
   customer: `lower(${customerName})`, loanNumber: 'l.loan_number', sequence: 'e.sequence',
   dueDate: 'e.due_date', pendingAmount: 'e.pending_amount',
@@ -16,10 +16,17 @@ const receivedSort: Record<DailyReceivedSort, string> = {
 export class DailyCollectionsTypeormReader implements DailyCollectionsReader {
   constructor(private readonly source: DataSource) {}
 
-  async resolveCollector(userId: string): Promise<boolean> {
-    const rows = await this.source.query(`SELECT 1 FROM users u JOIN roles role ON role.id=u.role_id AND role.is_active=true AND role.code='COLLECTOR'
+  async resolveCollector(userId: string): Promise<{ collectorId: string; collectorUserId: string } | null> {
+    const rows = await this.source.query(`SELECT cl.id AS "collectorId", u.id AS "collectorUserId" FROM users u
+      JOIN roles role ON role.id=u.role_id AND role.is_active=true AND role.code='COLLECTOR'
       JOIN collectors cl ON cl.user_id=u.id AND cl.is_active=true WHERE u.id=$1 AND u.is_active=true LIMIT 1`, [userId]);
-    return Boolean(rows[0]);
+    return rows[0] ?? null;
+  }
+
+  private receivedScope(scope: DailyCollectionsScope | undefined, paymentAlias: string, params: unknown[]) {
+    if (!scope || scope.kind === 'ALL') return '';
+    params.push(scope.collectorId);
+    return ` AND ${paymentAlias}.collector_id=$${params.length}`;
   }
 
   private scope(scope: DailyCollectionsScope | undefined, customerAlias: string, params: unknown[]) {
@@ -37,7 +44,7 @@ export class DailyCollectionsTypeormReader implements DailyCollectionsReader {
 
   async summary(date: string, scope?: DailyCollectionsScope) {
     const dueParams: unknown[] = [date]; const dueScope = this.scope(scope, 'c', dueParams);
-    const paidScope = dueScope.replace('sc.id=c.id', 'sc.id=pc.id');
+    const paidScope = this.receivedScope(scope, 'p', dueParams);
     const rows: Array<{ dueCount: number; dueAmount: string; paidLoansCount: number; receivedAmount: string }> = await this.source.query(`
       SELECT due."dueCount", due."dueAmount", paid."paidLoansCount", paid."receivedAmount"
       FROM (SELECT COUNT(*)::int AS "dueCount", COALESCE(SUM(e.pending_amount), 0.00)::numeric(38,2)::text AS "dueAmount"
@@ -54,8 +61,8 @@ export class DailyCollectionsTypeormReader implements DailyCollectionsReader {
     const params: unknown[] = [query.date];
     const from = `FROM payment_plan_entries e JOIN loans l ON l.id = e.loan_id JOIN customers c ON c.id = l.customer_id
       WHERE e.due_date = $1::date AND e.pending_amount > 0 AND l.status = 'ACTIVE'${this.scope(scope, 'c', params)}`;
-    const where = query.search ? `${from} AND ${searchFields}` : from;
     if (query.search) params.push(`%${query.search}%`);
+    const where = query.search ? `${from} AND ${searchFields(params.length)}` : from;
     return this.source.transaction('REPEATABLE READ', async (manager) => {
       const count: Array<{ total: number }> = await manager.query(`SELECT COUNT(*)::int AS total ${where}`, params);
       const rows: Array<{ planEntryId: string; sequence: number; dueDate: string; pendingAmount: string;
@@ -77,9 +84,9 @@ export class DailyCollectionsTypeormReader implements DailyCollectionsReader {
     const params: unknown[] = [query.date];
     const from = `FROM payments p JOIN loans l ON l.id = p.loan_id JOIN customers c ON c.id = l.customer_id
       JOIN payment_methods pm ON pm.id = p.method_id LEFT JOIN collectors cl ON cl.id = p.collector_id
-      WHERE p.payment_date = $1::date AND p.status = 'VALID'${this.scope(scope, 'c', params)}`;
-    const where = query.search ? `${from} AND ${searchFields}` : from;
+      WHERE p.payment_date = $1::date AND p.status = 'VALID'${this.receivedScope(scope, 'p', params)}`;
     if (query.search) params.push(`%${query.search}%`);
+    const where = query.search ? `${from} AND ${searchFields(params.length)}` : from;
     return this.source.transaction('REPEATABLE READ', async (manager) => {
       const count: Array<{ total: number }> = await manager.query(`SELECT COUNT(*)::int AS total ${where}`, params);
       const rows: Array<{ paymentId: string; paymentDate: string; amount: string; loanId: string; loanNumber: string;

@@ -14,7 +14,8 @@ const loan: LoanOperationalDetail = {
   collectionProjection: { overdueAmount: '300.00', scheduledAmount: '400.00', totalSuggestedAmount: '700.00', operationalDate: '2026-04-02', operationalDateKind: 'SCHEDULED' },
   validPayments: [
     { id: 'payment-b', paymentDate: '2026-02-01', amount: '100.00', status: 'VALID' },
-    { id: 'payment-a', paymentDate: '2026-02-01', amount: '400.00', status: 'VALID' },
+    { id: 'payment-a', paymentDate: '2026-02-01', amount: '400.00', status: 'VALID',
+      applications: [{ planEntryId: 'paid-15', sequence: 15, amountApplied: '400.00' }] },
     { id: 'annulled', paymentDate: '2026-03-01', amount: '900.00', status: 'ANNULLED' as 'VALID' },
   ],
   plan: [
@@ -26,8 +27,12 @@ const loan: LoanOperationalDetail = {
 
 const pages = (doc: Awaited<ReturnType<typeof createLoanPaymentPlanDocument>>) =>
   (doc.internal.pages as unknown as string[][]).slice(1).map((page) => page.join('\n'));
-const timelineRows = (page: string) => [...page.matchAll(/\((\d+)\. {2}(\d{2}\/\d{2}\/\d{4}) {2}\) Tj[\s\S]*?\((PAGADO|PENDIENTE|VENCIDA)\) Tj/g)]
-  .map(([, number, date, state]) => ({ number: Number(number), date, state }));
+const timelineRows = (page: string) => [
+  ...[...page.matchAll(/\((\d{2}\/\d{2}\/\d{4}) {2}\) Tj[\s\S]*?\(PAGO RECIBIDO\) Tj/g)]
+    .map((match) => ({ index: match.index, reference: 'PAGO RECIBIDO', date: match[1], state: 'PAGO RECIBIDO' })),
+  ...[...page.matchAll(/\(CUOTA (\d+) {2}(\d{2}\/\d{2}\/\d{4}) {2}\) Tj[\s\S]*?\((PENDIENTE|VENCIDA)\) Tj/g)]
+    .map((match) => ({ index: match.index, reference: `Cuota ${match[1]}`, date: match[2], state: match[3] })),
+].sort((left, right) => left.index - right.index).map(({ reference, date, state }) => ({ reference, date, state }));
 const textRuns = (page: string) => [...page.matchAll(/BT\n\/F\d+ ([\d.]+) Tf[\s\S]*?([\d.]+) ([\d.]+) Td\n\(([^)]*)\) Tj\nET/g)]
   .map(([, size, x, y, text]) => ({ size: Number(size), x: Number(x), y: Number(y), text }));
 const textTransform = (page: string, text: string) => {
@@ -42,15 +47,17 @@ const textFontSize = (page: string, text: string) => {
 };
 
 describe('existing shared loan payment-plan receipt', () => {
-  it('prints actual payments before same-day obligations with visual numbering and no zero or annulled rows', async () => {
+  it('prints payment movements and contractual installment sequences without zero or annulled rows', async () => {
     const [page] = pages(await createLoanPaymentPlanDocument(loan, now));
     expect(timelineRows(page)).toEqual([
-      { number: 1, date: '01/02/2026', state: 'PAGADO' },
-      { number: 2, date: '01/02/2026', state: 'PAGADO' },
-      { number: 3, date: '01/02/2026', state: 'VENCIDA' },
-      { number: 4, date: '02/04/2026', state: 'PENDIENTE' },
+      { reference: 'PAGO RECIBIDO', date: '01/02/2026', state: 'PAGO RECIBIDO' },
+      { reference: 'PAGO RECIBIDO', date: '01/02/2026', state: 'PAGO RECIBIDO' },
+      { reference: 'Cuota 3', date: '01/02/2026', state: 'VENCIDA' },
+      { reference: 'Cuota 5', date: '02/04/2026', state: 'PENDIENTE' },
     ]);
-    expect(page).not.toContain('5.  01/03/2026');
+    expect(page.indexOf('(PAGOS RECIBIDOS) Tj')).toBeLessThan(page.indexOf('(CUOTAS PENDIENTES) Tj'));
+    expect(page).not.toContain('CUOTA 1  01/03/2026');
+    expect(page).not.toMatch(/Aplicado a cuota|aplicaciones históricas|planEntryId|paid-15/);
     expect(page).not.toContain('(¢900)');
     expect(page).toContain('(¢700)');
     expect(page).toContain('(¢500)');
@@ -60,16 +67,68 @@ describe('existing shared loan payment-plan receipt', () => {
     expect(page).not.toMatch(/Cobrado|Por cobrar/);
   });
 
+  it('keeps verified applications internal while preserving the real payment and contractual pending rows', async () => {
+    const fixture: LoanOperationalDetail = { ...loan, loanNumber: '4664', financialBalance: '200000.00', pendingTotal: '200000.00',
+      validPayments: [{ id: 'ffc5ebe9-c24f-416d-9c01-7f4d7c60ac25', paymentDate: '2026-10-12', amount: '20000.00', status: 'VALID',
+        applications: [{ planEntryId: 'entry-15', sequence: 15, amountApplied: '20000.00' }] }],
+      plan: [
+        { id: 'entry-15', sequence: 15, dueDate: '2026-10-08', pendingAmount: '0.00' },
+        { id: 'entry-16', sequence: 16, dueDate: '2026-10-09', pendingAmount: '20000.00' },
+        { id: 'entry-17', sequence: 17, dueDate: '2026-10-10', pendingAmount: '20000.00' },
+        { id: 'entry-18', sequence: 18, dueDate: '2026-10-12', pendingAmount: '160000.00' },
+      ] };
+    const [page] = pages(await createLoanPaymentPlanDocument(fixture, new Date(2026, 9, 12, 18)));
+    expect(page).toContain('(PAGO RECIBIDO) Tj');
+    expect(page).not.toMatch(/Aplicado a cuota|entry-15|applications/);
+    expect(timelineRows(page)).toEqual([
+      { reference: 'PAGO RECIBIDO', date: '12/10/2026', state: 'PAGO RECIBIDO' },
+      { reference: 'Cuota 16', date: '09/10/2026', state: 'VENCIDA' },
+      { reference: 'Cuota 17', date: '10/10/2026', state: 'VENCIDA' },
+      { reference: 'Cuota 18', date: '12/10/2026', state: 'PENDIENTE' },
+    ]);
+    expect(page).not.toContain('(CUOTA 15  12/10/2026  ) Tj');
+  });
+
+  it('orders real payments chronologically without requiring historical application details', async () => {
+    const fixture = { ...loan, validPayments: [
+      { id: 'newer', paymentDate: '2026-03-02', amount: '75.00', status: 'VALID' as const },
+      { id: 'older', paymentDate: '2026-01-15', amount: '25.00', status: 'VALID' as const },
+    ] };
+    const [page] = pages(await createLoanPaymentPlanDocument(fixture, now));
+    expect(timelineRows(page).slice(0, 2)).toEqual([
+      { reference: 'PAGO RECIBIDO', date: '15/01/2026', state: 'PAGO RECIBIDO' },
+      { reference: 'PAGO RECIBIDO', date: '02/03/2026', state: 'PAGO RECIBIDO' },
+    ]);
+    expect(page.indexOf('(¢25) Tj')).toBeLessThan(page.indexOf('(¢75) Tj'));
+    expect(page).not.toContain('Sin aplicaciones históricas disponibles');
+  });
+
+  it('prints reprogrammed pending installments with their contractual sequence, current date and pending amount', async () => {
+    const fixture = { ...loan, validPayments: [], plan: [
+      { id: 'later-sequence', sequence: 12, dueDate: '2026-06-20', pendingAmount: '125.00' },
+      { id: 'reprogrammed', sequence: 8, dueDate: '2026-05-10', pendingAmount: '275.00' },
+      { id: 'settled', sequence: 7, dueDate: '2026-04-01', pendingAmount: '0.00' },
+    ] };
+    const [page] = pages(await createLoanPaymentPlanDocument(fixture, now));
+    expect(timelineRows(page)).toEqual([
+      { reference: 'Cuota 8', date: '10/05/2026', state: 'PENDIENTE' },
+      { reference: 'Cuota 12', date: '20/06/2026', state: 'PENDIENTE' },
+    ]);
+    expect(page).toContain('(¢275) Tj');
+    expect(page).toContain('(¢125) Tj');
+    expect(page).not.toContain('CUOTA 7');
+  });
+
   it('colors each state token, aligns it to the black date and resets ink before the amount', async () => {
     const document = await createLoanPaymentPlanDocument(loan, now);
     const [page] = pages(document);
-    const paid = page.match(/0\. g\n0\. Tc\n([\d.]+) ([\d.]+) Td\n\(1\. {2}01\/02\/2026 {2}\) Tj\nET\nBT\n\/F2 7\.5 Tf\n8\.625 TL\n0\.094 0\.388 0\.216 rg\n0\. Tc\n([\d.]+) ([\d.]+) Td\n\(PAGADO\) Tj/);
+    const paid = page.match(/0\. g\n0\. Tc\n([\d.]+) ([\d.]+) Td\n\(01\/02\/2026 {2}\) Tj\nET\nBT\n\/F2 7\.5 Tf\n8\.625 TL\n0\.094 0\.388 0\.216 rg\n0\. Tc\n([\d.]+) ([\d.]+) Td\n\(PAGO RECIBIDO\) Tj/);
     expect(paid).not.toBeNull();
     document.setFont('helvetica', 'bold');
     document.setFontSize(7.5);
-    expect(Number(paid![3]) - Number(paid![1])).toBeCloseTo(document.getTextWidth('1.  01/02/2026  ') * document.internal.scaleFactor, 4);
+    expect(Number(paid![3]) - Number(paid![1])).toBeCloseTo(document.getTextWidth('01/02/2026  ') * document.internal.scaleFactor, 4);
     expect(paid![4]).toBe(paid![2]);
-    const amount = page.match(/\(PAGADO\) Tj\nET\nBT\n\/F1 7\.5 Tf\n8\.625 TL\n0\. g\n0\. Tc\n([\d.]+) ([\d.]+) Td\n\(¢400\) Tj/);
+    const amount = page.match(/\(PAGO RECIBIDO\) Tj\nET\nBT\n\/F1 7\.5 Tf\n8\.625 TL\n0\. g\n0\. Tc\n([\d.]+) ([\d.]+) Td\n\(¢400\) Tj/);
     expect(amount?.[2]).toBe(paid![4]);
     expect(page).toMatch(/0\.863 0\.149 0\.149 rg[\s\S]*?\(PENDIENTE\) Tj\nET\nBT[\s\S]*?0\. g[\s\S]*?\(¢400\) Tj/);
     expect(page).toMatch(/0\.863 0\.149 0\.149 rg[\s\S]*?\(VENCIDA\) Tj\nET\nBT[\s\S]*?0\. g[\s\S]*?\(¢300\) Tj/);
@@ -80,7 +139,7 @@ describe('existing shared loan payment-plan receipt', () => {
     const fixture = { ...loan, financialBalance: balance, validPayments: [{ id: 'payment', paymentDate: '2026-02-01', amount, status: 'VALID' as const }],
       plan: [{ id: 'plan', sequence: 3, dueDate: '2026-02-01', pendingAmount: '300.00' }] };
     const [page] = pages(await createLoanPaymentPlanDocument(fixture, now));
-    expect(timelineRows(page).map(({ state }) => state)).toEqual(['PAGADO', 'VENCIDA']);
+    expect(timelineRows(page).map(({ state }) => state)).toEqual(['PAGO RECIBIDO', 'VENCIDA']);
     expect(page).toContain(getPdfMoneyText(amount));
     expect(page).toContain(getPdfMoneyText('300.00'));
     expect(page).toContain(getPdfMoneyText(balance));
@@ -137,8 +196,9 @@ describe('existing shared loan payment-plan receipt', () => {
 
   it('keeps an empty timeline readable without fabricating paid installments', async () => {
     const [page] = pages(await createLoanPaymentPlanDocument({ ...loan, plan: [], validPayments: [] }, now));
-    expect(page).toContain('Sin pagos');
-    expect(page).not.toContain('PAGADO');
+    expect(page).toContain('No hay pagos recibidos.');
+    expect(page).toContain('No hay cuotas pendientes.');
+    expect(page).not.toContain('PAGO RECIBIDO');
     expect(page).toContain('¢0');
   });
 
@@ -159,7 +219,7 @@ describe('existing shared loan payment-plan receipt', () => {
     expect(page).toContain('SALDO ACTUAL');
     expect(page).toMatch(/\/F2 8\.5 Tf[\s\S]*?\(SALDO ACTUAL\)/);
     expect(page).toContain('Identificación:');
-    expect(timelineRows(page)[0]).toEqual({ number: 1, date: '01/02/2026', state: 'PAGADO' });
+    expect(timelineRows(page)[0]).toEqual({ reference: 'PAGO RECIBIDO', date: '01/02/2026', state: 'PAGO RECIBIDO' });
     expect(document.getNumberOfPages()).toBeGreaterThanOrEqual(1);
   });
 
@@ -170,7 +230,7 @@ describe('existing shared loan payment-plan receipt', () => {
     expect(sheets.length).toBeGreaterThan(2);
     expect(sheets[1]).toContain('CLIENTE');
     for (const word of words) expect(sheets.some((sheet) => sheet.includes(word))).toBe(true);
-    expect(sheets.filter((sheet) => timelineRows(sheet).some(({ number, state }) => number === 1 && state === 'PAGADO'))).toHaveLength(1);
+    expect(sheets.filter((sheet) => timelineRows(sheet).some(({ reference, state }) => reference === 'PAGO RECIBIDO' && state === 'PAGO RECIBIDO'))).toHaveLength(1);
     sheets.forEach((sheet) => { expect(sheet).toContain('Plan de pago'); expect(sheet).toContain('Generado:'); });
   });
 
@@ -205,9 +265,15 @@ describe('existing shared loan payment-plan receipt', () => {
       expect(sheet).toContain(`${index + 1}/${sheets.length}`);
       expect(sheet).toContain('Generado:');
     });
+    expect(sheets[0]).toContain('(Principal) Tj');
+    sheets.slice(1).forEach((sheet) => {
+      expect(sheet).toContain('(Cliente: María Fernanda Rodríguez de la Cruz) Tj');
+      expect(sheet).not.toContain('(Principal) Tj');
+      expect(sheet).not.toContain('(SALDO ACTUAL) Tj');
+    });
     const all = sheets.join('\n');
-    for (let number = 1; number <= 52; number += 1) {
-      const row = new RegExp(`\\(${number}\\. {2}\\d{2}/\\d{2}/2026 {2}\\) Tj[\\s\\S]*?\\(PENDIENTE\\) Tj[\\s\\S]*?\\(¢1\\) Tj`);
+    for (let sequence = 3; sequence <= 54; sequence += 1) {
+      const row = new RegExp(`\\(CUOTA ${sequence} {2}\\d{2}/\\d{2}/2026 {2}\\) Tj[\\s\\S]*?\\(PENDIENTE\\) Tj[\\s\\S]*?\\(¢1\\) Tj`);
       expect(sheets.filter((sheet) => row.test(sheet))).toHaveLength(1);
     }
     expect(all).not.toContain('private-loan-uuid');
@@ -221,10 +287,10 @@ describe('existing shared loan payment-plan receipt', () => {
       ...plan, { id: 'z-largest', sequence: 101, dueDate: '2026-04-02', pendingAmount: amount },
     ] }, now);
     const sheets = pages(document);
-    const matches = sheets.map(textRuns).filter((runs) => runs.some(({ text }) => text === '101.  02/04/2026  '));
+    const matches = sheets.map(textRuns).filter((runs) => runs.some(({ text }) => text === 'CUOTA 101  02/04/2026  '));
     expect(matches).toHaveLength(1);
     const runs = matches[0];
-    const position = runs.findIndex(({ text }) => text === '101.  02/04/2026  ');
+    const position = runs.findIndex(({ text }) => text === 'CUOTA 101  02/04/2026  ');
     const [prefix, state, money] = runs.slice(position, position + 3);
     expect([state.text, money.text]).toEqual(['PENDIENTE', getPdfMoneyText(amount)]);
     expect([state.y, money.y]).toEqual([prefix.y, prefix.y]);
@@ -246,7 +312,10 @@ describe('existing shared loan payment-plan receipt', () => {
     expect(bytes.byteLength).toBeGreaterThan(1000);
     expect(pdf.startsWith('%PDF-')).toBe(true);
     expect(pdf.trimEnd().endsWith('%%EOF')).toBe(true);
-    expect(pdf).toContain('(PAGADO) Tj');
+    expect(pdf).toContain('(PAGO RECIBIDO) Tj');
+    expect(pdf).toContain('(PAGOS RECIBIDOS) Tj');
+    expect(pdf).toContain('(CUOTAS PENDIENTES) Tj');
+    expect(pdf).not.toMatch(/Aplicado a cuota|aplicaciones históricas/);
     expect(pdf).not.toMatch(/Cobrado|Por cobrar/);
   });
 

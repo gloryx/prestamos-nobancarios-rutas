@@ -77,8 +77,7 @@ export class RefinancingConditionsController {
   }
 
   async setRefinancingDate(refinancingDate: string): Promise<void> {
-    const conditions = { ...this.state.conditions, refinancingDate,
-      ...(this.state.conditions.mode === 'personalized' ? { mode: 'automatic' as const, customPlan: [] } : {}) };
+    const conditions = { ...this.state.conditions, refinancingDate };
     const current = this.state.preview;
     const request = ++this.previewRequest;
     if (!this.previews || !current || !/^\d{4}-\d{2}-\d{2}$/.test(refinancingDate)) {

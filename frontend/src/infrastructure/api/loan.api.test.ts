@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
+import { safeApiErrorMessage } from '../../application/errors/application-error';
+import type { AssignedLoanDetail } from '../../domain/entities/loan';
 import { loanApi } from './loan.api';
 
 describe('loan list sorting', () => {
@@ -46,6 +48,27 @@ describe('loan list sorting', () => {
       expect(list.pathname).toBe('/loans/assigned');
       expect(Object.fromEntries(list.searchParams)).toEqual({ page: '2', pageSize: '20', search: 'Ana', status: 'UNCOLLECTIBLE', fromDate: '2026-01-01', sortBy: 'customer', sortOrder: 'asc' });
       expect(new URL(String(fetchMock.mock.calls[1][0])).pathname).toBe('/loans/assigned/loan%2Fid');
+    } finally { fetchMock.mockRestore(); }
+  });
+  it('preserves the complete assigned-loan operational contract without a collection projection', async () => {
+    const detail = {
+      id: 'loan-1', loanNumber: '42', customerId: 'customer-1', customerName: 'Ana Mora', identification: '1-2345-6789',
+      startDate: '2026-01-02', principal: '100.00', interestAmount: '20.00', totalAmount: '120.00', pendingTotal: '75.00',
+      financialBalance: '75.00', reservedPrecollections: '25.00', operationalBalance: '50.00', status: 'ACTIVE',
+      paymentFrequencyId: 'frequency-1', frequencyName: 'Semanal', intervalUnit: 'WEEK', intervalValue: 1,
+      preferredPaymentMethodId: 'method-1', preferredPaymentMethod: 'Efectivo', disbursementPaymentMethod: null,
+      createdByName: 'Gestor', observations: null, updatedAt: '2026-10-12T12:00:00.000Z',
+      activePaymentMethods: [{ id: 'method-1', name: 'Efectivo' }],
+      plan: [{ id: 'entry-1', sequence: 1, dueDate: '2026-10-12', pendingAmount: '75.00' }],
+      validPayments: [{ id: 'payment-1', paymentDate: '2026-10-01', amount: '45.00', status: 'VALID',
+        applications: [{ planEntryId: 'entry-1', sequence: 1, amountApplied: '45.00' }] }],
+    } satisfies AssignedLoanDetail;
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true, status: 200, json: async () => detail } as Response);
+    try {
+      await expect(loanApi.assignedDetail('loan-1')).resolves.toEqual(detail);
+      expect(detail.operationalBalance).toBe('50.00');
+      expect(detail.disbursementPaymentMethod).toBeNull();
+      expect(detail.validPayments[0].applications).toEqual([{ planEntryId: 'entry-1', sequence: 1, amountApplied: '45.00' }]);
     } finally { fetchMock.mockRestore(); }
   });
   it('passes the condition sort in both directions and returns the list-only boolean without additional requests', async () => {
@@ -118,10 +141,12 @@ describe('loan management transport', () => {
     } finally { fetchMock.mockRestore(); }
   });
 
-  it('preserves the controlled backend error message without inventing an HTTP status', async () => {
+  it('preserves the HTTP status without exposing an unknown backend message', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: false, status: 409,
       json: async () => ({ message: 'The loan changed during the operation.' }) } as Response);
-    try { await expect(loanApi.reactivateLoan('a', { reason: 'Review', idempotencyKey: 'key' })).rejects.toThrow('The loan changed during the operation.'); }
+    try { await expect(loanApi.reactivateLoan('a', { reason: 'Review', idempotencyKey: 'key' })).rejects.toMatchObject({
+      status: 409, message: 'La información cambió mientras realizabas la operación. Actualiza los datos e intenta nuevamente.',
+    }); }
     finally { fetchMock.mockRestore(); }
   });
 });
@@ -144,12 +169,12 @@ describe('loan edit transport', () => {
       expect(JSON.parse(String(fetchMock.mock.calls[1][1]?.body))).toEqual(body);
     } finally { fetchMock.mockRestore(); }
   });
-  it('preserves HTTP status and a safe backend message for 400, 404 and 409', async () => {
+  it('preserves HTTP status and uses centralized safe messages for 400, 404 and 409', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch');
     try {
       for (const status of [400, 404, 409]) {
         fetchMock.mockResolvedValueOnce({ ok: false, status, json: async () => ({ message: 'Review the loan.' }) } as Response);
-        await expect(loanApi.editContext('a')).rejects.toMatchObject({ status, message: 'Review the loan.' });
+        await expect(loanApi.editContext('a')).rejects.toMatchObject({ status, message: safeApiErrorMessage(status) });
       }
     } finally { fetchMock.mockRestore(); }
   });

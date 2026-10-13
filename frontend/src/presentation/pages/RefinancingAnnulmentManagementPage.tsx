@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactElement } from 'react';
 import { createRefinancingAnnulments } from '../../app/loan-refinancing';
+import { refinancingAnnulmentReasonMessage } from '../../application/errors/refinancing-annulment-error';
 import { RefinancingAnnulmentController } from '../../application/use-cases/refinancing-annulment-controller';
 import type { RefinancingAnnulledSort, RefinancingAnnulmentCandidate, RefinancingAnnulmentCandidateSort,
   RefinancingAnnulmentDetail } from '../../domain/entities/loan-refinancing';
@@ -11,11 +12,6 @@ import { Icon } from '../components/layout/Icon';
 import { useAuth } from '../hooks/auth-context';
 
 const typeLabel = { DATA_CORRECTION: 'Corrección de datos', CASH_REFUND: 'Devolución de dinero' } as const;
-const blockerLabel: Record<string, string> = {
-  CLOSED_FINANCIAL_PERIOD: 'Período financiero cerrado.', ACTIVE_CHILD_REFINANCING: 'Tiene un refinanciamiento posterior activo.',
-  INCONSISTENT_ANNULLED_PAYMENT: 'Pago anulado sin conciliación completa.',
-  INCONSISTENT_PAYMENT_PLANS: 'Los planes de pago no concilian.', INCONSISTENT_NEW_MONEY: 'El dinero nuevo no concilia con Caja.',
-};
 function SortHeader({ label, active, direction, onClick }: { label: string; active: boolean;
   direction: 'asc' | 'desc'; onClick(): void }): ReactElement {
   return <th scope="col" aria-sort={active ? direction === 'asc' ? 'ascending' : 'descending' : 'none'}><button
@@ -98,7 +94,7 @@ function CandidateTable({ items, state, controller, canAnnul, onBegin }: ViewPro
     <tbody>{items.map((item) => <tr key={item.refinancingId}><td>{formatDateOnlyForDisplay(item.refinancingDate)}</td>
       <td><strong>{item.customer.fullName}</strong><small>{item.customer.identification}</small></td><td>#{item.originLoanNumber}</td>
       <td>#{item.successorLoanNumber}</td><td className="loan-list__numeric">{formatCRCAggregate(item.newMoneyDisbursed)}</td>
-      <td>{item.eligibility.eligible ? 'Elegible' : item.eligibility.reasons.map((reason) => blockerLabel[reason.code] ?? 'No elegible.').join(' ')}</td>
+      <td>{item.eligibility.eligible ? 'Elegible' : item.eligibility.reasons.map((reason) => refinancingAnnulmentReasonMessage(reason.code)).join(' ')}</td>
       {canAnnul && <td className="loan-list__actions"><TableActions actions={[{ key: 'annul', icon: 'lock', label: 'Anular',
         title: item.eligibility.eligible ? 'Anular refinanciamiento' : 'Refinanciamiento no elegible',
         ariaLabel: `Anular refinanciamiento entre los préstamos ${item.originLoanNumber} y ${item.successorLoanNumber}`,

@@ -14,7 +14,8 @@ const data: PortfolioTrackingResult = {
     combinedPlan: [{ id: 'entry-0', sequence: 1, dueDate: '2000-01-01', pendingAmount: '10.00' },
       { id: 'entry-1', sequence: 2, dueDate: '2099-12-20', pendingAmount: '50.00' }],
     protectedPlanEntryIds: [],
-    validPayments: [{ id: 'payment-1', paymentDate: '2026-01-20', amount: '40.00', status: 'VALID' }],
+    validPayments: [{ id: 'payment-1', paymentDate: '2026-01-20', amount: '40.00', status: 'VALID',
+      applications: [{ planEntryId: 'entry-0', sequence: 1, amountApplied: '40.00' }] }],
     firstOperationalRow: { id: 'entry-1', sequence: 2, dueDate: '2099-12-20', pendingAmount: '60.00' },
     lastValidPayment: { id: 'payment-1', paymentDate: '2026-01-20', amount: '40.00', status: 'VALID' }, refinanceEligibility: true,
     preferredMethod: { id: null, activeMethods: [], collectors: [] }, paymentFrequency: { intervalUnit: 'WEEK', intervalValue: 1 },
@@ -53,13 +54,16 @@ describe('PortfolioTrackingView', () => {
     expect(html).toContain('₡60');
     expect(html).toContain('Fecha límite contractual');
     expect(html).toContain('Plan de pagos');
-    expect(html).toContain('PAGADA');
+    expect(html).toContain('PAGO RECIBIDO');
+    expect(html).toContain('Cuota 1 · ₡40');
+    expect(html).toContain('>Cuota 1</span>');
+    expect(html).toContain('>Cuota 2</span>');
     expect(html).toContain('VENCIDA');
     expect(html).toContain('PENDIENTE');
     expect(html).toContain('role="region"');
     expect(html).toContain('aria-label="Plan de pagos"');
     expect(html).toContain('tabindex="0"');
-    expect((html.match(/scope="col"/g) ?? [])).toHaveLength(6);
+    expect((html.match(/scope="col"/g) ?? [])).toHaveLength(7);
     expect(html).not.toMatch(/Registrar pago|Anular pago|Personalizar plan/);
   });
 

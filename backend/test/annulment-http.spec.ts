@@ -120,4 +120,11 @@ describe('Loan annulment HTTP and central authorization', () => {
     const unexpected = await post(body(), 'annuller');
     expect(unexpected.status).toBe(500); expect(JSON.stringify(await unexpected.json())).not.toContain('private SQL detail');
   });
+
+  it('preserves the specific loan-annulment blocker code', async () => {
+    annul.mockRejectedValueOnce(new AnnulLoanConflictError('El préstamo tiene pagos válidos.', 'LOAN_HAS_VALID_PAYMENTS'));
+    const response = await post(body(), 'annuller');
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ reasonCode: 'LOAN_HAS_VALID_PAYMENTS' });
+  });
 });

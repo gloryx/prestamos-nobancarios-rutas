@@ -1,20 +1,9 @@
 import { useEffect, useRef, type ReactElement } from 'react';
 import type { RefinancingAnnulmentAttempt } from '../../application/use-cases/refinancing-annulment-controller';
 import type { RefinancingAnnulmentPaymentMethod, RefinancingAnnulmentType } from '../../domain/entities/loan-refinancing';
+import { refinancingAnnulmentReasonMessage } from '../../application/errors/refinancing-annulment-error';
 import { formatDateOnlyForDisplay } from '../../shared/utils/date';
 import { formatCRCAggregate } from '../../shared/utils/money';
-
-const reasonLabels: Record<string, string> = {
-  CLOSED_FINANCIAL_PERIOD: 'La fecha pertenece a un período financiero cerrado.',
-  EFFECTIVE_DATE_BEFORE_REFINANCING: 'La fecha efectiva no puede ser anterior al refinanciamiento.',
-  EFFECTIVE_DATE_IN_FUTURE: 'La fecha efectiva no puede estar en el futuro.',
-  PAYMENT_REVERSAL_AFTER_EFFECTIVE_DATE: 'Existe una reversión de pago posterior a la fecha efectiva.',
-  ACTIVE_CHILD_REFINANCING: 'El préstamo sucesor tiene un refinanciamiento posterior activo.',
-  INCONSISTENT_ANNULLED_PAYMENT: 'Existe un pago anulado que no está completamente conciliado.',
-  INCONSISTENT_PAYMENT_PLANS: 'Los planes de pago no concilian con el refinanciamiento.',
-  INCONSISTENT_NEW_MONEY: 'El desembolso de dinero nuevo no concilia con Caja.',
-};
-const reasonLabel = (code: string) => reasonLabels[code] ?? 'La operación no cumple las condiciones para esta modalidad.';
 
 export function RefinancingAnnulmentDialog({ attempt, methods, onType, onReason, onEffectiveDate,
   onValidateDate, onRefundMethod, onResolutionConfirmed, onSubmit, onClose }: {
@@ -66,14 +55,18 @@ export function RefinancingAnnulmentDialog({ attempt, methods, onType, onReason,
     <form onSubmit={(event) => { event.preventDefault(); if (valid && !attempt.submitting) onSubmit(); }}>
       <fieldset className="loan-annulment__resolution" disabled={attempt.submitting}>
         <legend>Modalidad</legend>
-        {(['DATA_CORRECTION', 'CASH_REFUND'] as const).map((type, index) => <label key={type}>
-          <input ref={index === 0 ? first : undefined} type="radio" name="refinancing-annulment-type" value={type}
-            checked={attempt.type === type} disabled={!attempt.eligibility.types[type].eligible}
-            onChange={() => onType(type)} />{type === 'DATA_CORRECTION' ? 'Corrección de datos' : 'Devolución de dinero'}
-        </label>)}
+        {(['DATA_CORRECTION', 'CASH_REFUND'] as const).map((type, index) => {
+          const eligibility = attempt.eligibility.types[type];
+          const descriptionId = `refinancing-annulment-${type.toLowerCase()}-blockers`;
+          return <div key={type}><label>
+            <input ref={index === 0 ? first : undefined} type="radio" name="refinancing-annulment-type" value={type}
+              checked={attempt.type === type} disabled={!eligibility.eligible}
+              aria-describedby={!eligibility.eligible ? descriptionId : undefined}
+              onChange={() => onType(type)} />{type === 'DATA_CORRECTION' ? 'Corrección de datos' : 'Devolución de dinero'}
+          </label>{!eligibility.eligible && <ul id={descriptionId} className="form-error">{eligibility.reasons.map((item) =>
+            <li key={item.code}>{refinancingAnnulmentReasonMessage(item.code)}</li>)}</ul>}</div>;
+        })}
       </fieldset>
-      {attempt.type && !selectedEligibility?.eligible && <ul className="form-error">{selectedEligibility?.reasons.map((item) =>
-        <li key={item.code}>{reasonLabel(item.code)}</li>)}</ul>}
       {cash && <div className="refinancing-annulment__date-validation"><label htmlFor="refinancing-annulment-effective-date">
         Fecha efectiva<input id="refinancing-annulment-effective-date" type="date" required value={attempt.effectiveDate}
           disabled={attempt.submitting || attempt.validating} onChange={(event) => onEffectiveDate(event.target.value)} /></label>

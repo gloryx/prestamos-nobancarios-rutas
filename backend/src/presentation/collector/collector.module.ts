@@ -14,7 +14,7 @@ import { COLLECTOR_FINANCIAL_SUMMARY_READER, CollectorFinancialSummaryUseCase, t
 import { CollectorFinancialSummaryTypeormReader } from '../../infrastructure/database/typeorm/repositories/collector-financial-summary.reader';
 
 @Module({ imports: [TypeOrmModule.forFeature([CollectorOrmEntity, UserOrmEntity])], controllers: [CollectorController], providers: [
-  { provide: COLLECTOR_REPOSITORY, inject: [getRepositoryToken(CollectorOrmEntity), getRepositoryToken(UserOrmEntity)], useFactory: (collectors: Repository<CollectorOrmEntity>, users: Repository<UserOrmEntity>) => new CollectorTypeOrmRepository(collectors, users) },
+  { provide: COLLECTOR_REPOSITORY, inject: [getRepositoryToken(CollectorOrmEntity), getRepositoryToken(UserOrmEntity), DataSource], useFactory: (collectors: Repository<CollectorOrmEntity>, users: Repository<UserOrmEntity>, source: DataSource) => new CollectorTypeOrmRepository(collectors, users, source) },
   { provide: FILE_STORAGE, useFactory: () => new LocalFileStorage() },
   { provide: COLLECTOR_STATISTICS_READER, inject: [DataSource], useFactory: (source: DataSource) => new CollectorStatisticsTypeOrmReader(source) },
   { provide: CollectorStatisticsUseCase, inject: [COLLECTOR_STATISTICS_READER], useFactory: (reader: CollectorStatisticsReader) => new CollectorStatisticsUseCase(reader) },

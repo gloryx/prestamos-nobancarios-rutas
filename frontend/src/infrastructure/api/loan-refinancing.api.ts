@@ -1,6 +1,7 @@
 import type { LoanRefinancingAnnulments, LoanRefinancingChains, LoanRefinancingList, LoanRefinancingLookup, LoanRefinancingOperations, LoanRefinancingOptions, RefinancingCustomerLookup } from '../../application/ports/loan-refinancing.repository';
 import type { CustomerRefinancingChains, RefinancingChain, RefinancingListResult, RefinancingLoanSearchResponse, RefinancingPreview } from '../../domain/entities/loan-refinancing';
 import type { RefinancingFailure } from '../../application/use-cases/refinancing-confirmation-controller';
+import { ApiConnectionError } from '../../application/errors/application-error';
 import { apiClient, HttpApiError } from './api-client';
 import { PaymentFrequencyApi } from './payment-frequency.api';
 import { PaymentMethodApi } from './payment-method.api';
@@ -96,7 +97,9 @@ export function classifyRefinancingFailure(error: unknown): RefinancingFailure {
     if (error.status === 409) {
       if (error.reasonCode === 'STALE_DATA' || error.reasonCode === 'ALREADY_REFINANCED' ||
         error.reasonCode === 'IDEMPOTENCY_CONFLICT' || error.reasonCode === 'CONCURRENT_REFINANCING' ||
-        error.reasonCode === 'HISTORICAL_BALANCE_CONFLICT') return error.reasonCode;
+        error.reasonCode === 'HISTORICAL_BALANCE_CONFLICT' || error.reasonCode === 'HISTORICAL_STATE_CONFLICT' ||
+        error.reasonCode === 'CLOSED_FINANCIAL_PERIOD' || error.reasonCode === 'FINANCIAL_INTEGRITY_ERROR' ||
+        error.reasonCode === 'LOAN_NOT_ACTIVE') return error.reasonCode;
       return 'CONFLICT';
     }
     if (error.status === 400) return 'INVALID';
@@ -104,5 +107,5 @@ export function classifyRefinancingFailure(error: unknown): RefinancingFailure {
     if (error.status === 404) return 'NOT_FOUND';
     return 'SERVER';
   }
-  return error instanceof TypeError ? 'NETWORK' : 'SERVER';
+  return error instanceof ApiConnectionError || error instanceof TypeError ? 'NETWORK' : 'SERVER';
 }

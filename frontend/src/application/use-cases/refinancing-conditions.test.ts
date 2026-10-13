@@ -105,21 +105,22 @@ describe('refinancing conditions', () => {
       preferredPaymentMethodId: 'cash', disbursementPaymentMethodId: 'cash', count: '30', observations: 'Keep me' });
     controller.setMode('personalized');
     expect(controller.getSnapshot().conditions.mode).toBe('personalized');
+    const personalizedPlan = controller.getSnapshot().conditions.customPlan;
     const refresh = controller.setRefinancingDate('2026-09-26');
     expect(controller.getSnapshot()).toMatchObject({ loadingHistoricalPreview: true,
       conditions: { newMoney: '340000.00', newInterestAmount: '100000.00', paymentFrequencyId: 'daily',
-        preferredPaymentMethodId: 'cash', count: '30', observations: 'Keep me', mode: 'automatic', customPlan: [] } });
+        preferredPaymentMethodId: 'cash', count: '30', observations: 'Keep me', mode: 'personalized', customPlan: personalizedPlan } });
     expect(controller.canProceed()).toBe(false);
     await refresh;
     expect(lookup.preview).toHaveBeenCalledWith(current.loanId, '2026-09-26');
     expect(controller.getSnapshot()).toMatchObject({ preview: { outstandingPrincipal: '59960.00' },
       loadingHistoricalPreview: false, historicalPreviewError: null });
     const draft = controller.evaluate('2026-10-08')!;
-    expect(draft).toMatchObject({ principal: '499960.00', total: '599960.00', valid: true });
+    expect(draft).toMatchObject({ principal: '499960.00', total: '599960.00', valid: false });
     expect(draft.plan).toHaveLength(30);
-    expect(draft.plan.reduce((sum, row) => sum + BigInt(row.pendingAmount.replace('.', '')), 0n)).toBe(59996000n);
+    expect(draft.plan).toEqual(personalizedPlan);
     expect(draft.plan.every((row) => new Date(`${row.dueDate}T00:00:00Z`).getUTCDay() !== 0)).toBe(true);
-    expect(controller.canProceed()).toBe(true);
+    expect(controller.canProceed()).toBe(false);
   });
 
   it('keeps the latest historical preview and blocks confirmation when refresh fails', async () => {

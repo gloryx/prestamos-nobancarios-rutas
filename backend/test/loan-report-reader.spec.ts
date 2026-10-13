@@ -11,6 +11,8 @@ describe('loan detail operational read contract', () => {
     { id: 'payment-a', paymentDate: '2026-04-01', amount: '15.00', status: 'VALID' },
     { id: 'payment-b', paymentDate: '2026-04-01', amount: '10.00', status: 'VALID' },
   ];
+  const applicationFacts = [{ paymentId: 'payment-a', planEntryId: 'entry-2', sequence: 2, amountApplied: '15.00',
+    carriedForwardAmount: '0.00', carriedToPlanEntryId: null, sourceDueDate: '2026-03-01', createdAt: new Date('2026-04-01') }];
 
   function reader() {
     const query = jest.fn(async (sql: string, params: unknown[]) => {
@@ -18,7 +20,7 @@ describe('loan detail operational read contract', () => {
       if (sql.startsWith('SELECT l.id')) return [loan];
       if (sql.includes('FROM payment_plan_entries')) return plan;
       if (sql.includes('FROM payments WHERE')) return facts;
-      if (sql.includes('FROM payment_applications pa')) return [];
+      if (sql.includes('FROM payment_applications pa')) return applicationFacts;
       throw new Error(`Unexpected query: ${sql}`);
     });
     const unboundQuery = jest.fn(() => { throw new Error('A read escaped the transaction.'); });
@@ -38,7 +40,10 @@ describe('loan detail operational read contract', () => {
   it('reads the loan, plan, VALID payments and carry provenance in one transaction', async () => {
     const { query, transaction, unboundQuery, useCase } = reader();
     const controller = new LoanController(useCase, {} as never, {} as never, {} as never, {} as never, {} as never);
-    expect(await controller.detail('loan-1')).toMatchObject({ ...loan, plan, validPayments: facts, financialBalance: '95.00' });
+    expect(await controller.detail('loan-1')).toMatchObject({ ...loan, plan, validPayments: [
+      { ...facts[0], applications: [{ planEntryId: 'entry-2', sequence: 2, amountApplied: '15.00' }] },
+      { ...facts[1], applications: [] },
+    ], financialBalance: '95.00' });
     expect(query).toHaveBeenCalledTimes(4);
     expect(transaction).toHaveBeenCalledTimes(1);
     expect(unboundQuery).not.toHaveBeenCalled();

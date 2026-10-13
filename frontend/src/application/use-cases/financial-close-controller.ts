@@ -1,4 +1,5 @@
 import type { FinancialCloseDetail, FinancialCloseListItem, FinancialClosePreview } from '../../domain/entities/financial-close';
+import { ApiConnectionError } from '../errors/application-error';
 
 export interface FinancialClosePort {
   preview(period: string): Promise<FinancialClosePreview>;
@@ -25,7 +26,7 @@ const validPeriod = (value: string) => /^[1-9]\d{3}-(?:0[1-9]|1[0-2])$/.test(val
 const message = (cause: unknown) => {
   if (typeof cause === 'object' && cause !== null && 'status' in cause && cause.status === 403)
     return 'No tienes permiso para realizar esta acción.';
-  if (cause instanceof TypeError) return 'No se pudo conectar al servidor. Intenta nuevamente.';
+  if (cause instanceof ApiConnectionError || cause instanceof TypeError) return 'No se pudo conectar al servidor. Intenta nuevamente.';
   return cause instanceof Error ? cause.message : 'No fue posible completar la solicitud.';
 };
 
@@ -57,7 +58,7 @@ export class FinancialCloseController {
   }
 
   setPeriod(period: string) {
-    if (!validPeriod(period) || period === this.state.period) return;
+    if (this.state.confirming || !validPeriod(period) || period === this.state.period) return;
     ++this.generation; ++this.detailGeneration;
     this.publish({ ...this.state, period, preview: null, detail: null, confirmationOpen: false,
       error: '', detailError: '', success: '' });
@@ -74,14 +75,17 @@ export class FinancialCloseController {
   async confirm(): Promise<void> {
     if (!this.state.confirmationOpen || !this.state.preview || this.state.preview.errors.length || this.state.confirming) return;
     const period = this.state.period;
-    this.publish({ ...this.state, confirming: true, confirmationOpen: false, error: '', success: '' });
+    const generation = this.generation;
+    this.publish({ ...this.state, confirming: true, error: '', success: '' });
     try {
       const detail = await this.api.confirm(period);
       const history = await this.api.list();
+      if (generation !== this.generation || period !== this.state.period) return;
       this.publish({ ...this.state, confirming: false, detail, history,
-        success: `El cierre de ${period} fue confirmado.`, preview: null });
+        success: `El cierre de ${period} fue confirmado.`, preview: null, confirmationOpen: false });
     } catch (cause) {
-      this.publish({ ...this.state, confirming: false, error: message(cause) });
+      if (generation === this.generation && period === this.state.period)
+        this.publish({ ...this.state, confirming: false, confirmationOpen: true, error: message(cause) });
     }
   }
 

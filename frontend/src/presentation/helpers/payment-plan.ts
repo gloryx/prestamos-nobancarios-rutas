@@ -1,11 +1,11 @@
-import type { paymentApi, PaymentContext, PendingPaymentEntry, PlanBaseline } from '../../infrastructure/api/payment.api';
+import type { paymentApi, PaymentContext, PendingPaymentEntry, PlanBaseline, ValidPayment } from '../../infrastructure/api/payment.api';
 import { formatDateOnlyForDisplay } from '../../shared/utils/date';
-import { moneyFromCents, parseMoneyCents } from '../../shared/utils/money';
+import { formatCRC, moneyFromCents, parseMoneyCents } from '../../shared/utils/money';
 import { addInterval, normalizeAutomaticPaymentDates, paymentPlanDateIssue } from '../../application/use-cases/loan-schedule';
 
 export type PaymentTimelineRow =
-  | { kind: 'PAYMENT'; id: string; date: string; amount: string }
-  | { kind: 'PLAN_ENTRY'; id: string; date: string; amount: string };
+  | { kind: 'PAYMENT'; id: string; date: string; amount: string; applications: NonNullable<ValidPayment['applications']> }
+  | { kind: 'PLAN_ENTRY'; id: string; date: string; amount: string; sequence: number };
 export type PlanDraftEntry = { key: string; id: string | null; dueDate: string; pendingAmount: string };
 export type PlanFrequency = { intervalUnit: PaymentContext['paymentFrequency']['intervalUnit']; intervalValue: number };
 export type AdaptedPlanDraft = { adaptable: true; entries: PlanDraftEntry[] } | { adaptable: false; entries: PlanDraftEntry[]; reason: 'invalid-amount' | 'protected-total' | 'protected-date' | 'missing-frequency' };
@@ -23,10 +23,19 @@ export function localDateOnly(date = new Date()): string {
 
 export function paymentTimeline(context: PaymentContext): PaymentTimelineRow[] {
   const rows: PaymentTimelineRow[] = [
-    ...context.validPayments.filter((payment) => payment.status === 'VALID').map((payment) => ({ kind: 'PAYMENT' as const, id: payment.id, date: payment.paymentDate, amount: payment.amount })),
-    ...context.combinedPlan.filter((entry) => (parseMoneyCents(entry.pendingAmount) ?? 0n) > 0n).map((entry) => ({ kind: 'PLAN_ENTRY' as const, id: entry.id, date: entry.dueDate, amount: entry.pendingAmount })),
+    ...context.validPayments.filter((payment) => payment.status === 'VALID').map((payment) => ({ kind: 'PAYMENT' as const, id: payment.id, date: payment.paymentDate, amount: payment.amount, applications: payment.applications ?? [] })),
+    ...context.combinedPlan.filter((entry) => (parseMoneyCents(entry.pendingAmount) ?? 0n) > 0n).map((entry) => ({ kind: 'PLAN_ENTRY' as const, id: entry.id, date: entry.dueDate, amount: entry.pendingAmount, sequence: entry.sequence })),
   ];
   return rows.sort((a, b) => a.date.localeCompare(b.date) || (a.kind === b.kind ? a.id.localeCompare(b.id) : a.kind === 'PAYMENT' ? -1 : 1));
+}
+
+export function paymentApplicationText(applications: NonNullable<ValidPayment['applications']>): string {
+  const verified = applications.filter((application) => Number.isSafeInteger(application.sequence) && application.sequence > 0
+    && typeof application.planEntryId === 'string' && application.planEntryId.length > 0
+    && typeof application.amountApplied === 'string' && (parseMoneyCents(application.amountApplied) ?? 0n) > 0n);
+  if (!verified.length) return 'Sin aplicaciones históricas disponibles';
+  const prefix = verified.length === 1 ? 'Cuota' : 'Cuotas';
+  return `${prefix} ${verified.map((application) => `${application.sequence} · ${formatCRC(application.amountApplied)}`).join(', ')}`;
 }
 
 export function paymentSuggestion(context: PaymentContext, planEntryId?: string): { entry: PendingPaymentEntry; amount: string } | null {

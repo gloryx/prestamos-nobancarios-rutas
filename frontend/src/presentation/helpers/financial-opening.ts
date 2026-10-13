@@ -4,5 +4,14 @@ export { formatCRC } from '../../shared/utils/money';
 export const financialOpeningAmountFields = ['initialPortfolio', 'initialUncollectibleAmount', 'initialAvailableAmount', 'historicalSeedCapital'] as const;
 export function normalizeAmount(value: string): string { if (/^\s*\d+\.\d{3}\s*$/.test(value)) return ''; return normalizeMoney(value); }
 export function validateFinancialOpeningAmounts(input: Pick<FinancialOpeningInput, typeof financialOpeningAmountFields[number]>): string[] { return financialOpeningAmountFields.flatMap((field) => input[field].trim() === '' ? [`${field} es requerido.`] : normalizeAmount(input[field]) === '' ? [`${field} debe ser un importe no negativo con hasta 2 decimales.`] : []); }
+export function financialOpeningFieldErrors(input: Pick<FinancialOpeningInput, 'openingDate' | typeof financialOpeningAmountFields[number]>): Partial<Record<'openingDate' | typeof financialOpeningAmountFields[number], string>> {
+  const errors: Partial<Record<'openingDate' | typeof financialOpeningAmountFields[number], string>> = {};
+  if (!input.openingDate) errors.openingDate = 'Selecciona la fecha de apertura.';
+  for (const field of financialOpeningAmountFields) {
+    if (!input[field].trim()) errors[field] = 'Este importe es obligatorio.';
+    else if (normalizeAmount(input[field]) === '') errors[field] = 'Ingresa un importe no negativo con hasta dos decimales.';
+  }
+  return errors;
+}
 export function canPerformOpening(can: (permission: string) => boolean): boolean { return can('financial-opening.perform'); }
 export function financialOpeningConfirmationSummary(input: FinancialOpeningInput): Array<[string, string]> { return [['Fecha de apertura', input.openingDate], ['Cartera inicial', input.initialPortfolio], ['Capital incobrable inicial', input.initialUncollectibleAmount], ['Importe disponible', input.initialAvailableAmount], ['Capital semilla histórico', input.historicalSeedCapital]]; }

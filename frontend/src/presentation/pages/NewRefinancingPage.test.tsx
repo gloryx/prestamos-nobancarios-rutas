@@ -209,6 +209,11 @@ describe('refinancing origin selection', () => {
     expect(html).toContain('aria-label="Continuar a confirmación"');
     expect(html).not.toContain('disabled="" aria-label="Continuar a confirmación"');
     expect(html).not.toContain('Seleccionar préstamo origen</h2>');
+    conditions.setMode('personalized');
+    conditions.setCustomPlan(conditions.getSnapshot().conditions.customPlan.map((row, index) =>
+      index === 0 ? { ...row, pendingAmount: '1.00' } : row));
+    expect(renderToStaticMarkup(<RefinancingConditionsView state={conditions.getSnapshot()} controller={conditions}
+      onBack={() => {}} />)).toContain('El plan personalizado se conservó, pero requiere correcciones antes de continuar.');
     const conditionTree = RefinancingConditionsView({ state: conditions.getSnapshot(), controller: conditions,
       onBack: () => controller.goToOrigin() });
     const backButton = elements(conditionTree).find((element) => (element.props as { children?: string }).children === 'Volver al préstamo origen')!;

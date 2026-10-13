@@ -1,4 +1,5 @@
 import { CashMovementController } from '../src/presentation/cash-movement/cash-movement.controller';
+import { CashMovementConflictError, CashMovementValidationError } from '../src/domain/cash-movement/cash-movement.errors';
 
 describe('CashMovementController list projection', () => {
   const movement = {
@@ -29,5 +30,16 @@ describe('CashMovementController list projection', () => {
   it('keeps manual create and reverse response shapes unchanged', async () => {
     expect(await controller.createMovement({} as never, { id: 'actor' } as never)).toEqual(base);
     expect(await controller.reverseMovement('movement-1', {} as never, { id: 'actor' } as never)).toEqual(base);
+  });
+
+  it('publishes stable financial reason codes and field metadata', async () => {
+    create.execute.mockRejectedValueOnce(new CashMovementConflictError('Closed', 'CLOSED_FINANCIAL_PERIOD'));
+    await expect(controller.createMovement({} as never, { id: 'actor' } as never)).rejects.toMatchObject({
+      response: { errorCode: 'CLOSED_FINANCIAL_PERIOD', reasonCode: 'CLOSED_FINANCIAL_PERIOD' },
+    });
+    create.execute.mockRejectedValueOnce(new CashMovementValidationError('Inactive', 'PAYMENT_METHOD_INACTIVE', 'paymentMethodId'));
+    await expect(controller.createMovement({} as never, { id: 'actor' } as never)).rejects.toMatchObject({
+      response: { reasonCode: 'PAYMENT_METHOD_INACTIVE', data: { fields: [expect.objectContaining({ field: 'paymentMethodId' })] } },
+    });
   });
 });

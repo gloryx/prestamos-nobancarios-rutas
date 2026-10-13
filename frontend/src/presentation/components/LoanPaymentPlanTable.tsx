@@ -4,9 +4,10 @@ import { formatCRC, moneyFromCents, parseMoneyCents } from "../../shared/utils/m
 import { formatDateOnlyForDisplay } from "../../shared/utils/date";
 import { MoneyInput } from "./MoneyInput";
 import { getLoanPlanCondition } from "../helpers/loan";
+import type { PaymentApplication } from "../../domain/entities/payment";
 
 type LoanPaymentPlanTableProps = {
-  plan: LoanPlanEntry[];
+  plan: Array<LoanPlanEntry & { id?: string }>;
   total: string;
   editable?: boolean;
   onChange?: (plan: LoanPlanEntry[]) => void;
@@ -14,6 +15,7 @@ type LoanPaymentPlanTableProps = {
   showCondition?: boolean;
   numberLabel?: string;
   amountLabel?: string;
+  paymentApplications?: PaymentApplication[];
 };
 
 export function LoanPaymentPlanTable({
@@ -25,6 +27,7 @@ export function LoanPaymentPlanTable({
   showCondition = false,
   numberLabel,
   amountLabel,
+  paymentApplications = [],
 }: LoanPaymentPlanTableProps): ReactElement {
   const distributed = plan.reduce(
     (sum, entry) => sum + (parseMoneyCents(entry.pendingAmount) ?? 0n),
@@ -61,7 +64,11 @@ export function LoanPaymentPlanTable({
             </tr>
           </thead>
           <tbody>
-            {plan.map((entry, index) => (
+            {plan.map((entry, index) => {
+              const hasVerifiedPayment = 'id' in entry && typeof entry.id === 'string'
+                && paymentApplications.some((application) => application.planEntryId === entry.id);
+              const condition = getLoanPlanCondition(entry, hasVerifiedPayment);
+              return (
               <tr key={`${entry.sequence}-${index}`}>
                 <td>{entry.sequence}</td>
                 <td>
@@ -89,8 +96,8 @@ export function LoanPaymentPlanTable({
                 </td>
                 {showCondition && (
                   <td>
-                    <span className={`loan-plan-condition loan-plan-condition--${getLoanPlanCondition(entry).toLowerCase()}`}>
-                      {getLoanPlanCondition(entry)}
+                    <span className={`loan-plan-condition loan-plan-condition--${condition.toLowerCase()}`}>
+                      {condition}
                     </span>
                   </td>
                 )}
@@ -112,7 +119,7 @@ export function LoanPaymentPlanTable({
                   </td>
                 )}
               </tr>
-            ))}
+            ); })}
           </tbody>
         </table>
       </div>

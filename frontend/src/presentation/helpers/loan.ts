@@ -8,7 +8,7 @@ const LOAN_STATUS_LABELS: Record<string, string> = {
   ANNULLED: 'ANULADO',
 };
 
-export type LoanPlanCondition = 'PAGADO' | 'VENCIDO' | 'PENDIENTE';
+export type LoanPlanCondition = 'PAGADA' | 'VENCIDA' | 'PENDIENTE' | 'REPROGRAMADA';
 
 export function formatLoanStatus(status: string): string {
   const normalized = status.trim().toUpperCase();
@@ -17,8 +17,11 @@ export function formatLoanStatus(status: string): string {
 
 export function getLoanPlanCondition(
   entry: Pick<LoanPlanEntry, 'dueDate' | 'pendingAmount'>,
+  hasVerifiedPaymentOrToday: boolean | string = false,
   today = new Date().toISOString().slice(0, 10),
 ): LoanPlanCondition {
-  if (Number(entry.pendingAmount) <= 0) return 'PAGADO';
-  return entry.dueDate < today ? 'VENCIDO' : 'PENDIENTE';
+  const hasVerifiedPayment = typeof hasVerifiedPaymentOrToday === 'boolean' ? hasVerifiedPaymentOrToday : false;
+  if (typeof hasVerifiedPaymentOrToday === 'string') today = hasVerifiedPaymentOrToday;
+  if (Number(entry.pendingAmount) <= 0) return hasVerifiedPayment ? 'PAGADA' : 'REPROGRAMADA';
+  return entry.dueDate < today ? 'VENCIDA' : 'PENDIENTE';
 }

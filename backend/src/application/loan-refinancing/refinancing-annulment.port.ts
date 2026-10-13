@@ -118,6 +118,7 @@ export type CreateRefinancingAnnulment = {
 export interface RefinancingAnnulmentTransaction {
   readonly context?: unknown;
   lockSnapshot(refinancingId: string): Promise<RefinancingAnnulmentSnapshot | undefined>;
+  hasPendingPrecollection(loanIds: string[]): Promise<boolean>;
   lockActivePaymentMethod(paymentMethodId: string): Promise<boolean>;
   findByKey(key: string): Promise<{ annulmentId: string; refinancingId: string; fingerprint: string } | undefined>;
   create(input: CreateRefinancingAnnulment): Promise<RefinancingAnnulmentDetail | undefined>;

@@ -150,7 +150,8 @@ describe('refinancing step-one transport', () => {
       json: async () => ({ message: 'internal SQL details', reasonCode: 'STALE_DATA' }) } as Response);
     try {
       await expect(loanRefinancingOperations.confirm({} as never)).rejects.toMatchObject({
-        status: 409, reasonCode: 'STALE_DATA', message: 'internal SQL details',
+        status: 409, reasonCode: 'STALE_DATA',
+        message: 'La información cambió mientras realizabas la operación. Actualiza los datos e intenta nuevamente.',
       });
       expect(classifyRefinancingFailure(new HttpApiError(409, 'private', 'STALE_DATA'))).toBe('STALE_DATA');
       for (const code of ['ALREADY_REFINANCED', 'IDEMPOTENCY_CONFLICT', 'CONCURRENT_REFINANCING'] as const)

@@ -205,6 +205,9 @@ export class LoanRefinancingUseCase {
         assertOperation(operation);
         return operation;
       }
+      if (await tx.hasPendingPrecollection(origin.id)) {
+        throw new RefinancingConflictError('The loan has pending collector precollections.', 'LOAN_HAS_PENDING_PRECOLLECTIONS');
+      }
       try { await this.closedPeriods?.assertDateAllowed(input.refinancingDate, tx.context); }
       catch (error) { if (error instanceof ClosedFinancialPeriodError) throw new RefinancingConflictError(error.message, 'CLOSED_FINANCIAL_PERIOD'); throw error; }
       const currentCheck = checkedSnapshot(origin);

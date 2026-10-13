@@ -187,7 +187,7 @@ describe('Loan Edit dialog flow', () => {
   it('retains 400 drafts; 409 disables submit until Update GET; 404 closes and refreshes', async () => {
     await open(); observations(render(), 'Change');
     api.edit.mockRejectedValueOnce(new HttpApiError(400, 'Review the amount.'));
-    submit(render()); await vi.waitFor(() => expect(hooks.states[9]).toContain('Review the amount.'));
+    submit(render()); await vi.waitFor(() => expect(hooks.states[9]).toContain('Revisa los campos indicados antes de continuar.'));
     expect((hooks.states[1] as { observations: string }).observations).toBe('Change');
     api.edit.mockRejectedValueOnce(new HttpApiError(409, 'The loan changed.'));
     submit(render()); await vi.waitFor(() => expect(hooks.states[7]).toBe(true));
@@ -205,7 +205,7 @@ describe('Loan Edit dialog flow', () => {
     expect(nodes(render()).some((item) => item.type === 'form')).toBe(false); expect(onUnavailable).toHaveBeenCalledOnce();
     hooks.states = []; hooks.refs = []; api.editContext.mockRejectedValueOnce(new HttpApiError(409, 'Cannot edit.'));
     render(); hooks.effects[0](); await vi.waitFor(() => expect(hooks.states[6]).toBe(true));
-    expect(text(render())).toContain('Cannot edit.');
+    expect(text(render())).toContain('La información cambió mientras realizabas la operación.');
     hooks.states = []; hooks.refs = []; api.editContext.mockRejectedValueOnce(new HttpApiError(404, 'Missing'));
     render(); hooks.effects[0](); await vi.waitFor(() => expect(onClose).toHaveBeenCalledOnce());
     expect(api.edit).not.toHaveBeenCalled();

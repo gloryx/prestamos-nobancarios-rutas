@@ -5,7 +5,8 @@ import type { LoanPlanEntry } from '../../domain/entities/loan';
 import { moneyFromCents, parseMoneyCents } from '../../shared/utils/money';
 
 export type RefinancingFailure = 'STALE_DATA' | 'ALREADY_REFINANCED' | 'IDEMPOTENCY_CONFLICT' |
-  'CONCURRENT_REFINANCING' | 'HISTORICAL_BALANCE_CONFLICT' | 'CONFLICT' | 'INVALID' | 'FORBIDDEN' |
+  'CONCURRENT_REFINANCING' | 'HISTORICAL_BALANCE_CONFLICT' | 'HISTORICAL_STATE_CONFLICT' |
+  'CLOSED_FINANCIAL_PERIOD' | 'FINANCIAL_INTEGRITY_ERROR' | 'LOAN_NOT_ACTIVE' | 'CONFLICT' | 'INVALID' | 'FORBIDDEN' |
   'NOT_FOUND' | 'NETWORK' | 'SERVER';
 
 export type RefinancingReview = {

@@ -1,12 +1,15 @@
 import type { DataSource } from 'typeorm';
 import { ACTIVE_LOAN_OVERDUE_SQL } from '../../../../application/loan/active-loan-condition.sql';
-import type { AssignedLoanQuery, AssignedLoansReader, AssignedLoansScope } from '../../../../application/loan/assigned-loans.use-case';
+import type { AssignedLoanDetail, AssignedLoanQuery, AssignedLoansReader, AssignedLoansScope } from '../../../../application/loan/assigned-loans.use-case';
+import { AssignedLoansIntegrityError } from '../../../../application/loan/assigned-loans.use-case';
+import type { LoanFinancialTotalsReader } from '../../../../application/loan/loan-financial-totals.reader';
+import { cents, evaluateLoanFinancialIntegrity } from '../../../../domain/loan/loan-financial-integrity';
 import type { LoanSortBy } from '../../../../domain/loan/loan.types';
+import { attachPaymentApplications, readPaymentApplications } from '../../../../application/payment/payment-read-applications';
 
 const pending = `(l.total_amount-COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.loan_id=l.id AND p.status='VALID'),0))::numeric(18,2)`;
 const customerName = "concat_ws(' ',c.first_name,c.middle_name,c.first_last_name,c.second_last_name)";
-const collectorScope = (userParameter: string) => `EXISTS (SELECT 1 FROM users su JOIN roles sr ON sr.id=su.role_id AND sr.is_active=true AND sr.code='COLLECTOR'
-  JOIN collectors scl ON scl.user_id=su.id AND scl.is_active=true
+const collectorScope = (userParameter: string) => `EXISTS (SELECT 1 FROM users su JOIN collectors scl ON scl.user_id=su.id AND scl.is_active=true
   JOIN collector_route_assignments cra ON cra.collector_user_id=su.id AND cra.ended_at IS NULL
   JOIN routes r ON r.id=cra.route_id AND r.is_active=true
   JOIN customer_route_assignments ca ON ca.route_id=r.id AND ca.ended_at IS NULL
@@ -16,14 +19,13 @@ const sortColumns: Record<LoanSortBy, string> = {
   number: 'l.loan_number', customer: `lower(${customerName})`, startDate: 'l.start_date', principal: 'l.principal',
   interest: 'l.interest_amount', total: 'l.total_amount', frequency: 'lower(pf.name)', pending, condition: '"isOverdue"',
 };
-const cents = (value: string) => { const [whole, decimal = ''] = value.split('.'); return BigInt(whole) * 100n + BigInt(decimal.padEnd(2, '0')); };
 const money = (value: bigint) => `${value / 100n}.${(value % 100n).toString().padStart(2, '0')}`;
 
 export class AssignedLoansTypeormReader implements AssignedLoansReader {
-  constructor(private readonly source: DataSource) {}
+  constructor(private readonly source: DataSource, private readonly totalsReader: LoanFinancialTotalsReader) {}
 
   async resolveCollector(userId: string): Promise<boolean> {
-    const rows = await this.source.query(`SELECT 1 FROM users u JOIN roles role ON role.id=u.role_id AND role.is_active=true AND role.code='COLLECTOR'
+    const rows = await this.source.query(`SELECT 1 FROM users u
       JOIN collectors cl ON cl.user_id=u.id AND cl.is_active=true WHERE u.id=$1 AND u.is_active=true LIMIT 1`, [userId]);
     return Boolean(rows[0]);
   }
@@ -52,7 +54,7 @@ export class AssignedLoansTypeormReader implements AssignedLoansReader {
     });
   }
 
-  async detail(id: string, access: AssignedLoansScope): Promise<unknown | null> {
+  async detail(id: string, access: AssignedLoansScope): Promise<AssignedLoanDetail | null> {
     return this.source.transaction('REPEATABLE READ', async (manager) => {
       const params: unknown[] = [id]; const accessSql = access.kind === 'ALL' ? 'TRUE' : (params.push(access.collectorUserId), collectorScope(`$${params.length}`));
       const rows = await manager.query(`SELECT l.id,l.loan_number AS "loanNumber",l.status,l.start_date::text AS "startDate",l.principal::text AS principal,
@@ -66,8 +68,31 @@ export class AssignedLoansTypeormReader implements AssignedLoansReader {
       if (!rows[0]) return null;
       const plan = await manager.query('SELECT id,sequence,due_date::text AS "dueDate",pending_amount::text AS "pendingAmount" FROM payment_plan_entries WHERE loan_id=$1 ORDER BY sequence', [id]);
       const validPayments: Array<{ id: string; amount: string; paymentDate: string; status: 'VALID' }> = await manager.query('SELECT id,amount::text AS amount,payment_date::text AS "paymentDate",status FROM payments WHERE loan_id=$1 AND status=\'VALID\' ORDER BY payment_date,id', [id]);
-      const paid = validPayments.reduce((sum, payment) => sum + cents(payment.amount), 0n);
-      return { ...rows[0], plan, financialBalance: money(cents(rows[0].totalAmount) - paid), validPayments };
+      const applications = await readPaymentApplications(manager, id);
+      const totals = await this.totalsReader.readValidTotals(manager, id);
+      const [reservation] = await manager.query(`SELECT COALESCE(SUM(amount), 0)::numeric(18,2)::text AS amount
+        FROM collector_precollections WHERE loan_id=$1 AND status IN ('RECORDED','SUBMITTED')`, [id]);
+      const activePaymentMethods = await manager.query(`SELECT id,name FROM payment_methods
+        WHERE is_active=true ORDER BY display_order,name,id`);
+      if (!totals) throw new AssignedLoansIntegrityError('No se pudieron reconciliar los totales financieros del préstamo.');
+      try {
+        const pendingPlanAmount = plan.reduce((sum: bigint, entry: { pendingAmount: string }) => {
+          const amount = cents(entry.pendingAmount);
+          if (amount < 0n) throw new AssignedLoansIntegrityError('El saldo operativo del préstamo no concilia.');
+          return sum + amount;
+        }, 0n);
+        const integrity = evaluateLoanFinancialIntegrity(rows[0], totals, pendingPlanAmount);
+        const reservedPrecollections = cents(reservation?.amount ?? '0');
+        const operationalBalance = integrity.financialBalance - reservedPrecollections;
+        if (!integrity.valid || reservedPrecollections < 0n || operationalBalance < 0n)
+          throw new AssignedLoansIntegrityError('El saldo operativo del préstamo no concilia.');
+        return { ...rows[0], plan, financialBalance: money(integrity.financialBalance),
+          reservedPrecollections: money(reservedPrecollections), operationalBalance: money(operationalBalance),
+          activePaymentMethods, validPayments: attachPaymentApplications(validPayments, applications) };
+      } catch (error) {
+        if (error instanceof AssignedLoansIntegrityError) throw error;
+        throw new AssignedLoansIntegrityError('El saldo operativo del préstamo no concilia.');
+      }
     });
   }
 }

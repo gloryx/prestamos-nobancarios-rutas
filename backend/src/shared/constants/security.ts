@@ -14,6 +14,9 @@ export const PERMISSIONS = [
   ['loans.refinance.view', 'Consultar refinanciamientos', 'PRÉSTAMOS'], ['loans.refinance.create', 'Confirmar refinanciamientos', 'PRÉSTAMOS'], ['loans.refinance.annul', 'Anular refinanciamientos', 'PRÉSTAMOS'],
   ['payments.view', 'Consultar pagos', 'PAGOS'], ['payments.create', 'Registrar pagos', 'PAGOS'], ['payments.annul', 'Anular pagos', 'PAGOS'], ['payments.plan.customize', 'Personalizar planes de pago', 'PAGOS'],
   ['collection-agenda.view', 'Ver agenda de cobros', 'COBRANZAS'], ['daily-collections.assigned.view', 'Ver cobros del día asignados', 'COBRANZAS'],
+  ['collector-precollections.create', 'Registrar cobros preliminares', 'COBRANZAS'], ['collector-precollections.assigned.view', 'Ver mis cobros preliminares', 'COBRANZAS'], ['collector-precollections.view', 'Consultar todos los cobros preliminares', 'COBRANZAS'], ['collector-precollections.cancel', 'Cancelar cobros preliminares', 'COBRANZAS'],
+  ['collector-settlements.self.create', 'Crear mis liquidaciones', 'LIQUIDACIONES'], ['collector-settlements.create', 'Crear liquidaciones globales', 'LIQUIDACIONES'], ['collector-settlements.self.view', 'Ver mis liquidaciones', 'LIQUIDACIONES'], ['collector-settlements.view', 'Ver liquidaciones globales', 'LIQUIDACIONES'], ['collector-settlements.self.submit', 'Enviar mis liquidaciones', 'LIQUIDACIONES'], ['collector-settlements.submit', 'Enviar liquidaciones globales', 'LIQUIDACIONES'], ['collector-settlements.review', 'Revisar liquidaciones', 'LIQUIDACIONES'], ['collector-settlements.confirm', 'Confirmar liquidaciones', 'LIQUIDACIONES'], ['collector-settlements.reject', 'Rechazar liquidaciones', 'LIQUIDACIONES'], ['collector-settlements.self.cancel', 'Cancelar mis liquidaciones', 'LIQUIDACIONES'], ['collector-settlements.cancel', 'Cancelar liquidaciones globales', 'LIQUIDACIONES'],
+  ['collector-custody.self.view', 'Ver mi custodia', 'CUSTODIA'], ['collector-custody.view', 'Ver custodia global', 'CUSTODIA'], ['collector-custody.self.remit', 'Remitir mi custodia', 'CUSTODIA'], ['collector-custody.remit', 'Registrar remesas globales', 'CUSTODIA'], ['collector-custody.topup', 'Registrar aportes de empresa', 'CUSTODIA'], ['collector-custody.adjust', 'Registrar ajustes autorizados', 'CUSTODIA'],
 ] as const;
 export const COLLECTION_MANAGER_DEFAULTS = [
   'territorial.view',
@@ -40,7 +43,11 @@ export const COLLECTION_MANAGER_DEFAULTS = [
   'payments.create',
   'payments.annul',
   'payments.plan.customize',
+  'collector-settlements.create', 'collector-settlements.view', 'collector-settlements.submit',
+  'collector-settlements.review', 'collector-settlements.confirm', 'collector-settlements.reject',
+  'collector-settlements.cancel', 'collector-custody.view', 'collector-custody.remit',
+  'collector-custody.topup', 'collector-custody.adjust',
 ] as const;
-export const COLLECTOR_DEFAULTS = ['customers.assigned.view', 'customers.site.view', 'customers.site.capture', 'customers.site.replace', 'loans.assigned.view', 'collectors.financial-summary.view', 'daily-collections.assigned.view', 'collection-agenda.view'] as const;
+export const COLLECTOR_DEFAULTS = ['customers.assigned.view', 'customers.site.view', 'customers.site.capture', 'customers.site.replace', 'loans.assigned.view', 'collectors.financial-summary.view', 'daily-collections.assigned.view', 'collection-agenda.view', 'collector-precollections.create', 'collector-precollections.assigned.view', 'collector-precollections.cancel', 'collector-settlements.self.create', 'collector-settlements.self.view', 'collector-settlements.self.submit', 'collector-settlements.self.cancel', 'collector-custody.self.view', 'collector-custody.self.remit'] as const;
 export const SESSION_COOKIE = 'pnb_session';
 export const invalidCredentialsMessage = 'Usuario o contraseña inválidos.';

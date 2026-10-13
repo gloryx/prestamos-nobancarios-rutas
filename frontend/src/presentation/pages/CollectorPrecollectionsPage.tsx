@@ -1,0 +1,69 @@
+import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react';
+import { collectorPrecollections } from '../../app/collector-precollections';
+import { collectorUseCases } from '../../app/collectors';
+import type { CollectorPrecollectionDetail, CollectorPrecollectionPage, CollectorPrecollectionStatus } from '../../domain/entities/collector-precollection';
+import type { Collector } from '../../domain/entities/collector';
+import { costaRicaDateOnly, formatDateOnlyForDisplay, formatDateTimeForDisplay } from '../../shared/utils/date';
+import { formatCRC, moneyFromCents, parseMoneyCents } from '../../shared/utils/money';
+import { TableActions } from '../components/TableActions';
+import { useAuth } from '../hooks/auth-context';
+import { collectorPrecollectionEmptyMessage, dayNavigation, errorMessage, precollectionStatusLabel, retryKeyFor, runLatestRequest, type RetryKeyState } from '../helpers/stage3b';
+import { precollectionActions } from '../helpers/stage3b-actions';
+
+const statuses: CollectorPrecollectionStatus[] = ['RECORDED', 'SUBMITTED', 'SETTLED', 'REJECTED', 'CANCELLED'];
+
+export function CollectorPrecollectionsPage(): ReactElement { return <PrecollectionsView mine />; }
+export function PrecollectionManagementPage(): ReactElement { return <PrecollectionsView mine={false} />; }
+
+function PrecollectionsView({ mine }: { mine: boolean }): ReactElement {
+  const { can } = useAuth(); const today = costaRicaDateOnly();
+  const [date, setDate] = useState(today); const [fromDate, setFromDate] = useState(''); const [toDate, setToDate] = useState('');
+  const [search, setSearch] = useState(''); const [collectorId, setCollectorId] = useState(''); const [status, setStatus] = useState<'' | CollectorPrecollectionStatus>('');
+  const [collectors, setCollectors] = useState<Collector[]>([]);
+  const [page, setPage] = useState(1); const [result, setResult] = useState<CollectorPrecollectionPage>();
+  const [loading, setLoading] = useState(true); const [error, setError] = useState(''); const [selected, setSelected] = useState<CollectorPrecollectionDetail>();
+  const [cancelTarget, setCancelTarget] = useState<CollectorPrecollectionDetail>(); const [reason, setReason] = useState(''); const [busy, setBusy] = useState(false);
+  const retry = useRef<RetryKeyState | undefined>(undefined);
+  const requestSequence = useRef(0);
+  const canCancel = can('collector-precollections.cancel');
+  useEffect(() => { if (!mine && can('collectors.view')) void collectorUseCases.list.execute({ search: '', status: 'ACTIVE', page: 1, pageSize: 50 }).then((value) => setCollectors(value.items)).catch(() => setCollectors([])); }, [can, mine]);
+  const load = useCallback(async () => { const requestId = ++requestSequence.current; setLoading(true); setError(''); if (mine) setResult(undefined);
+    const query = mine ? { date, search, status: status || undefined, page, pageSize: 20 } : { fromDate: fromDate || undefined, toDate: toDate || undefined, collectorId: collectorId.trim() || undefined, search, status: status || undefined, page, pageSize: 20 };
+    await runLatestRequest(
+      () => mine ? collectorPrecollections.mine(query) : collectorPrecollections.list(query),
+      () => requestSequence.current === requestId,
+      setResult,
+      (cause) => setError(errorMessage(cause, 'No se pudieron cargar los cobros preliminares.')),
+      () => setLoading(false),
+    );
+  }, [collectorId, date, fromDate, mine, page, search, status, toDate]);
+  useEffect(() => { void load(); return () => { requestSequence.current += 1; }; }, [load]);
+  const openCancel = (item: CollectorPrecollectionDetail) => { setCancelTarget(item); setReason(''); setError(''); retry.current = undefined; };
+  const cancel = async () => { if (!cancelTarget || !reason.trim() || busy) return; const request = { id: cancelTarget.id, reason: reason.trim() }; const key = retryKeyFor(request, retry.current); retry.current = key; setBusy(true); setError(''); try { await collectorPrecollections.cancel(cancelTarget.id, { reason: request.reason, idempotencyKey: key.key }); setCancelTarget(undefined); retry.current = undefined; await load(); } catch (cause) { setError(errorMessage(cause, 'No se pudo cancelar el cobro preliminar.')); } finally { setBusy(false); } };
+  const totalPages = result?.totalPages ?? 0;
+  const selectDate = (value: string) => { setPage(1); setDate(value); };
+  return <section className={`stage3b ${mine ? 'stage3b--collector' : 'stage3b--admin'}`} aria-labelledby="precollections-title"><header className="stage3b__heading"><div><span className="eyebrow">{mine ? 'COBRADOR' : 'COBRANZAS'}</span><h1 id="precollections-title">{mine ? 'Mis cobros del día' : 'Cobros preliminares'}</h1><p>{mine ? 'Registros preliminares propios, filtrados por fecha exacta en el servidor.' : 'Consulta global con filtros y paginación reales del servidor.'}</p></div></header>
+    <div className="stage3b__filters">{mine ? <CollectorDateNavigation date={date} today={today} onChange={selectDate} /> : <><label>Desde<input type="date" value={fromDate} onChange={(event) => { setPage(1); setFromDate(event.target.value); }} /></label><label>Hasta<input type="date" value={toDate} onChange={(event) => { setPage(1); setToDate(event.target.value); }} /></label>{collectors.length ? <label>Cobrador<select value={collectorId} onChange={(event) => { setPage(1); setCollectorId(event.target.value); }}><option value="">Todos</option>{collectors.map((collector) => <option value={collector.id} key={collector.id}>{collector.firstName} {collector.firstLastName} · {collector.identification}</option>)}</select></label> : <label>ID de cobrador<input value={collectorId} placeholder="Identificador exacto" onChange={(event) => { setPage(1); setCollectorId(event.target.value); }} /></label>}</>}
+      <label>Buscar<input value={search} placeholder="Cliente, identificación o préstamo" onChange={(event) => { setPage(1); setSearch(event.target.value); }} /></label><label>Estado<select value={status} onChange={(event) => { setPage(1); setStatus(event.target.value as typeof status); }}><option value="">Todos</option>{statuses.map((value) => <option value={value} key={value}>{precollectionStatusLabel[value]}</option>)}</select></label></div>
+    {result && <><div className="stage3b__summary"><article><span>Registros vigentes</span><strong>{result.indicators.count}</strong></article><article><span>Total vigente</span><strong>{formatCRC(result.indicators.total)}</strong></article><article><span>Efectivo</span><strong>{formatCRC(result.indicators.cash)}</strong></article><article><span>Electrónico</span><strong>{formatCRC(result.indicators.electronic)}</strong></article><article><span>Pendiente</span><strong>{formatCRC(result.indicators.pending)}</strong></article><article><span>Cancelado (excluido)</span><strong>{formatCRC(result.indicators.cancelled)}</strong></article></div><PaymentMethodBreakdown items={result.items} /></>}
+    {error && <div className="catalog-message catalog-message--error" role="alert">{error}</div>}{loading ? <div className="catalog-message">Cargando cobros preliminares…</div> : !result?.items.length ? <div className="catalog-message">{mine ? collectorPrecollectionEmptyMessage(date) : 'No hay cobros preliminares para los filtros seleccionados.'}</div> : mine ? <div className="stage3b__cards">{result.items.map((item) => <PrecollectionCard item={item} canCancel={canCancel} onDetail={setSelected} onCancel={openCancel} key={item.id} />)}</div> : <PrecollectionTable items={result.items} canCancel={canCancel} onDetail={setSelected} onCancel={openCancel} />}
+    {result && result.total > 0 && <div className="stage3b__pagination"><button className="button button--secondary" type="button" disabled={page <= 1} onClick={() => setPage(page - 1)}>Anterior</button><span>Página {result.page} de {Math.max(1, totalPages)} · {result.total} registros</span><button className="button button--secondary" type="button" disabled={page >= totalPages} onClick={() => setPage(page + 1)}>Siguiente</button></div>}
+    {selected && <PrecollectionDetail item={selected} close={() => setSelected(undefined)} />}{cancelTarget && <div className="dialog-backdrop"><div className="dialog" role="dialog" aria-modal="true" aria-labelledby="cancel-precollection-title"><h3 id="cancel-precollection-title">Cancelar cobro preliminar</h3><p>Esta acción solo está disponible mientras el registro permanece en estado Registrado.</p><label>Motivo requerido<textarea value={reason} onChange={(event) => setReason(event.target.value)} /></label><div className="dialog-actions"><button className="button button--secondary" disabled={busy} onClick={() => setCancelTarget(undefined)}>Volver</button><button className="button button--danger" disabled={busy || !reason.trim()} onClick={() => void cancel()}>{busy ? 'Cancelando…' : 'Confirmar cancelación'}</button></div></div></div>}
+  </section>;
+}
+
+export function CollectorDateNavigation({ date, today, onChange }: { date: string; today: string; onChange: (date: string) => void }): ReactElement {
+  const navigation = dayNavigation(date, today);
+  return <>
+    <button className="button button--secondary" type="button" onClick={() => onChange(navigation.previous)}>Anterior</button>
+    <button className="button button--secondary" type="button" onClick={() => onChange(today)}>Hoy</button>
+    <label>Fecha<input type="date" max={today} value={date} onChange={(event) => { if (event.target.value <= today) onChange(event.target.value); }} /></label>
+    <output aria-live="polite"><strong>Fecha seleccionada:</strong> {date === today ? 'Hoy · ' : ''}{formatDateOnlyForDisplay(date)}</output>
+    <button className="button button--secondary" type="button" disabled={!navigation.next} onClick={() => { if (navigation.next) onChange(navigation.next); }}>Siguiente</button>
+  </>;
+}
+
+function PrecollectionCard({ item, canCancel, onDetail, onCancel }: { item: CollectorPrecollectionDetail; canCancel: boolean; onDetail: (item: CollectorPrecollectionDetail) => void; onCancel: (item: CollectorPrecollectionDetail) => void }) { return <article className={`stage3b-card${item.status === 'CANCELLED' ? ' stage3b-card--cancelled' : ''}`}><div><span className={`status-badge status-badge--${item.status.toLowerCase()}`}>{precollectionStatusLabel[item.status]}</span><strong>{item.customerName}</strong><span>{item.loanNumber} · {item.paymentMethodName}</span><span>{formatDateOnlyForDisplay(item.effectiveDate)}</span><strong>{formatCRC(item.amount)}</strong></div><TableActions actions={precollectionActions(item, canCancel, onDetail, onCancel)} ariaLabel={`Acciones del cobro de ${item.customerName}`} /></article>; }
+function PrecollectionTable({ items, canCancel, onDetail, onCancel }: { items: CollectorPrecollectionDetail[]; canCancel: boolean; onDetail: (item: CollectorPrecollectionDetail) => void; onCancel: (item: CollectorPrecollectionDetail) => void }) { return <div className="catalog-table-wrap"><table className="catalog-table stage3b-table"><thead><tr><th>Fecha</th><th>Cliente</th><th>Préstamo</th><th>Cobrador</th><th>Forma</th><th>Monto</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>{items.map((item) => <tr key={item.id} className={item.status === 'CANCELLED' ? 'stage3b-table__cancelled' : ''}><td>{formatDateOnlyForDisplay(item.effectiveDate)}</td><td>{item.customerName}<small>{item.customerIdentification}</small></td><td>{item.loanNumber}</td><td>{item.collectorName}</td><td>{item.paymentMethodName}</td><td>{formatCRC(item.amount)}</td><td><span className={`status-badge status-badge--${item.status.toLowerCase()}`}>{precollectionStatusLabel[item.status]}</span></td><td><TableActions actions={precollectionActions(item, canCancel, onDetail, onCancel)} ariaLabel={`Acciones del cobro de ${item.customerName}`} /></td></tr>)}</tbody></table></div>; }
+function PrecollectionDetail({ item, close }: { item: CollectorPrecollectionDetail; close: () => void }) { return <div className="dialog-backdrop"><div className="dialog stage3b-dialog" role="dialog" aria-modal="true" aria-labelledby="precollection-detail-title"><h3 id="precollection-detail-title">Detalle del cobro preliminar</h3><dl className="stage3b__detail"><dt>Cliente</dt><dd>{item.customerName} · {item.customerIdentification}</dd><dt>Préstamo</dt><dd>{item.loanNumber}</dd><dt>Ruta</dt><dd>{item.routeName}</dd><dt>Cobrador</dt><dd>{item.collectorName}</dd><dt>Monto</dt><dd>{formatCRC(item.amount)}</dd><dt>Fecha efectiva</dt><dd>{formatDateOnlyForDisplay(item.effectiveDate)}</dd><dt>Forma de pago</dt><dd>{item.paymentMethodName}</dd><dt>Tratamiento de custodia</dt><dd>{item.custodyTreatment === 'COLLECTOR_HELD' ? 'Dinero bajo custodia del cobrador' : 'Recibido directamente por la empresa'}</dd><dt>Registrado</dt><dd>{formatDateTimeForDisplay(item.recordedAt)}</dd><dt>Liquidación</dt><dd>No disponible en el contrato actual de detalle.</dd>{item.cancellationReason && <><dt>Motivo de cancelación</dt><dd>{item.cancellationReason}</dd></>}</dl><div className="dialog-actions"><button className="button button--secondary" onClick={close}>Cerrar</button></div></div></div>; }
+function PaymentMethodBreakdown({ items }: { items: CollectorPrecollectionDetail[] }) { const groups = new Map<string, { count: number; cents: bigint }>(); for (const item of items) { if (item.status === 'CANCELLED') continue; const current = groups.get(item.paymentMethodName) ?? { count: 0, cents: 0n }; const cents = parseMoneyCents(item.amount); groups.set(item.paymentMethodName, { count: current.count + 1, cents: current.cents + (cents ?? 0n) }); } return groups.size ? <div className="stage3b__breakdown" aria-label="Desglose por forma de pago de los registros cargados">{[...groups].map(([name, value]) => <span key={name}><strong>{name}</strong> {value.count} · {formatCRC(moneyFromCents(value.cents))}</span>)}</div> : null; }

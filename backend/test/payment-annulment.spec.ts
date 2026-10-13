@@ -47,7 +47,7 @@ const closed = (): State => {
   return state;
 };
 
-function store(start: State, options: { postPending?: string; postInvalidCount?: number; cashConflict?: boolean; annulmentConflict?: boolean; loanAmounts?: { principal: string; interestAmount: string; totalAmount: string }; reopenResult?: 'zero' | 'ambiguous' | 'wrong-id' | 'flat' | 'no-id' | 'duplicate'; failHistory?: boolean; wrongPaymentSource?: boolean; persistedActor?: string; persistedReason?: string } = {}) {
+function store(start: State, options: { postPending?: string; postInvalidCount?: number; cashConflict?: boolean; annulmentConflict?: boolean; loanAmounts?: { principal: string; interestAmount: string; totalAmount: string }; reopenResult?: 'zero' | 'ambiguous' | 'wrong-id' | 'flat' | 'no-id' | 'duplicate'; failHistory?: boolean; wrongPaymentSource?: boolean; persistedActor?: string; persistedReason?: string; confirmedSettlementPayment?: boolean } = {}) {
   let state = structuredClone(start);
   const queries: string[] = [];
   const transaction = jest.fn(async (callback: (manager: { query: (sql: string, params?: unknown[]) => Promise<unknown[]> }) => Promise<unknown>) => {
@@ -73,9 +73,13 @@ function store(start: State, options: { postPending?: string; postInvalidCount?:
         return found ? [{ paymentId: found.paymentId, reason: found.reason, annulmentType: found.type,
           annulledAt: new Date(found.annulledAt), fingerprint: found.fingerprint }] : [];
       }
+      if (sql.includes('FROM collector_settlement_items item')) {
+        return [{ inConfirmedSettlement: options.confirmedSettlementPayment === true }];
+      }
       if (sql.includes('FROM cash_movements WHERE payment_id')) {
         const found = draft.cash.find((item) => item.paymentId === params[0] && item.direction === 'INFLOW' && item.concept === 'CUSTOMER_PAYMENT');
-        return found ? [{ id: found.id, amount: found.amount, movementDate: found.movementDate, methodId: found.methodId }] : [];
+        return found ? [{ id: found.id, amount: found.amount, movementDate: found.movementDate, methodId: found.methodId,
+          fingerprint: found.fingerprint }] : [];
       }
       if (sql.includes('FROM cash_movements WHERE reversed_movement_id')) {
         const found = draft.cash.find((item) => item.reversedId === params[0]);
@@ -89,7 +93,7 @@ function store(start: State, options: { postPending?: string; postInvalidCount?:
       }
       if (sql.includes('FROM financial_openings')) return [{ openingDate: '2026-01-01' }];
       if (sql.includes('FROM payment_methods')) return [{ id: 'method' }];
-      if (sql.includes('FROM collectors')) return [{ id: collectorId }];
+      if (sql.includes('FROM collectors')) return [{ id: collectorId, userId: 'collector-user', actorRoleCode: 'COLLECTION_MANAGER', actorCollectorId: null, assigned: true }];
       if (sql.includes('FROM payment_plan_entries') && sql.includes('FOR UPDATE')) return draft.plan.filter((row) => row.loanId === params[0] && (!sql.includes('pending_amount > 0') || cents(row.pendingAmount) > 0n)).sort((a, b) => a.dueDate.localeCompare(b.dueDate) || a.sequence - b.sequence || a.id.localeCompare(b.id)).map((row) => ({ ...row }));
       if (sql.includes('SUM(principal_applied)')) {
         const facts = draft.payments.filter((fact) => fact.status === 'VALID' && fact.loanId === params[0]);
@@ -140,7 +144,8 @@ function store(start: State, options: { postPending?: string; postInvalidCount?:
         if (options.cashConflict || draft.cash.some((item) => item.reversedId === params[4] || item.key === params[6])) return [];
         if (sql.includes("'INFLOW'")) {
           const id = `cash-${params[7]}`;
-          draft.cash.push({ id, paymentId: params[7] as string, direction: 'INFLOW', concept: 'CUSTOMER_PAYMENT', amount: params[0] as string, methodId: params[2] as string });
+          draft.cash.push({ id, paymentId: params[7] as string, direction: 'INFLOW', concept: 'CUSTOMER_PAYMENT', amount: params[0] as string,
+            movementDate: params[1] as string, methodId: params[2] as string, key: params[5] as string, fingerprint: params[6] as string });
           return [{ id }];
         }
         draft.cash.push({ id: 'cash-reversal', reversedId: params[4] as string, direction: 'OUTFLOW', concept: 'REVERSAL', amount: params[0] as string, movementDate: params[1] as string, methodId: params[2] as string, reason: params[3] as string, actorId: params[5] as string, key: params[6] as string, fingerprint: params[7] as string });
@@ -153,8 +158,10 @@ function store(start: State, options: { postPending?: string; postInvalidCount?:
       }
       if (sql.includes('FROM payments WHERE id = $1')) {
         const fact = draft.payments.find((item) => item.id === params[0]);
-        return fact ? [{ id: fact.id, status: fact.status, amount: fact.amount, loanId: fact.loanId }] : [];
+        return fact ? [{ id: fact.id, status: fact.status, amount: fact.amount, loanId: fact.loanId,
+          paymentDate: fact.paymentDate, methodId: fact.methodId, collectorId: fact.collectorId }] : [];
       }
+      if (sql.includes('FROM collector_precollections')) return [{ reserved: '0.00', earliestEffectiveDate: null }];
       if (sql.includes('FROM payment_applications WHERE payment_id = $1 ORDER BY')) return draft.applications.filter((item) => (item.paymentId ?? 'p') === params[0]).map((item) => ({ ...item }));
       throw new Error(`Unexpected query: ${sql}`);
     };
@@ -187,6 +194,20 @@ describe('last valid Payment annulment against the current plan', () => {
     await expect(annul(testStore)).rejects.toBeInstanceOf(PaymentConflictError);
     expect(testStore.state()).toEqual(state);
     expect(writes(testStore)).toEqual([]);
+  });
+
+  it('refuses a payment from a confirmed settlement without mutating any financial aggregate', async () => {
+    const state = initial();
+    const testStore = store(state, { confirmedSettlementPayment: true });
+    const error = await annul(testStore).catch((cause) => cause);
+    expect(error).toMatchObject({ reasonCode: 'PAYMENT_IN_CONFIRMED_SETTLEMENT' });
+    expect(testStore.state()).toEqual(state);
+    expect(writes(testStore)).toEqual([]);
+    const controller = new PaymentController(new RegisterPaymentUseCase(testStore.source, totalsReader), {} as never, {} as never);
+    await expect(controller.annul('p', { reason: 'Correction', annulmentType: 'CASH_REFUND', idempotencyKey: 'key' },
+      { id: 'actor' } as never)).rejects.toMatchObject({ status: 409, response: expect.objectContaining({
+        errorCode: 'RESOURCE_STATE_CONFLICT', reasonCode: 'PAYMENT_IN_CONFIRMED_SETTLEMENT',
+      }) });
   });
 
   it('locks Loan before Payment and plan, checks the latest VALID row and restores one exact application', async () => {
@@ -237,8 +258,9 @@ describe('last valid Payment annulment against the current plan', () => {
     const guard = { assertDateAllowed: async (date: string) => {
       if (date === '2026-01-02') throw new ClosedFinancialPeriodError('The period is closed.');
     } };
-    await expect(new RegisterPaymentUseCase(correction.source, totalsReader, guard as never)
-      .annul('p', 'Data error', 'correction-key', 'actor', 'DATA_CORRECTION')).rejects.toThrow('The period is closed.');
+    const blocked = await new RegisterPaymentUseCase(correction.source, totalsReader, guard as never)
+      .annul('p', 'Data error', 'correction-key', 'actor', 'DATA_CORRECTION').catch((error) => error);
+    expect(blocked).toMatchObject({ message: 'The period is closed.', reasonCode: 'CLOSED_FINANCIAL_PERIOD' });
     expect(writes(correction)).toEqual([]);
 
     const refund = store(initial());

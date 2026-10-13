@@ -10,14 +10,26 @@ export type AssignedLoanListItem = {
   customerName: string; identification: string; primaryPhone: string; frequencyName: string; pendingTotal: string;
   nextDueDate: string | null; nextDueAmount: string | null; isOverdue: boolean; status: AssignedLoanStatus;
 };
+export type AssignedLoanPaymentMethod = { id: string; name: string };
+export type AssignedLoanDetail = {
+  id: string; loanNumber: string; status: AssignedLoanStatus; startDate: string; principal: string; interestAmount: string; totalAmount: string;
+  observations: string | null; updatedAt: Date; customerId: string; customerName: string; identification: string;
+  paymentFrequencyId: string; frequencyName: string; intervalUnit: string; intervalValue: number; createdByName: string;
+  preferredPaymentMethodId: string; preferredPaymentMethod: string; disbursementPaymentMethod: string | null; pendingTotal: string;
+  plan: Array<{ id: string; sequence: number; dueDate: string; pendingAmount: string }>;
+  financialBalance: string; reservedPrecollections: string; operationalBalance: string;
+  activePaymentMethods: AssignedLoanPaymentMethod[];
+  validPayments: Array<{ id: string; amount: string; paymentDate: string; status: 'VALID'; applications: Array<{ planEntryId: string; sequence: number; amountApplied: string }> }>;
+};
 export interface AssignedLoansReader {
   resolveCollector(userId: string): Promise<boolean>;
   list(query: AssignedLoanQuery, scope: AssignedLoansScope): Promise<{ items: AssignedLoanListItem[]; total: number; page: number; pageSize: number }>;
-  detail(id: string, scope: AssignedLoansScope): Promise<unknown | null>;
+  detail(id: string, scope: AssignedLoansScope): Promise<AssignedLoanDetail | null>;
 }
 export const ASSIGNED_LOANS_READER = Symbol('ASSIGNED_LOANS_READER');
 export class AssignedLoansForbiddenError extends Error {}
 export class AssignedLoansValidationError extends Error {}
+export class AssignedLoansIntegrityError extends Error {}
 
 const sorts: readonly LoanSortBy[] = ['number', 'customer', 'startDate', 'principal', 'interest', 'total', 'frequency', 'pending', 'condition'];
 
@@ -43,7 +55,7 @@ export class AssignedLoansUseCase {
 
   private async collectorScope(actor: CurrentIdentity): Promise<AssignedLoansScope> {
     if (actor.role.isSuperAdmin) return { kind: 'ALL' };
-    if (actor.role.code !== 'COLLECTOR' || !await this.reader.resolveCollector(actor.id))
+    if (!await this.reader.resolveCollector(actor.id))
       throw new AssignedLoansForbiddenError('El usuario autenticado no posee un perfil de cobrador activo.');
     return { kind: 'COLLECTOR', collectorUserId: actor.id };
   }

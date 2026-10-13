@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type ReactElement } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import type { LoanOperationalDetail } from '../../domain/entities/loan';
+import type { AssignedLoanDetail, LoanOperationalDetail } from '../../domain/entities/loan';
 import { loanApi } from '../../infrastructure/api/loan.api';
 import { generateLoanPaymentPlanReport } from '../../infrastructure/reports/loan-payment-plan-report.service';
 import { formatDateOnlyForDisplay, formatDateTimeForDisplay } from '../../shared/utils/date';
@@ -10,11 +10,12 @@ import { LoanEditDialog } from '../components/LoanEditDialog';
 import { Icon } from '../components/layout/Icon';
 import { useAuth } from '../hooks/auth-context';
 import { formatLoanStatus } from '../helpers/loan';
+import { paymentApplicationText } from '../helpers/payment-plan';
 
 export function LoanDetailPage({ assigned = false }: { assigned?: boolean } = {}): ReactElement {
   const { id = '' } = useParams();
   const { can } = useAuth();
-  const [loan, setLoan] = useState<LoanOperationalDetail>();
+  const [loan, setLoan] = useState<AssignedLoanDetail | LoanOperationalDetail>();
   const [exportError, setExportError] = useState('');
   const [editing, setEditing] = useState(false);
   const closeEdit = useCallback(() => setEditing(false), []);
@@ -71,12 +72,17 @@ export function LoanDetailPage({ assigned = false }: { assigned?: boolean } = {}
         </dl>
       </section>
 
-      {loan.collectionProjection.operationalDate && <section className="payment-selected__collection" aria-label="Próximo cobro consolidado">
+      {'collectionProjection' in loan && loan.collectionProjection.operationalDate && <section className="payment-selected__collection" aria-label="Próximo cobro consolidado">
         <div><span>{loan.collectionProjection.operationalDateKind === 'TODAY' ? 'COBRO PENDIENTE HOY' : 'PRÓXIMO COBRO'}</span><strong>{formatCRC(loan.collectionProjection.totalSuggestedAmount)}</strong><small>{formatDateOnlyForDisplay(loan.collectionProjection.operationalDate)}</small></div>
         <dl><div><dt>Saldo vencido</dt><dd>{formatCRC(loan.collectionProjection.overdueAmount)}</dd></div><div><dt>Próximo monto programado</dt><dd>{formatCRC(loan.collectionProjection.scheduledAmount)}</dd></div><div><dt>Total sugerido a cobrar</dt><dd>{formatCRC(loan.collectionProjection.totalSuggestedAmount)}</dd></div></dl>
       </section>}
 
-      <LoanPaymentPlanTable plan={loan.plan} total={loan.financialBalance} showCondition />
+      <LoanPaymentPlanTable plan={loan.plan} total={loan.financialBalance} showCondition paymentApplications={loan.validPayments.flatMap((payment) => payment.applications ?? [])} />
+      <section className="payment-selected__plan" aria-labelledby="loan-payment-movements-title"><h2 id="loan-payment-movements-title">Movimientos de pago</h2>
+        <div className="payment-selected__table-wrap"><table className="catalog-table payment-selected__table"><thead><tr><th>Referencia</th><th>Fecha</th><th>Monto recibido</th><th>Aplicación verificada</th></tr></thead>
+          <tbody>{loan.validPayments.map((payment) => <tr className="payment-plan-row payment-plan-row--payment" key={payment.id}><td>PAGO RECIBIDO</td><td>{formatDateOnlyForDisplay(payment.paymentDate)}</td><td>{formatCRC(payment.amount)}</td><td>{paymentApplicationText(payment.applications ?? [])}</td></tr>)}</tbody></table></div>
+        {!loan.validPayments.length && <p>No hay pagos válidos registrados.</p>}
+      </section>
       {!assigned && editing && can('loans.update') && <LoanEditDialog loanId={id} api={loanApi} onSaved={refreshDetail} onUnavailable={refreshUnavailable} onClose={closeEdit} />}
     </section>
   );

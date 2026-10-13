@@ -32,11 +32,49 @@ import { CollectorLoansPage } from '../pages/CollectorLoansPage';
 import { CollectorFinancialSummaryPage } from '../pages/CollectorFinancialSummaryPage';
 import { LoanDetailPage } from '../pages/LoanDetailPage';
 import { CustomerAgendaPage } from '../pages/CustomerAgendaPage';
+import { CollectorPrecollectionCapturePage } from '../pages/CollectorPrecollectionCapturePage';
+import { CollectorPrecollectionsPage, PrecollectionManagementPage } from '../pages/CollectorPrecollectionsPage';
+import { CollectorSettlementsPage, SettlementManagementPage } from '../pages/CollectorSettlementsPage';
+import { CollectorCustodyPage, CustodyManagementPage } from '../pages/CollectorCustodyPage';
 import { AppRouter } from './AppRouter';
 
 const elements = (node: ReactNode): ReactElement[] => Children.toArray(node).flatMap((child) =>
   isValidElement(child) ? [child, ...elements((child.props as { children?: ReactNode }).children)] : []);
 const identity: AuthIdentity = { id: 'user', username: 'tester', fullName: 'Tester', role: { id: 'role', code: 'ROLE', name: 'Role', isSuperAdmin: false }, permissions: [] };
+
+function route(path: string): ReactElement | undefined {
+  return elements(AppRouter()).find((element) => element.type === Route && (element.props as { path?: string }).path === path);
+}
+
+describe('Stage 3B routes', () => {
+  it('guards collector experiences with exact scoped anyPermissions', () => {
+    const expected = [
+      ['/collector/precollections/new', ['collector-precollections.create'], CollectorPrecollectionCapturePage],
+      ['/collector/precollections', ['collector-precollections.assigned.view'], CollectorPrecollectionsPage],
+      ['/collector/settlements', ['collector-settlements.self.view', 'collector-settlements.self.create', 'collector-settlements.self.submit', 'collector-settlements.self.cancel'], CollectorSettlementsPage],
+      ['/collector/custody', ['collector-custody.self.view', 'collector-custody.self.remit'], CollectorCustodyPage],
+    ] as const;
+    for (const [path, anyPermissions, page] of expected) expect((route(path)?.props as { element?: ReactNode }).element).toMatchObject({ type: RouteGuard, props: { anyPermissions: [...anyPermissions], children: { type: page } } });
+  });
+
+  it('guards global experiences with their exact operation permissions', () => {
+    expect((route('/collector-precollections')?.props as { element?: ReactNode }).element).toMatchObject({ type: RouteGuard, props: { anyPermissions: ['collector-precollections.view', 'collector-precollections.cancel'], children: { type: PrecollectionManagementPage } } });
+    expect((route('/collector-settlements')?.props as { element?: ReactNode }).element).toMatchObject({ type: RouteGuard, props: { children: { type: SettlementManagementPage } } });
+    expect((route('/collector-custody')?.props as { element?: ReactNode }).element).toMatchObject({ type: RouteGuard, props: { anyPermissions: ['collector-custody.view', 'collector-custody.remit', 'collector-custody.topup', 'collector-custody.adjust'], children: { type: CustodyManagementPage } } });
+  });
+
+  it('marks only the exact collector collection link active', () => {
+    const html = renderRoute('/collector/precollections/new', {
+      ...identity,
+      role: { ...identity.role, code: 'COLLECTOR' },
+      permissions: ['collector-precollections.create', 'collector-precollections.assigned.view'],
+    });
+
+    expect(html).toContain('href="/collector/precollections/new"');
+    expect(html).toContain('href="/collector/precollections"');
+    expect(html.match(/nav-link--active/g)).toHaveLength(1);
+  });
+});
 
 function renderRoute(path: string, user: AuthIdentity | undefined): string {
   const layoutRoute = elements(AppRouter()).find((element) => element.type === Route &&

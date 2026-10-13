@@ -170,6 +170,8 @@ export class LoanRefinancingTypeormStore implements RefinancingStore {
         const [row] = await manager.query('SELECT id FROM loans WHERE id = $1 FOR UPDATE', [id]);
         return row ? this.snapshot(manager, id) : undefined;
       },
+      hasPendingPrecollection: async (id) => Boolean((await manager.query(`SELECT EXISTS (
+        SELECT 1 FROM collector_precollections WHERE loan_id = $1 AND status IN ('RECORDED','SUBMITTED')) AS present`, [id]))[0]?.present),
       readSnapshot: (id) => this.snapshot(manager, id),
       readHistoricalPayments: (id, throughDate) => this.historicalPayments(manager, id, throughDate),
       openingDate: async () => (await manager.query(`SELECT opening_date::text AS "openingDate"

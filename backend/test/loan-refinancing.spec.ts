@@ -27,6 +27,7 @@ class FakeStore implements RefinancingStore {
     payments: [{ loanId: origin, amount: '30000.00' }] };
   fail?: 'plan' | 'cash' | 'history';
   historicalPayments?: HistoricalRefinancingPayments;
+  pendingPrecollection = false;
   rollbacks = 0;
   private queue: Promise<void> = Promise.resolve();
   async list(_query: RefinancingListQuery): Promise<{ items: RefinancingListItem[]; total: number }> {
@@ -96,6 +97,7 @@ class FakeStore implements RefinancingStore {
         findByKey: async (key) => { const found = Object.values(draft.operations).find((row) => row.key === key);
           return found ? { id: found.id, fingerprint: found.fingerprint } : undefined; },
         lockOrigin: async (id) => draft.loans[id] && structuredClone(draft.loans[id]),
+        hasPendingPrecollection: async () => this.pendingPrecollection,
         readSnapshot: async (id) => draft.loans[id] && structuredClone(draft.loans[id]),
         readHistoricalPayments: async (id) => this.historicalPayments ?? {
           totals: structuredClone(draft.loans[id].totals), lastValidPaymentDate: draft.loans[id].lastValidPaymentDate,

@@ -42,7 +42,7 @@ export function buildPaymentContext(input: {
   summary: unknown;
   balances: unknown;
   combinedPlan: PendingPlanEntry[];
-  validPayments: Array<{ id: string; paymentDate: string | Date; amount: string; status: 'VALID' }>;
+  validPayments: Array<{ id: string; paymentDate: string | Date; amount: string; status: 'VALID'; applications?: Array<{ planEntryId: string; sequence: number; amountApplied: string }> }>;
   lastValidPayment: unknown;
   refinanceEligibility: boolean;
   preferredMethod: unknown;

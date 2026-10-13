@@ -27,7 +27,7 @@ export class CollectorUseCases {
   async list(query: CollectorListQuery) { const result = await this.repository.list(query); return { ...result, pages: Math.ceil(result.total / query.pageSize) }; }
   async detail(id: string) { const item = await this.repository.findById(id); if (!item) throw new CollectorNotFoundError(); return item; }
   async eligibleUsers(): Promise<EligibleCollectorUser[]> { return this.repository.listEligibleUsers(); }
-  async create(input: Record<string, unknown>, photo: UploadFile | undefined, canAssignUser: boolean): Promise<Collector> {
+  async create(input: Record<string, unknown>, photo: UploadFile | undefined, canAssignUser: boolean, actorUserId?: string): Promise<Collector> {
     const normalized = normalizeCollectorInput(input);
     const userId = optionalText(input.userId, false) ?? null;
     if (userId && !canAssignUser) throw new CollectorUnauthorizedAssociationError();
@@ -37,7 +37,7 @@ export class CollectorUseCases {
     let photoStored = false;
     try {
       if (photo && photoFileKey) { await this.storage.save(photo, photoFileKey); photoStored = true; }
-      return await this.repository.create({ id, ...normalized, photoFileKey, userId } as CollectorCreate);
+      return await this.repository.create({ id, ...normalized, photoFileKey, userId, assignedByUserId: actorUserId } as CollectorCreate);
     } catch (error) {
       if (photoStored && photoFileKey) await Promise.allSettled([this.storage.delete(photoFileKey)]);
       throw error;
@@ -77,7 +77,7 @@ export class CollectorUseCases {
     }
   }
   async status(id: string, isActive: boolean) { const item = await this.repository.updateStatus(id, isActive); if (!item) throw new CollectorNotFoundError(); return item; }
-  async linkUser(id: string, userId: string | null) { await this.detail(id); if (userId !== null) { await this.validateUser(userId, id); if (await this.repository.userLinkedToAnother(userId, id)) throw new CollectorUserAlreadyLinkedError(); } const item = await this.repository.updateUser(id, userId); if (!item) throw new CollectorNotFoundError(); return item; }
+  async linkUser(id: string, userId: string | null, actorUserId: string) { const item = await this.repository.reassignUser(id, userId, actorUserId); if (!item) throw new CollectorNotFoundError(); return item; }
   async photo(id: string) { const item = await this.detail(id); if (!item.photoFileKey) throw new CollectorValidationError('El cobrador no tiene fotografía.'); return this.storage.read(item.photoFileKey); }
   private async validateUser(userId: string, collectorId: string) { const user = await this.repository.findEligibleUser(userId); if (!user) throw new CollectorUserNotEligibleError(); if (await this.repository.userLinkedToAnother(userId, collectorId)) throw new CollectorUserAlreadyLinkedError(); }
 }

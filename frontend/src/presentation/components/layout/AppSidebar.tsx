@@ -1,8 +1,10 @@
 import { useEffect, useId, useMemo, useState, type ReactElement } from 'react';
-import { NavLink, useLocation } from 'react-router-dom';
+import { HandCoins } from 'lucide-react';
+import { Link, NavLink, useLocation } from 'react-router-dom';
 import {
   filterNavigationEntries,
   getActiveGroupIds,
+  getActiveNavigationLinkId,
   navigationEntriesFor,
   toggleAccordionGroup,
   type NavigationEntry,
@@ -16,8 +18,12 @@ export function AppSidebar({ isOpen, onNavigate }: AppSidebarProps): ReactElemen
   const location = useLocation();
   const { can, user, logout } = useAuth();
   const sidebarId = useId();
+  const usesCollectorNavigation = user?.role.code === 'COLLECTOR' && !user.role.isSuperAdmin;
   const visibleEntries = useMemo(() => filterNavigationEntries(navigationEntriesFor(user), can), [can, user]);
   const activeGroupIds = useMemo(() => getActiveGroupIds(visibleEntries, location.pathname), [location.pathname, visibleEntries]);
+  const activeLinkId = useMemo(() => usesCollectorNavigation
+    ? getActiveNavigationLinkId(visibleEntries, location.pathname)
+    : undefined, [location.pathname, usesCollectorNavigation, visibleEntries]);
   const [openGroupIds, setOpenGroupIds] = useState<string[]>(activeGroupIds);
 
   useEffect(() => {
@@ -31,11 +37,11 @@ export function AppSidebar({ isOpen, onNavigate }: AppSidebarProps): ReactElemen
   return (
     <aside id="app-navigation" className={`app-sidebar${isOpen ? ' app-sidebar--open' : ''}`} aria-label="Navegación principal">
       <div className="sidebar-identity">
-        <div className="brand-mark" aria-hidden="true">P</div>
+        <div className="brand-mark" aria-hidden="true"><HandCoins size={20} strokeWidth={1.8} /></div>
         <div><strong>Préstamos</strong><span>Gestión de cartera</span></div>
       </div>
       <nav className="sidebar-nav">
-          {visibleEntries.map((entry) => renderEntry(entry, { activeGroupIds, openGroupIds, onNavigate, sidebarId, toggleGroup, depth: 0 }))}
+          {visibleEntries.map((entry) => renderEntry(entry, { activeGroupIds, activeLinkId, canonicalActiveLinks: usesCollectorNavigation, openGroupIds, onNavigate, sidebarId, toggleGroup, depth: 0 }))}
        </nav>
        <footer className="sidebar-footer">
          <div className="sidebar-user" aria-label={`Usuario actual: ${user?.fullName ?? ''}`}>
@@ -50,6 +56,8 @@ export function AppSidebar({ isOpen, onNavigate }: AppSidebarProps): ReactElemen
 
 type NavigationRenderContext = {
   activeGroupIds: string[];
+  activeLinkId?: string;
+  canonicalActiveLinks: boolean;
   openGroupIds: string[];
   onNavigate: () => void;
   sidebarId: string;
@@ -59,6 +67,12 @@ type NavigationRenderContext = {
 
 function renderEntry(entry: NavigationEntry, context: NavigationRenderContext): ReactElement {
   if (entry.type === 'link') {
+    if (context.canonicalActiveLinks) {
+      const isActive = entry.id === context.activeLinkId;
+      return <Link key={entry.id} to={entry.path} onClick={context.onNavigate} aria-current={isActive ? 'page' : undefined} className={`nav-link${context.depth === 0 ? ' nav-link--root' : ' nav-link--child'} nav-link--depth-${context.depth}${isActive ? ' nav-link--active' : ''}`}>
+        <Icon name={entry.icon} /><span>{entry.label}</span>
+      </Link>;
+    }
     return <NavLink key={entry.id} to={entry.path} end={entry.path === '/dashboard' || entry.path === '/loans'} onClick={context.onNavigate} className={({ isActive }) => `nav-link${context.depth === 0 ? ' nav-link--root' : ' nav-link--child'} nav-link--depth-${context.depth}${isActive ? ' nav-link--active' : ''}`}>
       <Icon name={entry.icon} /><span>{entry.label}</span>
     </NavLink>;

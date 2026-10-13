@@ -1,5 +1,18 @@
 import type { ReactElement } from "react";
-import { HandCoins } from "lucide-react";
+import {
+  CalendarCheck,
+  CalendarDays,
+  ChartBar,
+  CirclePlus,
+  ClipboardCheck,
+  ClipboardList,
+  HandCoins,
+  House,
+  Landmark,
+  ReceiptText,
+  Wallet,
+  WalletCards,
+} from "lucide-react";
 import type { NavigationIcon } from "../../navigation/navigationConfig";
 
 export type TableActionIcon =
@@ -21,8 +34,22 @@ export type TableActionIcon =
 type IconProps = { name: TableActionIcon };
 
 export function Icon({ name }: IconProps): ReactElement {
+  const lucideProps = { "aria-hidden": true as const, size: 20, strokeWidth: 1.8 };
+
+  if (name === "home") return <House {...lucideProps} />;
+  if (name === "portfolio") return <WalletCards {...lucideProps} />;
+  if (name === "calendar" || name === "schedule") return <CalendarDays {...lucideProps} />;
+  if (name === "loan") return <HandCoins {...lucideProps} />;
+  if (name === "summary") return <ChartBar {...lucideProps} />;
+  if (name === "collections") return <ReceiptText {...lucideProps} />;
+  if (name === "create") return <CirclePlus {...lucideProps} />;
+  if (name === "registered") return <ClipboardCheck {...lucideProps} />;
+  if (name === "collection-agenda") return <CalendarCheck {...lucideProps} />;
+  if (name === "custody") return <Landmark {...lucideProps} />;
+  if (name === "settlements") return <ClipboardList {...lucideProps} />;
+  if (name === "wallet") return <Wallet {...lucideProps} />;
   if (name === "hand-coins")
-    return <HandCoins aria-hidden="true" size={20} strokeWidth={1.8} />;
+    return <HandCoins {...lucideProps} />;
 
   const common = {
     width: 20,

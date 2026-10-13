@@ -88,6 +88,7 @@ export interface RefinancingTransaction {
   readonly context?: unknown;
   findByKey(key: string): Promise<{ id: string; fingerprint: string } | undefined>;
   lockOrigin(id: string): Promise<RefinancingSnapshot | undefined>;
+  hasPendingPrecollection(id: string): Promise<boolean>;
   readSnapshot(id: string): Promise<RefinancingSnapshot | undefined>;
   readHistoricalPayments(id: string, throughDate: string): Promise<HistoricalRefinancingPayments>;
   openingDate(): Promise<string | undefined>;

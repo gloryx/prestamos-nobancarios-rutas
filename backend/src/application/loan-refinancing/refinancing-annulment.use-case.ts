@@ -30,7 +30,11 @@ export type AnnulRefinancingRequest = {
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const KEY = /^[\x21-\x7e]{1,128}$/;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
-const validDate = (value: string) => DATE.test(value) && new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value;
+const validDate = (value: string) => {
+  if (!DATE.test(value)) return false;
+  const parsed = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+};
 const fingerprint = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const reason = (code: string, message: string): RefinancingAnnulmentReason => ({ code, message });
 const dedupe = (reasons: RefinancingAnnulmentReason[]) => [...new Map(reasons.map((item) => [item.code, item])).values()];
@@ -201,6 +205,9 @@ export class LoanRefinancingAnnulmentUseCase {
       }
       const state = await tx.lockSnapshot(normalized.refinancingId);
       if (!state) throw new RefinancingAnnulmentNotFoundError('The refinancing does not exist.');
+      if (await tx.hasPendingPrecollection([state.originLoanId, state.successorLoanId])) {
+        throw new RefinancingAnnulmentConflictError('A related loan has pending collector precollections.', 'LOAN_HAS_PENDING_PRECOLLECTIONS');
+      }
       const hasNewMoney = cents(state.newMoneyDisbursed) > 0n;
       const requiredResolution = hasNewMoney
         ? normalized.annulmentType === 'DATA_CORRECTION' ? 'NOT_DELIVERED' : 'RETURNED_IN_FULL'

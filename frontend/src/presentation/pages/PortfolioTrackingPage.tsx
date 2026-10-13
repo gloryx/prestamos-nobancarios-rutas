@@ -4,7 +4,7 @@ import { PortfolioTrackingController, type PortfolioTrackingState } from '../../
 import type { CollectionStatus, PortfolioLoanStatus } from '../../domain/entities/portfolio-tracking';
 import { formatDateOnlyForDisplay } from '../../shared/utils/date';
 import { formatCRC } from '../../shared/utils/money';
-import { localDateOnly, paymentTimeline } from '../helpers/payment-plan';
+import { localDateOnly, paymentApplicationText, paymentTimeline } from '../helpers/payment-plan';
 
 const loanStatusLabels: Record<PortfolioLoanStatus, string> = {
   ACTIVE: 'Activo', UNCOLLECTIBLE: 'Incobrable',
@@ -85,12 +85,12 @@ export function PortfolioTrackingView({ state, controller }: { state: PortfolioT
       </section>
       <section className="payment-selected__plan" aria-labelledby="portfolio-plan-title"><h2 id="portfolio-plan-title">Plan de pagos</h2>
         <div className="payment-selected__table-wrap" role="region" aria-label="Plan de pagos" tabIndex={0}><table className="catalog-table payment-selected__table portfolio-tracking__plan">
-          <thead><tr><th scope="col">N.º</th><th scope="col">Fecha de vencimiento</th><th scope="col">Cuota</th><th scope="col">Pagado</th><th scope="col">Pendiente</th><th scope="col">Estado</th></tr></thead>
-          <tbody>{timeline.map((row, index) => { const paid = row.kind === 'PAYMENT'; const overdue = !paid && row.date < today;
-            return <tr key={`${row.kind}:${row.id}`}><td>{index + 1}</td><td>{formatDateOnlyForDisplay(row.date)}</td><td>{formatCRC(row.amount)}</td>
-              <td>{paid ? formatCRC(row.amount) : '—'}</td><td>{paid ? '—' : formatCRC(row.amount)}</td>
+          <thead><tr><th scope="col">Referencia</th><th scope="col">Fecha</th><th scope="col">Monto</th><th scope="col">Recibido</th><th scope="col">Pendiente</th><th scope="col">Aplicación verificada</th><th scope="col">Estado</th></tr></thead>
+          <tbody>{timeline.map((row) => { const paid = row.kind === 'PAYMENT'; const overdue = !paid && row.date < today;
+            return <tr key={`${row.kind}:${row.id}`}><td><span className={paid ? 'payment-plan-reference payment-plan-reference--payment' : 'payment-plan-reference payment-plan-reference--obligation'}>{paid ? 'PAGO RECIBIDO' : `Cuota ${row.sequence}`}</span></td><td>{formatDateOnlyForDisplay(row.date)}</td><td>{formatCRC(row.amount)}</td>
+              <td>{paid ? formatCRC(row.amount) : '—'}</td><td>{paid ? '—' : formatCRC(row.amount)}</td><td>{paid ? paymentApplicationText(row.applications) : '—'}</td>
               <td><span className={`status-badge ${paid ? 'status-badge--active' : overdue ? 'payment-selected__overdue' : 'payment-selected__pending'}`}>
-                {paid ? 'PAGADA' : overdue ? 'VENCIDA' : 'PENDIENTE'}</span></td></tr>; })}</tbody>
+                {paid ? 'PAGO RECIBIDO' : overdue ? 'VENCIDA' : 'PENDIENTE'}</span></td></tr>; })}</tbody>
         </table></div>
         {!timeline.length && <p>No hay pagos válidos ni cuotas pendientes.</p>}
       </section>

@@ -2,6 +2,7 @@ import type { LoanRefinancingAnnulments } from '../ports/loan-refinancing.reposi
 import type { RefinancingAnnulledSort, RefinancingAnnulmentCandidate, RefinancingAnnulmentCandidateSort,
   RefinancingAnnulmentDetail, RefinancingAnnulmentEligibility, RefinancingAnnulmentPaymentMethod,
   RefinancingAnnulmentType, RefinancingPageSize } from '../../domain/entities/loan-refinancing';
+import { refinancingAnnulmentErrorMessage } from '../errors/refinancing-annulment-error';
 
 export type RefinancingAnnulmentTab = 'ANNULLED' | 'CANDIDATES';
 export type RefinancingAnnulmentAttempt = Readonly<{
@@ -40,15 +41,6 @@ export type RefinancingAnnulmentState = Readonly<{
   detailError: string | null;
   feedback: { kind: 'success' | 'error'; message: string } | null;
 }>;
-
-const messageFor = (cause: unknown, fallback: string) => {
-  const status = cause && typeof cause === 'object' && 'status' in cause ? cause.status : undefined;
-  if (status === 403) return 'No tienes permiso para realizar esta operación.';
-  if (status === 404) return 'El refinanciamiento ya no está disponible.';
-  if (status === 409) return 'La elegibilidad cambió. Revisa los datos actualizados.';
-  if (cause instanceof TypeError) return 'No se pudo conectar al servidor. Intenta nuevamente.';
-  return fallback;
-};
 
 export class RefinancingAnnulmentController {
   private state: RefinancingAnnulmentState = { activeTab: 'ANNULLED', search: '', dateFrom: '', dateTo: '',
@@ -91,7 +83,7 @@ export class RefinancingAnnulmentController {
       return true;
     } catch (cause) {
       if (token === this.generation) this.publish({ ...this.state, loading: false, refreshing: false,
-        error: messageFor(cause, 'No se pudieron cargar los refinanciamientos.') });
+        error: refinancingAnnulmentErrorMessage(cause, 'No se pudieron cargar los refinanciamientos.') });
       return false;
     }
   }
@@ -143,13 +135,13 @@ export class RefinancingAnnulmentController {
       return candidate.eligibility.types.CASH_REFUND.eligible;
     } catch (cause) {
       this.publish({ ...this.state, attempt: { ...this.state.attempt!, validatedEffectiveDate: null, validating: false,
-        error: messageFor(cause, 'No se pudo validar la fecha efectiva.') } }); return false;
+        error: refinancingAnnulmentErrorMessage(cause, 'No se pudo validar la fecha efectiva.') } }); return false;
     }
   }
   async openDetail(annulmentId: string) { this.publish({ ...this.state, detail: null, detailLoading: true, detailError: null });
     try { const detail = await this.api.detail(annulmentId); this.publish({ ...this.state, detail, detailLoading: false }); }
     catch (cause) { this.publish({ ...this.state, detailLoading: false,
-      detailError: messageFor(cause, 'No se pudo cargar el detalle de la anulación.') }); } }
+      detailError: refinancingAnnulmentErrorMessage(cause, 'No se pudo cargar el detalle de la anulación.') }); } }
   closeDetail() { this.publish({ ...this.state, detail: null, detailError: null }); }
   async submit() {
     const attempt = this.state.attempt, reason = attempt?.reason.trim() ?? '';
@@ -170,7 +162,7 @@ export class RefinancingAnnulmentController {
       await this.load(); return true;
     } catch (cause) {
       const status = cause && typeof cause === 'object' && 'status' in cause ? cause.status : undefined;
-      const message = messageFor(cause, 'No se pudo anular el refinanciamiento.');
+      const message = refinancingAnnulmentErrorMessage(cause, 'No se pudo anular el refinanciamiento.');
       if (status === 404 || status === 403) this.publish({ ...this.state, attempt: null, feedback: { kind: 'error', message } });
       else this.publish({ ...this.state, attempt: { ...this.state.attempt!, error: message } });
       if (status === 404) await this.refresh();

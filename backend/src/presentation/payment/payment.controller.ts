@@ -75,5 +75,14 @@ export class PaymentController {
   @Post() @HttpCode(HttpStatus.CREATED) @RequirePermissions('payments.create') create(@Body() body: CreatePaymentDto, @CurrentUser() actor: CurrentIdentity) { return this.register.execute(body, actor.id).catch((error) => this.map(error)); }
   @Post(':paymentId/annul') @HttpCode(HttpStatus.CREATED) @RequirePermissions('payments.annul') annul(@Param('paymentId') paymentId: string, @Body() body: AnnulPaymentDto, @CurrentUser() actor: CurrentIdentity) { return this.register.annul(paymentId, body.reason, body.idempotencyKey, actor.id, body.annulmentType).catch((error) => this.map(error)); }
   @Put('loans/:loanId/plan') @RequirePermissions('payments.plan.customize') plan(@Param('loanId') loanId: string, @Body() body: CustomizePaymentPlanDto) { return this.customize.execute(loanId, body.entries, body.idempotencyKey, body.base).catch((error) => this.map(error)); }
-  private map(error: unknown): never { if (error instanceof PaymentConflictError) throw new ConflictException(error.message); if (error instanceof PaymentValidationError) throw new BadRequestException(error.message); if (error instanceof PaymentNotFoundError) throw new NotFoundException(error.message); throw error; }
+  private map(error: unknown): never {
+    if (error instanceof PaymentConflictError) throw new ConflictException({ message: error.message,
+      errorCode: error.reasonCode === 'CLOSED_FINANCIAL_PERIOD' ? 'CLOSED_FINANCIAL_PERIOD' : 'RESOURCE_STATE_CONFLICT',
+      reasonCode: error.reasonCode });
+    if (error instanceof PaymentValidationError) throw new BadRequestException({ message: error.message,
+      errorCode: 'VALIDATION_FAILED', reasonCode: error.reasonCode,
+      ...(error.field && { data: { fields: [{ field: error.field, codes: [error.reasonCode], message: error.message }] } }) });
+    if (error instanceof PaymentNotFoundError) throw new NotFoundException(error.message);
+    throw error;
+  }
 }

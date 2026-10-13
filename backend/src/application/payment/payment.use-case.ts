@@ -14,6 +14,7 @@ import { PaymentConflictError, PaymentNotFoundError, PaymentValidationError } fr
 import { applyPaymentPlanDraft } from './payment-plan-draft';
 import type { RetroactivePeriodGuard } from '../financial-close/retroactive-period.guard';
 import { ClosedFinancialPeriodError } from '../../domain/financial-close/financial-close.errors';
+import { attachPaymentApplications, readPaymentApplications } from './payment-read-applications';
 
 export { PaymentConflictError, PaymentNotFoundError, PaymentValidationError } from './payment.errors';
 
@@ -22,9 +23,23 @@ const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const cents = (value: string) => { const negative = value.startsWith('-'); const [whole, fraction = ''] = (negative ? value.slice(1) : value).split('.'); const amount = BigInt(whole) * 100n + BigInt(fraction.padEnd(2, '0')); return negative ? -amount : amount; };
 const money = (value: bigint) => `${value / 100n}.${(value % 100n).toString().padStart(2, '0')}`;
-const today = () => new Date().toISOString().slice(0, 10);
 const costaRicaDate = (value = new Date()) => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Costa_Rica',
   year: 'numeric', month: '2-digit', day: '2-digit' }).format(value);
+const today = () => costaRicaDate();
+
+const SETTLEMENT_PAYMENT_KEY_PREFIX = 'collector-settlement:precollection:';
+
+/** Capability object constructed only by the settlement application path. It is never part of an HTTP DTO. */
+export class TrustedSettlementPaymentContext {
+  private constructor(readonly precollectionId: string, readonly loanId: string, readonly collectorId: string) {}
+  static forPrecollection(precollectionId: string, loanId: string, collectorId: string) {
+    if (!UUID.test(precollectionId) || !UUID.test(loanId) || !UUID.test(collectorId)) {
+      throw new PaymentValidationError('The trusted settlement context is invalid.');
+    }
+    return new TrustedSettlementPaymentContext(precollectionId, loanId, collectorId);
+  }
+  paymentKey() { return `${SETTLEMENT_PAYMENT_KEY_PREFIX}${this.precollectionId}`; }
+}
 
 async function nextPaymentStatusEventSequence(manager: Pick<EntityManager, 'query'>, loanId: string): Promise<number> {
   try {
@@ -49,41 +64,91 @@ function assertFinancialIntegrity(loan: LoanFinancialAmounts, totals: ValidPayme
   return result;
 }
 
-export class RegisterPaymentUseCase {
-  constructor(private readonly dataSource: DataSource, private readonly totalsReader: LoanFinancialTotalsReader,
+export class TransactionalPaymentRegistrar {
+  constructor(private readonly totalsReader: LoanFinancialTotalsReader,
     private readonly closedPeriods?: RetroactivePeriodGuard) {}
+
+  assertInput(input: PaymentInput, context?: TrustedSettlementPaymentContext) {
+    if (!input?.collectorId || !UUID.test(input.collectorId)) throw new PaymentValidationError('Seleccione un cobrador.', 'INVALID_COLLECTOR', 'collectorId');
+    if (!input.loanId || !input.methodId || !input.idempotencyKey || !MONEY.test(input.amount) || cents(input.amount) <= 0n || !DATE.test(input.paymentDate) || input.paymentDate > today()) throw new PaymentValidationError('Revisa la fecha, el monto y la forma de pago antes de continuar.', 'PAYMENT_INVALID');
+    const settlementNamespace = input.idempotencyKey.startsWith(SETTLEMENT_PAYMENT_KEY_PREFIX);
+    if (settlementNamespace && (!(context instanceof TrustedSettlementPaymentContext)
+      || context.paymentKey() !== input.idempotencyKey || context.loanId !== input.loanId || context.collectorId !== input.collectorId)) {
+      throw new PaymentValidationError('La clave interna de liquidación no puede utilizarse en pagos regulares.', 'RESERVED_IDEMPOTENCY_NAMESPACE', 'idempotencyKey');
+    }
+  }
 
   private async replay(manager: Pick<EntityManager, 'query'>, existing: { id: string; fingerprint: string }, fingerprint: string) {
     if (existing.fingerprint !== fingerprint) throw new PaymentConflictError('The idempotency key was used with different data.');
     const detail = await this.detail(manager, existing.id);
-    const [cash] = await manager.query(`SELECT id FROM cash_movements WHERE payment_id = $1 AND direction = 'INFLOW' AND concept = 'CUSTOMER_PAYMENT'`, [existing.id]);
-    if (!cash) throw new PaymentConflictError('The payment cash inflow does not reconcile.');
+    const [cash] = await manager.query(`SELECT id, amount::text AS amount, movement_date::text AS "movementDate",
+      payment_method_id AS "methodId", idempotency_fingerprint AS "fingerprint"
+      FROM cash_movements WHERE payment_id = $1 AND direction = 'INFLOW' AND concept = 'CUSTOMER_PAYMENT'`, [existing.id]);
+    if (!cash || cash.amount !== detail.amount || cash.movementDate !== detail.paymentDate
+      || cash.methodId !== detail.methodId || cash.fingerprint !== fingerprint) {
+      throw new PaymentConflictError('The payment cash inflow does not reconcile.');
+    }
     return { ...detail, cashId: cash.id };
   }
 
-  async execute(input: PaymentInput, actorId: string) {
-    if (!input?.collectorId || !UUID.test(input.collectorId)) throw new PaymentValidationError('Seleccione un cobrador.');
-    if (!input.loanId || !input.methodId || !input.idempotencyKey || !MONEY.test(input.amount) || cents(input.amount) <= 0n || !DATE.test(input.paymentDate) || input.paymentDate > today()) throw new PaymentValidationError('Payment data is invalid.');
+  async replayByKey(manager: EntityManager, input: PaymentInput) {
+    const fingerprint = paymentFingerprint({ loanId: input.loanId, amount: input.amount, paymentDate: input.paymentDate,
+      methodId: input.methodId, collectorId: input.collectorId });
+    const [existing] = await manager.query('SELECT id, idempotency_fingerprint AS "fingerprint" FROM payments WHERE idempotency_key = $1 FOR SHARE', [input.idempotencyKey]);
+    if (!existing) throw new PaymentConflictError('The concurrent payment could not be reconciled.');
+    return this.replay(manager, existing, fingerprint);
+  }
+
+  async register(manager: EntityManager, input: PaymentInput, actorId: string, context?: TrustedSettlementPaymentContext) {
+    this.assertInput(input, context);
     const fp = paymentFingerprint({ loanId: input.loanId, amount: input.amount, paymentDate: input.paymentDate, methodId: input.methodId, collectorId: input.collectorId });
-    return this.dataSource.transaction(async (manager) => {
       const existing = await manager.query('SELECT id, idempotency_fingerprint AS "fingerprint" FROM payments WHERE idempotency_key = $1 FOR SHARE', [input.idempotencyKey]);
       if (existing[0]) return this.replay(manager, existing[0], fp);
+      if (this.closedPeriods) await manager.query(`SELECT pg_advisory_xact_lock_shared(hashtext('financial-closes-v2'))`);
       const loan = await manager.query(`SELECT id, status, start_date::text AS "startDate", total_amount AS "totalAmount", principal, interest_amount AS "interestAmount" FROM loans WHERE id = $1 FOR UPDATE`, [input.loanId]);
       if (!loan[0]) throw new PaymentNotFoundError('The loan does not exist.');
       const raced = await manager.query('SELECT id, idempotency_fingerprint AS "fingerprint" FROM payments WHERE idempotency_key = $1 FOR SHARE', [input.idempotencyKey]);
       if (raced[0]) return this.replay(manager, raced[0], fp);
       try { await this.closedPeriods?.assertDateAllowed(input.paymentDate, manager); }
-      catch (error) { if (error instanceof ClosedFinancialPeriodError) throw new PaymentConflictError(error.message); throw error; }
-      if (loan[0].status !== 'ACTIVE') throw new PaymentValidationError('Only active loans accept payments.');
+      catch (error) { if (error instanceof ClosedFinancialPeriodError) throw new PaymentConflictError(error.message, 'CLOSED_FINANCIAL_PERIOD'); throw error; }
+      if (loan[0].status !== 'ACTIVE') throw new PaymentValidationError('Only active loans accept payments.', 'LOAN_NOT_ACTIVE');
       const opening = await manager.query(`SELECT opening_date::text AS "openingDate" FROM financial_openings WHERE singleton_key = 'DEFAULT' FOR SHARE`);
-      if (!opening[0]) throw new PaymentValidationError('The financial opening is required.');
-      try { assertPaymentDate(opening[0].openingDate, loan[0].startDate, input.paymentDate, today()); } catch { throw new PaymentValidationError('The payment date is outside the operational period.'); }
+      if (!opening[0]) throw new PaymentValidationError('The financial opening is required.', 'FINANCIAL_OPENING_REQUIRED');
+      try { assertPaymentDate(opening[0].openingDate, loan[0].startDate, input.paymentDate, today()); } catch { throw new PaymentValidationError('The payment date is outside the operational period.', 'PAYMENT_DATE_INVALID', 'paymentDate'); }
       const [latestValid] = await manager.query(`SELECT payment_date::text AS "paymentDate" FROM payments WHERE loan_id = $1 AND status = 'VALID' ORDER BY payment_date DESC, created_at DESC, id DESC LIMIT 1`, [input.loanId]) as Array<{ paymentDate: string | Date }>;
-      if (latestValid && input.paymentDate < paymentDateOnlyKey(latestValid.paymentDate)) throw new PaymentValidationError('La fecha del pago no puede ser anterior al último pago válido registrado.');
+      if (latestValid && input.paymentDate < paymentDateOnlyKey(latestValid.paymentDate)) throw new PaymentValidationError('La fecha del pago no puede ser anterior al último pago válido registrado.', 'PAYMENT_DATE_BEFORE_LAST', 'paymentDate');
+       const reservationParams: unknown[] = [input.loanId];
+       const settlementExclusion = context instanceof TrustedSettlementPaymentContext
+         ? ` AND id <> $${reservationParams.push(context.precollectionId)}` : '';
+       const [precollections] = await manager.query(`SELECT
+         COALESCE(SUM(amount), 0)::numeric(18,2)::text AS reserved,
+         MIN(effective_date)::text AS "earliestEffectiveDate"
+         FROM collector_precollections WHERE loan_id = $1 AND status IN ('RECORDED','SUBMITTED')${settlementExclusion}`,
+       reservationParams) as Array<{ reserved: string; earliestEffectiveDate: string | null }>;
+      if (precollections?.earliestEffectiveDate && input.paymentDate > precollections.earliestEffectiveDate) {
+        throw new PaymentConflictError('Existe un cobro preliminar anterior pendiente de resolución.', 'PENDING_PRECOLLECTION_CHRONOLOGY');
+      }
       const method = await manager.query('SELECT id FROM payment_methods WHERE id = $1 AND is_active = true', [input.methodId]);
-      if (!method[0]) throw new PaymentValidationError('The payment method is inactive or does not exist.');
-       const collector = await manager.query('SELECT id FROM collectors WHERE id = $1 AND is_active = true FOR SHARE', [input.collectorId]);
-       if (!collector[0] || input.collectorId === actorId) throw new PaymentValidationError('El cobrador seleccionado no es válido.');
+      if (!method[0]) throw new PaymentValidationError('La forma de pago seleccionada está inactiva o ya no existe. Selecciona otra para continuar.', 'PAYMENT_METHOD_INACTIVE', 'methodId');
+       const collector = await manager.query(`SELECT c.id, c.user_id AS "userId",
+         (SELECT actor_role.code FROM users actor_user JOIN roles actor_role ON actor_role.id = actor_user.role_id AND actor_role.is_active = true
+           WHERE actor_user.id = $3 AND actor_user.is_active = true) AS "actorRoleCode",
+         (SELECT actor_collector.id FROM collectors actor_collector WHERE actor_collector.user_id = $3 AND actor_collector.is_active = true) AS "actorCollectorId",
+         EXISTS (SELECT 1 FROM loans assigned_loan
+           JOIN customer_route_assignments customer_assignment ON customer_assignment.customer_id = assigned_loan.customer_id AND customer_assignment.ended_at IS NULL
+           JOIN routes assigned_route ON assigned_route.id = customer_assignment.route_id AND assigned_route.is_active = true
+           JOIN collector_route_assignments collector_assignment ON collector_assignment.route_id = assigned_route.id
+             AND collector_assignment.collector_user_id = c.user_id AND collector_assignment.ended_at IS NULL
+           WHERE assigned_loan.id = $2) AS "assigned"
+         FROM collectors c JOIN users u ON u.id = c.user_id AND u.is_active = true
+         JOIN roles role ON role.id = u.role_id AND role.is_active = true AND role.code = 'COLLECTOR'
+         WHERE c.id = $1 AND c.is_active = true FOR SHARE OF c`, [input.collectorId, input.loanId, actorId]);
+       if (!collector[0]) throw new PaymentValidationError('El cobrador seleccionado no es válido.', 'INVALID_COLLECTOR', 'collectorId');
+       if (!collector[0].actorRoleCode) throw new PaymentValidationError('El usuario que registra el pago no está activo.', 'PAYMENT_ACTOR_INVALID');
+        if (!collector[0].assigned && !(context instanceof TrustedSettlementPaymentContext)) throw new PaymentValidationError('El cobrador seleccionado no tiene asignado este cliente.', 'COLLECTOR_NOT_ASSIGNED', 'collectorId');
+       if (collector[0].actorRoleCode === 'COLLECTOR' && collector[0].actorCollectorId !== input.collectorId) {
+         throw new PaymentValidationError('No puedes registrar pagos para un cobrador o cliente ajeno.', 'COLLECTOR_SCOPE_FORBIDDEN', 'collectorId');
+       }
        const entries = await manager.query(`SELECT id, due_date::text AS "dueDate", sequence, pending_amount AS "pendingAmount" FROM payment_plan_entries WHERE loan_id = $1 AND pending_amount > 0 ORDER BY due_date, sequence, id FOR UPDATE`, [input.loanId]);
         const balance = entries.reduce((sum: bigint, entry: { pendingAmount: string }) => sum + cents(entry.pendingAmount), 0n);
          const before = assertFinancialIntegrity(loan[0], await readPaymentTotals(this.totalsReader, manager, input.loanId), balance);
@@ -95,7 +160,10 @@ export class RegisterPaymentUseCase {
          principalRemaining -= principalPending;
          return { ...entry, principalPending: money(principalPending), interestPending: money(pending - principalPending) };
        });
-       if (cents(input.amount) > balance) throw new PaymentValidationError('The payment exceeds the financial balance.');
+        const reserved = cents(precollections?.reserved ?? '0.00');
+        const operationalBalance = balance - reserved;
+        if (operationalBalance < 0n) throw new PaymentConflictError('Los cobros preliminares pendientes no concilian con el saldo financiero.', 'OPERATIONAL_BALANCE_INVALID');
+        if (cents(input.amount) > operationalBalance) throw new PaymentValidationError('El monto recibido supera el saldo operativo disponible del préstamo.', 'PAYMENT_AMOUNT_EXCEEDS_OPERATIONAL_BALANCE', 'amount');
         const allocation = allocatePayment(input.amount, allocationEntries);
        const appliedPrincipal = cents(allocation.principalApplied); const appliedInterest = cents(allocation.interestApplied);
         if (appliedPrincipal < 0n || appliedInterest < 0n || appliedPrincipal + appliedInterest !== cents(input.amount)
@@ -118,8 +186,7 @@ export class RegisterPaymentUseCase {
             const sequence = await nextPaymentStatusEventSequence(manager, loan[0].id);
            await manager.query(`INSERT INTO loan_status_history (loan_id, event_sequence, event_kind, from_status, to_status, changed_at, changed_by_user_id, reason, payment_id, payment_annulment_id) VALUES ($1,$5,'TRANSITION','ACTIVE','CANCELLED',$2,$3,NULL,$4,NULL)`, [input.loanId, payment[0].createdAt, payment[0].createdByUserId, payment[0].id, sequence]);
        }
-       return { ...(await this.detail(manager, payment[0].id)), cashId: cash[0].id };
-    });
+        return { ...(await this.detail(manager, payment[0].id)), cashId: cash[0].id };
   }
 
   async detail(manager: Pick<EntityManager, 'query'>, id: string) {
@@ -128,12 +195,36 @@ export class RegisterPaymentUseCase {
     const applications = await manager.query(`SELECT payment_plan_entry_id AS "paymentPlanEntryId", amount_applied AS "amountApplied", pending_before AS "pendingBefore", pending_after AS "pendingAfter", carried_forward_amount AS "carriedForwardAmount", carried_to_plan_entry_id AS "carriedToPlanEntryId", created_at AS "createdAt" FROM payment_applications WHERE payment_id = $1 ORDER BY created_at, payment_plan_entry_id`, [id]);
     return { ...payment[0], applications };
   }
+}
+
+export class RegisterPaymentUseCase {
+  private readonly registrar: TransactionalPaymentRegistrar;
+
+  constructor(private readonly dataSource: DataSource, private readonly totalsReader: LoanFinancialTotalsReader,
+    private readonly closedPeriods?: RetroactivePeriodGuard, registrar?: TransactionalPaymentRegistrar) {
+    this.registrar = registrar ?? new TransactionalPaymentRegistrar(totalsReader, closedPeriods);
+  }
+
+  async execute(input: PaymentInput, actorId: string) {
+    this.registrar.assertInput(input);
+    try {
+      return await this.dataSource.transaction((manager) => this.registrar.register(manager, input, actorId));
+    } catch (error) {
+      if (!error || typeof error !== 'object' || !('code' in error) || error.code !== '23505'
+        || !('constraint' in error) || error.constraint !== 'UQ_payments_idempotency') throw error;
+      return this.dataSource.transaction((manager) => this.registrar.replayByKey(manager, input));
+    }
+  }
+
+  async detail(manager: Pick<EntityManager, 'query'>, id: string) {
+    return this.registrar.detail(manager, id);
+  }
 
   async annul(paymentId: string, reason: string, idempotencyKey: string, actorId: string,
     annulmentType: PaymentAnnulmentType = 'CASH_REFUND') {
-    if (!reason?.trim() || !idempotencyKey?.trim()) throw new PaymentValidationError('An annulment reason and idempotency key are required.');
+    if (!reason?.trim() || !idempotencyKey?.trim()) throw new PaymentValidationError('Indica el motivo de la anulación para continuar.', 'ANNULMENT_REASON_REQUIRED', 'reason');
     if (annulmentType !== 'DATA_CORRECTION' && annulmentType !== 'CASH_REFUND') {
-      throw new PaymentValidationError('The payment annulment type is invalid.');
+      throw new PaymentValidationError('Selecciona si corresponde a una corrección de datos o a una devolución de dinero.', 'ANNULMENT_TYPE_INVALID', 'annulmentType');
     }
     const trimmedReason = reason.trim();
     const fingerprint = createHash('sha256').update(JSON.stringify({ paymentId, reason: trimmedReason, annulmentType })).digest('hex');
@@ -169,21 +260,30 @@ export class RegisterPaymentUseCase {
       const [reversal] = await manager.query(`SELECT amount, movement_date::text AS "movementDate", direction, concept,
         payment_method_id AS "methodId", idempotency_key AS "idempotencyKey", idempotency_fingerprint AS "fingerprint"
         FROM cash_movements WHERE reversed_movement_id = $1 FOR UPDATE`, [original.id]);
-      if (existing) {
+       if (existing) {
         const existingEffectiveDate = existing.annulmentType === 'DATA_CORRECTION'
           ? original.movementDate : costaRicaDate(new Date(existing.annulledAt));
         if (payment.status !== 'ANNULLED' || !reversal || reversal.direction !== 'OUTFLOW' || reversal.concept !== 'REVERSAL'
           || reversal.methodId !== original.methodId || reversal.idempotencyKey !== reversalKey || reversal.fingerprint !== reversalFingerprint
           || reversal.movementDate !== existingEffectiveDate || !MONEY.test(reversal.amount)
           || cents(reversal.amount) !== cents(payment.amount)) throw new PaymentConflictError('The annulment cash reversal does not reconcile.');
-        return this.detail(manager, paymentId);
+         return this.detail(manager, paymentId);
+       }
+      const [settlementPayment] = await manager.query(`SELECT EXISTS (
+        SELECT 1 FROM collector_settlement_items item
+        JOIN collector_settlements settlement ON settlement.id = item.settlement_id
+        WHERE item.payment_id = $1 AND settlement.status = 'CONFIRMED'
+      ) AS "inConfirmedSettlement"`, [paymentId]);
+      if (settlementPayment?.inConfirmedSettlement === true) {
+        throw new PaymentConflictError('Los pagos asociados a una liquidación confirmada no pueden anularse.',
+          'PAYMENT_IN_CONFIRMED_SETTLEMENT');
       }
-      const effectiveDate = annulmentType === 'DATA_CORRECTION' ? original.movementDate : costaRicaDate();
+       const effectiveDate = annulmentType === 'DATA_CORRECTION' ? original.movementDate : costaRicaDate();
       try { await this.closedPeriods?.assertDateAllowed(effectiveDate, manager); }
-      catch (error) { if (error instanceof ClosedFinancialPeriodError) throw new PaymentConflictError(error.message); throw error; }
-      if (loan.status === 'REFINANCED') throw new PaymentConflictError('Payments on a refinanced loan cannot be annulled independently.');
-      if (payment.status !== 'VALID' || reversal) throw new PaymentConflictError('Only a valid payment without a prior reversal can be annulled.');
-      if (latestValid?.id !== paymentId) throw new PaymentConflictError('Solo se puede anular el último pago válido.');
+      catch (error) { if (error instanceof ClosedFinancialPeriodError) throw new PaymentConflictError(error.message, 'CLOSED_FINANCIAL_PERIOD'); throw error; }
+      if (loan.status === 'REFINANCED') throw new PaymentConflictError('Los pagos de un préstamo refinanciado no pueden anularse por separado.', 'REFINANCED_LOAN_PAYMENT');
+      if (payment.status !== 'VALID' || reversal) throw new PaymentConflictError('El pago ya no está vigente o ya tiene una reversión registrada.', 'PAYMENT_NOT_ANNULABLE');
+      if (latestValid?.id !== paymentId) throw new PaymentConflictError('Solo se puede anular el último pago válido.', 'PAYMENT_NOT_LATEST');
       const [opening] = await manager.query(`SELECT opening_date::text AS "openingDate" FROM financial_openings WHERE singleton_key = 'DEFAULT' FOR SHARE`);
       if (!opening || effectiveDate < opening.openingDate) throw new PaymentConflictError('The financial opening does not permit this annulment.');
 
@@ -288,12 +388,11 @@ export class PaymentContextUseCase {
        const methods = await this.dataSource.query(`SELECT id, name FROM payment_methods WHERE is_active = true ORDER BY name, id`);
         const collectors = await this.dataSource.query(`SELECT id, concat_ws(' ', first_name, first_last_name, second_last_name) AS name FROM collectors WHERE is_active = true ORDER BY name, id`);
        const preferredMethod = { id: row.preferredMethodId, activeMethods: methods, collectors };
-       const applications = await this.dataSource.query(`SELECT pa.payment_plan_entry_id AS "planEntryId", pa.amount_applied AS "amountApplied", pa.carried_forward_amount AS "carriedForwardAmount", pa.carried_to_plan_entry_id AS "carriedToPlanEntryId", source.due_date::text AS "sourceDueDate", pa.created_at AS "createdAt"
-         FROM payment_applications pa JOIN payments p ON p.id = pa.payment_id AND p.status = 'VALID'
-         JOIN payment_plan_entries source ON source.id = pa.payment_plan_entry_id
-         WHERE p.loan_id = $1 AND (pa.amount_applied > 0 OR pa.carried_to_plan_entry_id IS NOT NULL) ORDER BY pa.created_at, pa.payment_plan_entry_id`, [loanId]);
-       const projection = buildPaymentProjection(combinedPlan, payments, row.totalAmount, row.interestAmount, today(), applications);
-           return buildPaymentContext({ summary: { ...summaryRow, paidAmount: money(cents(totals.paidAmount)) }, balances: { financialBalance: money(balances.financialBalance), outstandingPrincipal: money(balances.outstandingPrincipal), outstandingInterest: money(balances.outstandingInterest) }, combinedPlan: projection.combinedPlan, validPayments: projection.validPayments, lastValidPayment: projection.lastValidPayment, refinanceEligibility: projection.refinanceEligibility, preferredMethod, paymentFrequency: { intervalUnit, intervalValue }, protectedPlanEntryIds, collectionProjection: projection.collectionProjection });
+        const applications = await readPaymentApplications(this.dataSource, loanId);
+        const projection = buildPaymentProjection(combinedPlan, payments, row.totalAmount, row.interestAmount, today(), applications);
+        const validPayments = attachPaymentApplications(projection.validPayments, applications);
+        const lastValidPayment = projection.lastValidPayment ? validPayments.find((payment) => payment.id === projection.lastValidPayment?.id) ?? null : null;
+            return buildPaymentContext({ summary: { ...summaryRow, paidAmount: money(cents(totals.paidAmount)) }, balances: { financialBalance: money(balances.financialBalance), outstandingPrincipal: money(balances.outstandingPrincipal), outstandingInterest: money(balances.outstandingInterest) }, combinedPlan: projection.combinedPlan, validPayments, lastValidPayment, refinanceEligibility: projection.refinanceEligibility, preferredMethod, paymentFrequency: { intervalUnit, intervalValue }, protectedPlanEntryIds, collectionProjection: projection.collectionProjection });
     });
   }
 }

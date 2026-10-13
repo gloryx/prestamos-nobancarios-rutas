@@ -93,14 +93,14 @@ export function FinancialCloseView({ state, controller, canConfirm }: {
     </header>
     <div className="financial-close__toolbar"><label htmlFor="financial-close-period">Período
       <input id="financial-close-period" type="month" value={state.period}
-        onChange={(event) => controller.setPeriod(event.target.value)} /></label>
+        disabled={state.confirming} onChange={(event) => controller.setPeriod(event.target.value)} /></label>
       {canConfirm && <button className="button button--primary" type="button"
         disabled={!state.preview || blocked || state.loading || state.confirming}
         title={blocked ? 'Corrige los errores antes de confirmar.' : undefined}
         onClick={() => controller.requestConfirmation()}>{state.confirming ? 'Confirmando…' : 'Confirmar cierre'}</button>}
     </div>
     {state.loading && <p className="loan-list__message" role="status">Calculando vista previa…</p>}
-    {state.error && <p className="loan-list__message loan-list__message--error" role="alert">{state.error}</p>}
+    {state.error && !state.confirmationOpen && <p className="loan-list__message loan-list__message--error" role="alert">{state.error}</p>}
     {state.success && <p className="financial-close__success" role="status">{state.success}</p>}
     {state.preview && <Snapshot snapshot={state.preview} />}
     <section className="financial-close__history loan-list__surface" aria-labelledby="financial-close-history-title">
@@ -118,9 +118,10 @@ export function FinancialCloseView({ state, controller, canConfirm }: {
     {state.confirmationOpen && <div className="dialog-backdrop"><section className="dialog financial-close__confirm" role="dialog"
       aria-modal="true" aria-labelledby="financial-close-confirm-title"><h2 id="financial-close-confirm-title">Confirmar cierre de {state.period}</h2>
       <p>Esta acción guardará la versión calculada por el servidor y no podrá editarse. Las advertencias permanecerán en el registro.</p>
-      <div className="financial-close__confirm-actions"><button className="button button--secondary" type="button"
-        onClick={() => controller.cancelConfirmation()}>Cancelar</button><button className="button button--primary" type="button" autoFocus
-        onClick={() => { void controller.confirm(); }}>Sí, confirmar cierre</button></div></section></div>}
+       {state.error && <p className="loan-list__message loan-list__message--error" role="alert">{state.error}</p>}
+       <div className="financial-close__confirm-actions"><button className="button button--secondary" type="button" disabled={state.confirming}
+         onClick={() => controller.cancelConfirmation()}>Cancelar</button><button className="button button--primary" type="button" autoFocus disabled={state.confirming}
+         onClick={() => { void controller.confirm(); }}>{state.confirming ? 'Confirmando…' : 'Sí, confirmar cierre'}</button></div></section></div>}
     <DetailDialog detail={state.detail} loading={state.detailLoading} error={state.detailError} close={() => controller.closeDetail()} />
   </section>;
 }

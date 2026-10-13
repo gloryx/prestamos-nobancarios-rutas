@@ -38,6 +38,7 @@ import { CollectorCustodyModule } from './presentation/collector-custody/collect
          FRONTEND_ORIGIN: Joi.string().uri().default('http://localhost:5173'),
          BOOTSTRAP_ADMIN_USERNAME: Joi.string().default('admin'),
          BOOTSTRAP_ADMIN_PASSWORD: Joi.string().allow('').default(''),
+         PAYMENT_PLAN_CONSOLIDATION_ENABLED: Joi.boolean().truthy('true').falsy('false').default(false),
       }),
     }),
     TypeOrmModule.forRootAsync({

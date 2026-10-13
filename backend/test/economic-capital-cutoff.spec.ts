@@ -35,6 +35,8 @@ describe('economic capital reader cutoff', () => {
     expect(paymentsSql).toContain('reversal.movement_date <= $1::date');
     expect(paymentsSql).toContain("CASE WHEN annulment.id IS NULL THEN 'VALID' ELSE 'ANNULLED' END");
     expect(refinancingsSql).toContain('r.status AS status');
+    expect(refinancingsSql).toContain('SELECT r.id AS "refinancingId"');
+    expect(refinancingsSql).toContain('r.created_at::text AS "createdAt"');
     expect(refinancingsSql).toContain('annulment.annulment_type AS "annulmentType"');
     expect(refinancingsSql).toContain('annulment.effective_date::text AS "annulmentEffectiveDate"');
     expect(refinancingsSql).toContain("annulment.annulment_type IS DISTINCT FROM 'DATA_CORRECTION'");

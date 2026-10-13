@@ -177,7 +177,7 @@ describe('financial close V2 economic model', () => {
     expect(result.integrity).toMatchObject({ status: 'COMPLETE', blockingIssues: [] });
   });
 
-  it('enforces ended periods, sequence, transactional recalculation and blocking integrity', async () => {
+  it('allows historical previews while enforcing confirmation sequence, recalculation and integrity', async () => {
     const opening = analyzed(openingFacts, '2026-01-31'); const final = analyzed(februaryFacts, '2026-02-28');
     const source: FinancialCloseSourceSnapshot = { opening: { openingDate: '2026-01-01', initialAvailableAmount: '100000.00',
       initialPortfolio: '0.00', initialUncollectibleAmount: '0.00' }, effectiveFromDate: '2026-02-01',
@@ -188,11 +188,15 @@ describe('financial close V2 economic model', () => {
     const insert = jest.fn(async (calculation, sequence) => ({ ...calculation, id: 'close', sequence, confirmedAt: new Date(), confirmedBy: { id: 'actor', fullName: 'Actor' } }));
     const tx = { lock: jest.fn(), nextSequence: jest.fn(async () => ({ sequence: 2, expectedPeriod: '2026-02' })),
       source: jest.fn(async () => source), insert };
-    const store = { previewSource: jest.fn(async () => source), nextSequence: jest.fn(async () => ({ sequence: 2, expectedPeriod: '2026-02' })),
+    const store = { previewSource: jest.fn(async (fromDate: string) => ({ ...source, effectiveFromDate: fromDate })),
+      nextSequence: jest.fn(async () => ({ sequence: 2, expectedPeriod: '2026-02' })),
       confirm: jest.fn(async (work) => work(tx)), list: jest.fn(), findById: jest.fn() } as unknown as FinancialCloseStore;
     const useCases = new FinancialCloseUseCases(store, () => '2026-04-01');
     await expect(useCases.preview('2026-04')).rejects.toThrow(FinancialCloseValidationError);
-    await expect(useCases.preview('2026-01')).rejects.toThrow(FinancialCloseConflictError);
+    await expect(useCases.preview('2026-01')).resolves.toMatchObject({ period: '2026-01', modelVersion: 3 });
+    expect(store.nextSequence).not.toHaveBeenCalled();
+    await expect(useCases.confirm('2026-01', 'actor')).rejects.toThrow(FinancialCloseConflictError);
+    expect(insert).not.toHaveBeenCalled();
     await expect(useCases.confirm('2026-02', 'actor')).resolves.toMatchObject({ sequence: 2, modelVersion: 3 });
     expect(tx.lock).toHaveBeenCalled(); expect(tx.source).toHaveBeenCalledWith('2026-02-01', '2026-02-28');
     const broken = structuredClone(source); broken.cashBalances.closing = '20001.00';

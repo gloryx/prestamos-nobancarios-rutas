@@ -8,6 +8,7 @@ import type { RetroactivePeriodGuard } from '../financial-close/retroactive-peri
 import { ClosedFinancialPeriodError } from '../../domain/financial-close/financial-close.errors';
 import { buildCollectionProjection } from '../../domain/payment/payment-projection';
 import { attachPaymentApplications, readPaymentApplications } from '../payment/payment-read-applications';
+import { alignApplicationSequences, numberCurrentPaymentPlan } from '../../domain/payment/payment-plan-numbering';
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const MONEY = /^(?:0|[1-9]\d{0,15})(?:\.\d{1,2})?$/;
@@ -110,10 +111,13 @@ export class CreateLoanUseCase {
     return this.dataSource.transaction('REPEATABLE READ', async (manager) => {
       const loan = await this.detail(manager, id, true);
       const validPayments: Array<{ id: string; amount: string; paymentDate: string; status: 'VALID' }> = await manager.query('SELECT id, amount::text AS amount, payment_date::text AS "paymentDate", status FROM payments WHERE loan_id=$1 AND status=\'VALID\' ORDER BY payment_date, created_at, id', [id]);
-      const applications = await readPaymentApplications(manager, id);
+      const rawApplications = await readPaymentApplications(manager, id);
+      const numberedPlan = numberCurrentPaymentPlan(loan.plan, rawApplications);
+      const applications = alignApplicationSequences(rawApplications, numberedPlan);
       const paid = validPayments.reduce((sum, payment) => sum + cents(payment.amount), 0n);
-      return { ...loan, financialBalance: moneyFromCents(cents(loan.totalAmount) - paid), validPayments: attachPaymentApplications(validPayments, applications),
-        collectionProjection: buildCollectionProjection(loan.plan, today(), applications) };
+      return { ...loan, plan: numberedPlan, financialBalance: moneyFromCents(cents(loan.totalAmount) - paid),
+        validPayments: attachPaymentApplications(validPayments, applications),
+        collectionProjection: buildCollectionProjection(numberedPlan, today(), applications) };
     });
   }
 }

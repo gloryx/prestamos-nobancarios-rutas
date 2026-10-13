@@ -23,13 +23,14 @@ describe('payment remediation invariants', () => {
     });
 
     expect(Object.keys(result).sort()).toEqual([
-       'balances', 'collectionProjection', 'combinedPlan', 'firstOperationalRow', 'lastValidPayment', 'validPayments',
+       'balances', 'collectionProjection', 'combinedPlan', 'consolidations', 'firstOperationalRow', 'lastValidPayment', 'validPayments',
       'paymentFrequency', 'preferredMethod', 'protectedPlanEntryIds', 'refinanceEligibility', 'summary',
     ].sort());
     expect(result.combinedPlan).toEqual([
       { id: 'pending', dueDate: '2026-10-01', sequence: 2, pendingAmount: '50.00' },
     ]);
     expect(result.preferredMethod).toEqual({ id: 'method-1', activeMethods: ['method-1'], collectors: ['collector-1'] });
+    expect(result.consolidations).toEqual([]);
   });
 
   it('retains paid entries separately while projecting only positive pending entries', () => {

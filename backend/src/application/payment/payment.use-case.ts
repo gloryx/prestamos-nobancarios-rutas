@@ -15,6 +15,10 @@ import { applyPaymentPlanDraft } from './payment-plan-draft';
 import type { RetroactivePeriodGuard } from '../financial-close/retroactive-period.guard';
 import { ClosedFinancialPeriodError } from '../../domain/financial-close/financial-close.errors';
 import { attachPaymentApplications, readPaymentApplications } from './payment-read-applications';
+import { alignApplicationSequences, numberCurrentPaymentPlan } from '../../domain/payment/payment-plan-numbering';
+import { consolidatePlanAfterPayment } from '../../domain/payment/payment-plan-consolidation';
+import type { LockedPaymentPlanConsolidation, PaymentPlanConsolidationWriter } from './payment-plan-consolidation.writer';
+import type { PaymentPlanConsolidationHistoryReader } from './payment-plan-consolidation-history.reader';
 
 export { PaymentConflictError, PaymentNotFoundError, PaymentValidationError } from './payment.errors';
 
@@ -66,7 +70,9 @@ function assertFinancialIntegrity(loan: LoanFinancialAmounts, totals: ValidPayme
 
 export class TransactionalPaymentRegistrar {
   constructor(private readonly totalsReader: LoanFinancialTotalsReader,
-    private readonly closedPeriods?: RetroactivePeriodGuard) {}
+    private readonly closedPeriods?: RetroactivePeriodGuard,
+    private readonly consolidationWriter?: PaymentPlanConsolidationWriter,
+    private readonly consolidationEnabled = false) {}
 
   assertInput(input: PaymentInput, context?: TrustedSettlementPaymentContext) {
     if (!input?.collectorId || !UUID.test(input.collectorId)) throw new PaymentValidationError('Seleccione un cobrador.', 'INVALID_COLLECTOR', 'collectorId');
@@ -177,9 +183,27 @@ export class TransactionalPaymentRegistrar {
          await manager.query(`INSERT INTO payment_applications (payment_id, payment_plan_entry_id, amount_applied, pending_before, pending_after, carried_forward_amount, carried_to_plan_entry_id, created_at) VALUES ($1,$2,$3::numeric(18,2),$4::numeric(18,2),$5::numeric(18,2),$6::numeric(18,2),$7,GREATEST(clock_timestamp(), COALESCE((SELECT MAX(created_at) + interval '1 microsecond' FROM payment_applications WHERE payment_id = $1), clock_timestamp())))`, [payment[0].id, application.planEntryId, application.amountApplied, application.pendingBefore, application.pendingAfter, application.carriedForwardAmount, application.carriedToPlanEntryId]);
       }
        const cash = await manager.query(`INSERT INTO cash_movements (direction, concept, amount, movement_date, payment_method_id, observations, created_by_user_id, idempotency_key, idempotency_fingerprint, payment_id) VALUES ('INFLOW','CUSTOMER_PAYMENT',$1::numeric(18,2),$2,$3,$4,$5,$6,$7,$8) RETURNING id`, [input.amount, input.paymentDate, input.methodId, `Customer payment ${payment[0].id}`, actorId, `payment:${input.idempotencyKey}`, fp, payment[0].id]);
-       const pendingAfter = await manager.query(`SELECT COALESCE(SUM(pending_amount), 0)::text AS "pendingAmount" FROM payment_plan_entries WHERE loan_id = $1 AND pending_amount > 0`, [input.loanId]);
-        const after = assertFinancialIntegrity(loan[0], await readPaymentTotals(this.totalsReader, manager, input.loanId), cents(pendingAfter[0].pendingAmount));
-       if (after.financialBalance === 0n) {
+        const pendingAfter = await manager.query(`SELECT COALESCE(SUM(pending_amount), 0)::text AS "pendingAmount" FROM payment_plan_entries WHERE loan_id = $1 AND pending_amount > 0`, [input.loanId]);
+         const after = assertFinancialIntegrity(loan[0], await readPaymentTotals(this.totalsReader, manager, input.loanId), cents(pendingAfter[0].pendingAmount));
+        if (this.consolidationEnabled) {
+          if (!this.consolidationWriter) throw new PaymentConflictError('Payment plan consolidation is enabled without a persistence writer.');
+          const appliedPending = new Map(allocation.applications.map((application) => [application.planEntryId, application.pendingAfter]));
+          const entriesAfterPayment = entries.map((entry: { id: string; dueDate: string | Date; sequence: number; pendingAmount: string }) => ({
+            ...entry, pendingAmount: appliedPending.get(entry.id) ?? entry.pendingAmount,
+          }));
+          const consolidation = consolidatePlanAfterPayment({ trigger: 'PAYMENT', paymentDate: input.paymentDate,
+            financialBalance: money(after.financialBalance), entries: entriesAfterPayment });
+          if (consolidation.consolidatedAmount !== '0.00') {
+            await this.consolidationWriter.write(manager, { paymentId: payment[0].id, loanId: input.loanId,
+              effectivePaymentDate: input.paymentDate, entriesBefore: entriesAfterPayment, consolidation });
+            const [consolidated] = await manager.query(`SELECT COALESCE(SUM(pending_amount), 0)::text AS "pendingAmount"
+              FROM payment_plan_entries WHERE loan_id = $1 AND pending_amount > 0`, [input.loanId]);
+            if (cents(consolidated.pendingAmount) !== after.financialBalance) {
+              throw new PaymentConflictError('The consolidated payment plan does not reconcile with the financial balance.');
+            }
+          }
+        }
+        if (after.financialBalance === 0n) {
          if (cents(pendingAfter[0].pendingAmount) !== 0n) throw new PaymentConflictError('The paid loan still has pending obligations.');
           const updated = await manager.query(`UPDATE loans SET status = 'CANCELLED', updated_at = now() WHERE id = $1 AND status = 'ACTIVE' RETURNING id`, [input.loanId]);
           if (!Array.isArray(updated[0]) || updated[0].length !== 1 || updated[0][0]?.id !== loan[0].id || updated[1] !== 1) throw new PaymentConflictError('The loan status changed during payment registration.');
@@ -201,7 +225,8 @@ export class RegisterPaymentUseCase {
   private readonly registrar: TransactionalPaymentRegistrar;
 
   constructor(private readonly dataSource: DataSource, private readonly totalsReader: LoanFinancialTotalsReader,
-    private readonly closedPeriods?: RetroactivePeriodGuard, registrar?: TransactionalPaymentRegistrar) {
+    private readonly closedPeriods?: RetroactivePeriodGuard, registrar?: TransactionalPaymentRegistrar,
+    private readonly consolidationWriter?: PaymentPlanConsolidationWriter) {
     this.registrar = registrar ?? new TransactionalPaymentRegistrar(totalsReader, closedPeriods);
   }
 
@@ -259,15 +284,19 @@ export class RegisterPaymentUseCase {
       }
       const [reversal] = await manager.query(`SELECT amount, movement_date::text AS "movementDate", direction, concept,
         payment_method_id AS "methodId", idempotency_key AS "idempotencyKey", idempotency_fingerprint AS "fingerprint"
-        FROM cash_movements WHERE reversed_movement_id = $1 FOR UPDATE`, [original.id]);
-       if (existing) {
+         FROM cash_movements WHERE reversed_movement_id = $1 FOR UPDATE`, [original.id]);
+       const consolidation = await this.consolidationWriter?.lockForReversal(manager, paymentId, loanId) ?? null;
+        if (existing) {
         const existingEffectiveDate = existing.annulmentType === 'DATA_CORRECTION'
           ? original.movementDate : costaRicaDate(new Date(existing.annulledAt));
         if (payment.status !== 'ANNULLED' || !reversal || reversal.direction !== 'OUTFLOW' || reversal.concept !== 'REVERSAL'
           || reversal.methodId !== original.methodId || reversal.idempotencyKey !== reversalKey || reversal.fingerprint !== reversalFingerprint
           || reversal.movementDate !== existingEffectiveDate || !MONEY.test(reversal.amount)
-          || cents(reversal.amount) !== cents(payment.amount)) throw new PaymentConflictError('The annulment cash reversal does not reconcile.');
-         return this.detail(manager, paymentId);
+           || cents(reversal.amount) !== cents(payment.amount)
+           || consolidation && consolidation.reversalAnnulmentId !== existing.id) {
+          throw new PaymentConflictError('The annulment cash reversal does not reconcile.');
+        }
+          return this.detail(manager, paymentId);
        }
       const [settlementPayment] = await manager.query(`SELECT EXISTS (
         SELECT 1 FROM collector_settlement_items item
@@ -281,19 +310,25 @@ export class RegisterPaymentUseCase {
        const effectiveDate = annulmentType === 'DATA_CORRECTION' ? original.movementDate : costaRicaDate();
       try { await this.closedPeriods?.assertDateAllowed(effectiveDate, manager); }
       catch (error) { if (error instanceof ClosedFinancialPeriodError) throw new PaymentConflictError(error.message, 'CLOSED_FINANCIAL_PERIOD'); throw error; }
+      if (consolidation && consolidation.effectivePaymentDate !== effectiveDate) {
+        try { await this.closedPeriods?.assertDateAllowed(consolidation.effectivePaymentDate, manager); }
+        catch (error) { if (error instanceof ClosedFinancialPeriodError) throw new PaymentConflictError(error.message, 'CLOSED_FINANCIAL_PERIOD'); throw error; }
+      }
       if (loan.status === 'REFINANCED') throw new PaymentConflictError('Los pagos de un préstamo refinanciado no pueden anularse por separado.', 'REFINANCED_LOAN_PAYMENT');
       if (payment.status !== 'VALID' || reversal) throw new PaymentConflictError('El pago ya no está vigente o ya tiene una reversión registrada.', 'PAYMENT_NOT_ANNULABLE');
       if (latestValid?.id !== paymentId) throw new PaymentConflictError('Solo se puede anular el último pago válido.', 'PAYMENT_NOT_LATEST');
+      if (consolidation?.reversalAnnulmentId) throw new PaymentConflictError('The payment plan consolidation was already reversed.');
       const [opening] = await manager.query(`SELECT opening_date::text AS "openingDate" FROM financial_openings WHERE singleton_key = 'DEFAULT' FOR SHARE`);
       if (!opening || effectiveDate < opening.openingDate) throw new PaymentConflictError('The financial opening does not permit this annulment.');
 
-      type PlanRow = { id: string; loanId: string; pendingAmount: string };
+       type PlanRow = { id: string; loanId: string; dueDate: string; sequence: number; pendingAmount: string };
       type Application = { entryId: string; amountApplied: string; pendingBefore: string; pendingAfter: string; carriedForwardAmount: string; carriedToEntryId: string | null };
       const plan = await manager.query(`SELECT id, loan_id AS "loanId", due_date::text AS "dueDate", sequence, pending_amount AS "pendingAmount" FROM payment_plan_entries WHERE loan_id = $1 ORDER BY due_date, sequence, id FOR UPDATE`, [loanId]) as PlanRow[];
       if (plan.some((entry) => !MONEY.test(entry.pendingAmount))) throw new PaymentConflictError('The current payment plan is invalid.');
       const pending = plan.reduce((sum, entry) => sum + cents(entry.pendingAmount), 0n);
        assertFinancialIntegrity(loan, await readPaymentTotals(this.totalsReader, manager, loanId), pending);
        const applications = await manager.query(`SELECT payment_plan_entry_id AS "entryId", amount_applied AS "amountApplied", pending_before AS "pendingBefore", pending_after AS "pendingAfter", carried_forward_amount AS "carriedForwardAmount", carried_to_plan_entry_id AS "carriedToEntryId" FROM payment_applications WHERE payment_id = $1 FOR UPDATE`, [paymentId]) as Application[];
+       const reversedPending = this.validateConsolidationReversal(consolidation, plan, paymentId, loanId);
        const sources = new Set<string>();
        let applied = 0n;
        let exact = true;
@@ -309,7 +344,7 @@ export class RegisterPaymentUseCase {
          }
          sources.add(application.entryId);
          applied += cents(application.amountApplied);
-         exact &&= cents(source.pendingAmount) === cents(application.pendingAfter);
+         exact &&= cents(reversedPending.get(source.id) ?? source.pendingAmount) === cents(application.pendingAfter);
        }
        if (carries) {
          const [source] = applications.filter((item) => cents(item.carriedForwardAmount) > 0n);
@@ -324,16 +359,18 @@ export class RegisterPaymentUseCase {
          }
        }
        if (applied !== cents(payment.amount)) throw new PaymentConflictError('The payment applications do not reconcile.');
-      const target = exact ? undefined : (plan.find((entry) => cents(entry.pendingAmount) > 0n) ?? plan.find((entry) => sources.has(entry.id)));
+       if (consolidation && !exact) throw new PaymentConflictError('The consolidated payment applications cannot be safely reversed.');
+       const target = exact ? undefined : (plan.find((entry) => cents(entry.pendingAmount) > 0n) ?? plan.find((entry) => sources.has(entry.id)));
       if (!exact && !target) throw new PaymentConflictError('No current plan entry can receive the restored balance.');
         const inserted = await manager.query(`INSERT INTO payment_annulments
           (payment_id, reason, annulment_type, created_by_user_id, idempotency_key, idempotency_fingerprint)
           VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING RETURNING id, payment_id AS "paymentId", reason,
           annulment_type AS "annulmentType", annulled_at AS "annulledAt", created_by_user_id AS "createdByUserId"`,
         [paymentId, trimmedReason, annulmentType, actorId, idempotencyKey, fingerprint]);
-       if (!inserted[0]) throw new PaymentConflictError('The payment has already been annulled or the key is in use.');
-       if (inserted[0].paymentId !== paymentId) throw new PaymentConflictError('The annulment payment does not match the locked payment.');
-      if (exact) {
+        if (!inserted[0]) throw new PaymentConflictError('The payment has already been annulled or the key is in use.');
+        if (inserted[0].paymentId !== paymentId) throw new PaymentConflictError('The annulment payment does not match the locked payment.');
+       if (consolidation) await this.consolidationWriter!.reverse(manager, consolidation, inserted[0].id);
+       if (exact) {
         for (const application of applications) await manager.query(`UPDATE payment_plan_entries SET pending_amount = $1::numeric(18,2), updated_at = now() WHERE id = $2`, [application.pendingBefore, application.entryId]);
       } else {
         await manager.query(`UPDATE payment_plan_entries SET pending_amount = pending_amount + $1::numeric(18,2), updated_at = now() WHERE id = $2`, [payment.amount, target!.id]);
@@ -355,10 +392,48 @@ export class RegisterPaymentUseCase {
       return this.detail(manager, paymentId);
     });
   }
+
+  private validateConsolidationReversal(consolidation: LockedPaymentPlanConsolidation | null,
+    plan: Array<{ id: string; loanId: string; dueDate: string; sequence: number; pendingAmount: string }>,
+    paymentId: string, loanId: string): Map<string, string> {
+    const reversed = new Map<string, string>();
+    if (!consolidation) return reversed;
+    if (consolidation.paymentId !== paymentId || consolidation.loanId !== loanId || !MONEY.test(consolidation.totalMoved)) {
+      throw new PaymentConflictError('The payment plan consolidation identity does not reconcile.');
+    }
+    const target = plan.find((entry) => entry.id === consolidation.target.planEntryId);
+    if (!target || target.loanId !== loanId || target.dueDate !== consolidation.target.dueDate
+      || target.sequence !== consolidation.target.sequence || !MONEY.test(consolidation.target.pendingBefore)
+      || !MONEY.test(consolidation.target.pendingAfter)
+      || cents(target.pendingAmount) !== cents(consolidation.target.pendingAfter)
+      || cents(consolidation.target.pendingAfter) - cents(consolidation.target.pendingBefore) !== cents(consolidation.totalMoved)) {
+      throw new PaymentConflictError('The payment plan consolidation target cannot be safely reversed.');
+    }
+    reversed.set(target.id, consolidation.target.pendingBefore);
+    const sourceIds = new Set<string>();
+    let sourceTotal = 0n;
+    for (const source of consolidation.sources) {
+      const row = plan.find((entry) => entry.id === source.planEntryId);
+      if (!row || row.loanId !== loanId || sourceIds.has(source.planEntryId) || source.planEntryId === target.id
+        || row.dueDate !== source.dueDate || row.sequence !== source.sequence || !MONEY.test(source.amountMoved)
+        || !MONEY.test(source.pendingBefore) || !MONEY.test(source.pendingAfter)
+        || cents(row.pendingAmount) !== cents(source.pendingAfter)
+        || cents(source.pendingBefore) - cents(source.pendingAfter) !== cents(source.amountMoved)) {
+        throw new PaymentConflictError('A payment plan consolidation source cannot be safely reversed.');
+      }
+      sourceIds.add(source.planEntryId); sourceTotal += cents(source.amountMoved);
+      reversed.set(source.planEntryId, source.pendingBefore);
+    }
+    if (sourceIds.size === 0 || sourceTotal !== cents(consolidation.totalMoved)) {
+      throw new PaymentConflictError('The payment plan consolidation sources do not reconcile.');
+    }
+    return reversed;
+  }
 }
 
 export class PaymentContextUseCase {
-  constructor(private readonly dataSource: DataSource, private readonly totalsReader: LoanFinancialTotalsReader) {}
+  constructor(private readonly dataSource: DataSource, private readonly totalsReader: LoanFinancialTotalsReader,
+    private readonly consolidationHistory?: PaymentPlanConsolidationHistoryReader) {}
   listLoans(query: { search?: string; page: number; pageSize: number }) {
     const params: unknown[] = []; const filters = [`l.status = 'ACTIVE'`];
     if (query.search?.trim()) { params.push(`%${query.search.trim()}%`); filters.push(`(l.loan_number::text ILIKE $${params.length} OR c.identification ILIKE $${params.length} OR concat_ws(' ', c.first_name, c.middle_name, c.first_last_name, c.second_last_name) ILIKE $${params.length} OR c.primary_phone ILIKE $${params.length})`); }
@@ -378,9 +453,12 @@ export class PaymentContextUseCase {
        const planRows = await this.dataSource.query(`SELECT e.id, e.due_date::text AS "dueDate", e.sequence, e.pending_amount AS "pendingAmount", EXISTS (
          SELECT 1 FROM payment_applications pa JOIN payments applied_payment ON applied_payment.id = pa.payment_id AND applied_payment.status = 'VALID'
          WHERE pa.payment_plan_entry_id = e.id OR pa.carried_to_plan_entry_id = e.id
-       ) AS "isProtected" FROM payment_plan_entries e WHERE e.loan_id = $1 AND e.pending_amount > 0 ORDER BY e.due_date, e.sequence, e.id`, [loanId]) as Array<{ id: string; dueDate: string; sequence: number; pendingAmount: string; isProtected?: boolean }>;
-       const protectedPlanEntryIds = planRows.filter((entry) => entry.isProtected === true).map((entry) => entry.id);
-       const combinedPlan = planRows.map(({ id, dueDate, sequence, pendingAmount }) => ({ id, dueDate, sequence, pendingAmount }));
+        ) AS "isProtected" FROM payment_plan_entries e WHERE e.loan_id = $1 ORDER BY e.due_date, e.sequence, e.id`, [loanId]) as Array<{ id: string; dueDate: string; sequence: number; pendingAmount: string; isProtected?: boolean }>;
+        const protectedPlanEntryIds = planRows.filter((entry) => entry.isProtected === true && cents(entry.pendingAmount) > 0n).map((entry) => entry.id);
+        const rawApplications = await readPaymentApplications(this.dataSource, loanId);
+        const numberedPlan = numberCurrentPaymentPlan(planRows, rawApplications);
+        const combinedPlan = numberedPlan.filter((entry) => cents(entry.pendingAmount) > 0n)
+          .map(({ id, dueDate, sequence, pendingAmount }) => ({ id, dueDate, sequence, pendingAmount }));
          const row = summary[0];
          const { intervalUnit, intervalValue, ...summaryRow } = row;
          const totals = await readPaymentTotals(this.totalsReader, this.dataSource, loanId);
@@ -388,11 +466,12 @@ export class PaymentContextUseCase {
        const methods = await this.dataSource.query(`SELECT id, name FROM payment_methods WHERE is_active = true ORDER BY name, id`);
         const collectors = await this.dataSource.query(`SELECT id, concat_ws(' ', first_name, first_last_name, second_last_name) AS name FROM collectors WHERE is_active = true ORDER BY name, id`);
        const preferredMethod = { id: row.preferredMethodId, activeMethods: methods, collectors };
-        const applications = await readPaymentApplications(this.dataSource, loanId);
-        const projection = buildPaymentProjection(combinedPlan, payments, row.totalAmount, row.interestAmount, today(), applications);
+          const applications = alignApplicationSequences(rawApplications, numberedPlan);
+         const consolidations = await this.consolidationHistory?.read(loanId) ?? [];
+         const projection = buildPaymentProjection(combinedPlan, payments, row.totalAmount, row.interestAmount, today(), applications);
         const validPayments = attachPaymentApplications(projection.validPayments, applications);
         const lastValidPayment = projection.lastValidPayment ? validPayments.find((payment) => payment.id === projection.lastValidPayment?.id) ?? null : null;
-            return buildPaymentContext({ summary: { ...summaryRow, paidAmount: money(cents(totals.paidAmount)) }, balances: { financialBalance: money(balances.financialBalance), outstandingPrincipal: money(balances.outstandingPrincipal), outstandingInterest: money(balances.outstandingInterest) }, combinedPlan: projection.combinedPlan, validPayments, lastValidPayment, refinanceEligibility: projection.refinanceEligibility, preferredMethod, paymentFrequency: { intervalUnit, intervalValue }, protectedPlanEntryIds, collectionProjection: projection.collectionProjection });
+             return buildPaymentContext({ summary: { ...summaryRow, paidAmount: money(cents(totals.paidAmount)) }, balances: { financialBalance: money(balances.financialBalance), outstandingPrincipal: money(balances.outstandingPrincipal), outstandingInterest: money(balances.outstandingInterest) }, combinedPlan: projection.combinedPlan, validPayments, lastValidPayment, refinanceEligibility: projection.refinanceEligibility, preferredMethod, paymentFrequency: { intervalUnit, intervalValue }, protectedPlanEntryIds, collectionProjection: projection.collectionProjection, consolidations });
     });
   }
 }

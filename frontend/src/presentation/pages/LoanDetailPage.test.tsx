@@ -1,5 +1,6 @@
 import { isValidElement, useEffect, type ReactElement, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AuthIdentity } from '../../domain/entities/auth';
 import type { LoanOperationalDetail } from '../../domain/entities/loan';
@@ -56,6 +57,35 @@ describe('loan detail actions', () => {
     await vi.waitFor(() => expect(mocks.report).toHaveBeenCalledExactlyOnceWith(fresh));
   });
 
+  it.each([
+    ['ADMINISTRADOR', false],
+    ['GESTOR', false],
+    ['COBRADOR', true],
+  ])('hides reprogrammed installments and verified applications for %s detail', (_role, assigned) => {
+    mocks.permissions = [];
+    mocks.stale = {
+      ...mocks.stale,
+      plan: [
+        { id: 'paid', sequence: 1, dueDate: '2026-01-02', pendingAmount: '0.00' },
+        { id: 'rescheduled', sequence: 2, dueDate: '2026-01-03', pendingAmount: '0.00' },
+        { id: 'pending', sequence: 3, dueDate: '2026-01-04', pendingAmount: '100.00' },
+      ],
+      validPayments: [{ id: 'payment', paymentDate: '2026-01-02', amount: '10.00', status: 'VALID',
+        applications: [{ planEntryId: 'paid', sequence: 1, amountApplied: '10.00' }] }],
+    };
+
+    const html = renderToStaticMarkup(LoanDetailPage({ assigned }));
+
+    expect(html).not.toContain('REPROGRAMADA');
+    expect(html).not.toContain('Aplicación verificada');
+    expect(html).not.toContain('Cuota 1 ·');
+    expect(html).not.toContain('03/01/2026');
+    expect(html).toContain('PAGO RECIBIDO');
+    expect(html).toContain('02/01/2026');
+    expect(html).toContain('04/01/2026');
+    expect(html).toContain('Total distribuido');
+  });
+
   it('reports a fresh read failure instead of exporting stale data', async () => {
     mocks.detail.mockRejectedValue(new Error('Read failed'));
     clickReport();
@@ -69,13 +99,16 @@ describe('loan detail actions', () => {
     expect(mocks.setState).toHaveBeenCalledWith(true);
     mocks.editing = true;
     const dialog = elements(LoanDetailPage()).find((item) => item.type === LoanEditDialog)!;
-    const refreshed = { ...mocks.stale, interestAmount: '2.00', totalAmount: '102.00' };
+    const refreshed = { ...mocks.stale, interestAmount: '0.00', totalAmount: '100.00', pendingTotal: '0.00',
+      financialBalance: '0.00', status: 'CANCELLED' as const };
     mocks.detail.mockResolvedValue(refreshed);
     await (dialog.props as { onSaved: () => Promise<void> }).onSaved();
     expect(mocks.detail).toHaveBeenCalledWith('loan-1'); expect(mocks.setState).toHaveBeenCalledWith(refreshed);
+    mocks.editing = false;
+    expect(renderToStaticMarkup(LoanDetailPage())).toContain('CANCELADO');
+    expect(elements(LoanDetailPage()).some((item) => item.type === 'button' && (item.props as { children?: ReactNode }).children === 'Editar préstamo')).toBe(false);
     (dialog.props as { onClose: () => void }).onClose();
     expect(mocks.setState).toHaveBeenCalledWith(false);
-    mocks.editing = false;
     expect(elements(LoanDetailPage()).some((item) => item.type === LoanEditDialog)).toBe(false);
     mocks.editing = true;
     mocks.permissions = mocks.permissions.filter((code) => code !== 'loans.update');

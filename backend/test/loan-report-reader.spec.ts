@@ -40,7 +40,7 @@ describe('loan detail operational read contract', () => {
   it('reads the loan, plan, VALID payments and carry provenance in one transaction', async () => {
     const { query, transaction, unboundQuery, useCase } = reader();
     const controller = new LoanController(useCase, {} as never, {} as never, {} as never, {} as never, {} as never);
-    expect(await controller.detail('loan-1')).toMatchObject({ ...loan, plan, validPayments: [
+    expect(await controller.detail('loan-1')).toMatchObject({ ...loan, plan: [{ ...plan[0], sequence: 1 }], validPayments: [
       { ...facts[0], applications: [{ planEntryId: 'entry-2', sequence: 2, amountApplied: '15.00' }] },
       { ...facts[1], applications: [] },
     ], financialBalance: '95.00' });
@@ -80,7 +80,7 @@ describe('loan detail operational read contract', () => {
       return callback({ query });
     });
     const useCase = new CreateLoanUseCase({ transaction, manager: { query: unboundQuery } } as unknown as DataSource, {} as never);
-    expect(await useCase.get('loan-1')).toMatchObject({ status: 'ACTIVE', plan, validPayments: facts, financialBalance: '95.00' });
+    expect(await useCase.get('loan-1')).toMatchObject({ status: 'ACTIVE', plan: [{ ...plan[0], sequence: 1 }], validPayments: facts, financialBalance: '95.00' });
     expect(query).toHaveBeenCalledTimes(4);
     expect(unboundQuery).not.toHaveBeenCalled();
   });

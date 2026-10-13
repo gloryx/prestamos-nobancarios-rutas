@@ -6,6 +6,7 @@ import type { LoanFinancialTotalsReader } from '../../../../application/loan/loa
 import { cents, evaluateLoanFinancialIntegrity } from '../../../../domain/loan/loan-financial-integrity';
 import type { LoanSortBy } from '../../../../domain/loan/loan.types';
 import { attachPaymentApplications, readPaymentApplications } from '../../../../application/payment/payment-read-applications';
+import { alignApplicationSequences, numberCurrentPaymentPlan } from '../../../../domain/payment/payment-plan-numbering';
 
 const pending = `(l.total_amount-COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.loan_id=l.id AND p.status='VALID'),0))::numeric(18,2)`;
 const customerName = "concat_ws(' ',c.first_name,c.middle_name,c.first_last_name,c.second_last_name)";
@@ -68,7 +69,9 @@ export class AssignedLoansTypeormReader implements AssignedLoansReader {
       if (!rows[0]) return null;
       const plan = await manager.query('SELECT id,sequence,due_date::text AS "dueDate",pending_amount::text AS "pendingAmount" FROM payment_plan_entries WHERE loan_id=$1 ORDER BY sequence', [id]);
       const validPayments: Array<{ id: string; amount: string; paymentDate: string; status: 'VALID' }> = await manager.query('SELECT id,amount::text AS amount,payment_date::text AS "paymentDate",status FROM payments WHERE loan_id=$1 AND status=\'VALID\' ORDER BY payment_date,id', [id]);
-      const applications = await readPaymentApplications(manager, id);
+      const rawApplications = await readPaymentApplications(manager, id);
+      const numberedPlan = numberCurrentPaymentPlan(plan, rawApplications);
+      const applications = alignApplicationSequences(rawApplications, numberedPlan);
       const totals = await this.totalsReader.readValidTotals(manager, id);
       const [reservation] = await manager.query(`SELECT COALESCE(SUM(amount), 0)::numeric(18,2)::text AS amount
         FROM collector_precollections WHERE loan_id=$1 AND status IN ('RECORDED','SUBMITTED')`, [id]);
@@ -86,7 +89,7 @@ export class AssignedLoansTypeormReader implements AssignedLoansReader {
         const operationalBalance = integrity.financialBalance - reservedPrecollections;
         if (!integrity.valid || reservedPrecollections < 0n || operationalBalance < 0n)
           throw new AssignedLoansIntegrityError('El saldo operativo del préstamo no concilia.');
-        return { ...rows[0], plan, financialBalance: money(integrity.financialBalance),
+        return { ...rows[0], plan: numberedPlan, financialBalance: money(integrity.financialBalance),
           reservedPrecollections: money(reservedPrecollections), operationalBalance: money(operationalBalance),
           activePaymentMethods, validPayments: attachPaymentApplications(validPayments, applications) };
       } catch (error) {

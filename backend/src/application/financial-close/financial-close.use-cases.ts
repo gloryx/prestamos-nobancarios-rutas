@@ -36,7 +36,6 @@ export class FinancialCloseUseCases {
     const { fromDate } = economicCapitalPeriod(period);
     const source = await this.store.previewSource(fromDate, toDate);
     if (!source.opening) throw new FinancialCloseConflictError('The financial opening is required.');
-    this.validateSequence(period, source.opening.openingDate, await this.store.nextSequence());
     return this.calculate(period, source);
   }
   async confirm(period: string, actorId: string) {

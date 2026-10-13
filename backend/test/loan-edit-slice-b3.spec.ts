@@ -1,6 +1,6 @@
 import type { DataSource } from 'typeorm';
 import { EditLoanUseCase, LoanEditConflictError, LoanEditNotFoundError,
-  LoanEditValidationError, type LockedEditLoan } from '../src/application/loan/edit-loan.use-case';
+  INTEREST_ADJUSTMENT_CANCELLATION_REASON, LoanEditValidationError, type LockedEditLoan } from '../src/application/loan/edit-loan.use-case';
 import { normalizeLoanEditCommand } from '../src/application/loan/loan-edit.command';
 import type { LoanEditInput } from '../src/domain/loan/loan-edit.types';
 import { EditLoanTypeormWriter } from '../src/infrastructure/database/typeorm/repositories/edit-loan.writer';
@@ -22,9 +22,11 @@ const createdAt = new Date('2026-09-29T12:00:00Z');
 type Plan = { id: string; dueDate: string; pendingAmount: string; sequence: number };
 type Payment = { status: 'VALID' | 'ANNULLED'; amount: string; principal: string; interest: string };
 type Operation = { operationId: string; loanId: string; actorId: string; fingerprint: string; createdAt: Date };
+type StatusEvent = { id: string; loanId: string; eventSequence: number; eventKind: 'CREATED' | 'TRANSITION';
+  fromStatus: string | null; toStatus: string; changedByUserId: string | null; reason: string | null };
 type MutableLoan = { -readonly [K in keyof LockedEditLoan]: LockedEditLoan[K] } & { updatedAt: number };
 type State = { loans: Record<string, MutableLoan>; plan: Plan[];
-  payments: Payment[]; operations: Record<string, Operation>; activeFrequencies: string[]; activeMethods: string[] };
+  payments: Payment[]; operations: Record<string, Operation>; statusEvents: StatusEvent[]; activeFrequencies: string[]; activeMethods: string[] };
 type Call = { sql: string; args: unknown[]; manager: object };
 const money = (amount: bigint) => `${amount / 100n}.${(amount % 100n).toString().padStart(2, '0')}`;
 const cents = (amount: string) => { const [whole, decimal = ''] = amount.split('.'); return BigInt(whole) * 100n + BigInt(decimal.padEnd(2, '0')); };
@@ -39,7 +41,9 @@ function initial(): State {
     { id: ZERO, dueDate: '2026-09-01', pendingAmount: '0.00', sequence: 1 },
   ], payments: [{ status: 'VALID', amount: '25.50', principal: '20.00', interest: '5.50' },
     { status: 'ANNULLED', amount: '8.00', principal: '8.00', interest: '0.00' }],
-  operations: {}, activeFrequencies: [FREQUENCY, NEW_FREQUENCY], activeMethods: [METHOD, NEW_METHOD] };
+  operations: {}, statusEvents: [{ id: 'status-created', loanId: LOAN, eventSequence: 1, eventKind: 'CREATED',
+    fromStatus: null, toStatus: 'ACTIVE', changedByUserId: ACTOR, reason: null }],
+  activeFrequencies: [FREQUENCY, NEW_FREQUENCY], activeMethods: [METHOD, NEW_METHOD] };
 }
 function input(changes: LoanEditInput['changes'] = { observations: ' revised ' }): LoanEditInput {
   return { idempotencyKey: 'edit-key', baseline: { interestAmount: '20.00', paymentFrequencyId: FREQUENCY,
@@ -51,7 +55,7 @@ function input(changes: LoanEditInput['changes'] = { observations: ' revised ' }
 
 function setup() {
   let committed = initial(); let rollbacks = 0;
-  let failClaim: Error | undefined; let missingTotals = false; let failUpdate = false;
+  let failClaim: Error | undefined; let missingTotals = false; let failUpdate = false; let failStatusEvent = false;
   let tamperFinal: ((state: State) => void) | undefined;
   let race: ((attempt: Operation) => Operation | null) | undefined;
   const calls: Call[] = []; const managers: object[] = [];
@@ -78,6 +82,10 @@ function setup() {
           invalidCount: valid.filter((item) => cents(item.amount) <= 0n || cents(item.principal) < 0n
             || cents(item.interest) < 0n || cents(item.amount) !== cents(item.principal) + cents(item.interest)).length }];
       }
+      if (sql.startsWith('SELECT MAX(event_sequence)')) {
+        const events = staged.statusEvents.filter((event) => event.loanId === args[0]);
+        return [{ maxSequence: events.length ? Math.max(...events.map((event) => event.eventSequence)) : null }];
+      }
       if (sql.includes('FROM payment_frequencies')) return staged.activeFrequencies.includes(String(args[0])) ? [{ id: args[0] }] : [];
       if (sql.includes('FROM payment_methods')) return staged.activeMethods.includes(String(args[0])) ? [{ id: args[0] }] : [];
       if (sql.startsWith('UPDATE loans SET')) {
@@ -88,7 +96,14 @@ function setup() {
           const match = sql.match(new RegExp(`${column} = \\$(\\d+)`));
           if (match) Object.assign(row, { [property]: args[Number(match[1]) - 1] });
         }
+        if (sql.includes("status = 'CANCELLED'")) row.status = 'CANCELLED';
         row.updatedAt++; return [[{ id }], 1];
+      }
+      if (sql.startsWith('INSERT INTO loan_status_history')) {
+        if (failStatusEvent) return [];
+        const event = { id: 'status-cancelled', loanId: String(args[0]), eventSequence: Number(args[1]), eventKind: 'TRANSITION' as const,
+          fromStatus: 'ACTIVE', toStatus: 'CANCELLED', changedByUserId: String(args[2]), reason: String(args[3]) };
+        staged.statusEvents.push(event); return [event];
       }
       if (sql.startsWith('INSERT INTO payment_plan_entries')) {
         staged.plan.push({ id: staged.plan.some((row) => row.id === 'dddddddd-dddd-4ddd-8ddd-dddddddddddd')
@@ -122,7 +137,8 @@ function setup() {
   return { execute, source, calls, managers, state: () => committed, rollbacks: () => rollbacks,
     set: (edit: (state: State) => void) => { const copy = structuredClone(committed); edit(copy); committed = copy; },
     failClaim: (error: Error) => { failClaim = error; }, missingTotals: () => { missingTotals = true; },
-    failUpdate: () => { failUpdate = true; }, race: (winner: (attempt: Operation) => Operation | null) => { race = winner; },
+    failUpdate: () => { failUpdate = true; }, failStatusEvent: () => { failStatusEvent = true; },
+    race: (winner: (attempt: Operation) => Operation | null) => { race = winner; },
     tamperFinal: (edit: (state: State) => void) => { tamperFinal = edit; } };
 }
 
@@ -399,17 +415,48 @@ describe('B4 internal interest and plan edit (real B1 helper, staged manager)', 
     expect(changed(paid.calls)).toEqual([]);
   });
 
-  it('accepts a zero target with an empty plan by closing positive rows, without cancelling the loan', async () => {
+  it('cancels a zero-balance interest edit, audits it, and preserves every real payment', async () => {
     const fake = setup(); fake.set((s) => {
       s.payments[0] = { status: 'VALID', amount: '105.50', principal: '100.00', interest: '5.50' };
       s.plan[0].pendingAmount = '14.50'; s.plan[1].pendingAmount = '0.00';
     });
+    const payments = structuredClone(fake.state().payments);
     const body = { ...financial('5.50', []), baseline: { ...input().baseline, financialBalance: '14.50',
       plan: [{ id: FIRST, dueDate: '2026-10-01', pendingAmount: '14.50' }] } };
     await fake.execute(body);
-    expect(fake.state().loans[LOAN]).toMatchObject({ status: 'ACTIVE', interestAmount: '5.50', totalAmount: '105.50' });
+    expect(fake.state().loans[LOAN]).toMatchObject({ status: 'CANCELLED', interestAmount: '5.50', totalAmount: '105.50' });
     expect(fake.state().plan.map((row) => row.pendingAmount)).toEqual(['0.00', '0.00', '0.00']);
+    expect(fake.state().payments).toEqual(payments);
+    expect(fake.state().statusEvents.at(-1)).toMatchObject({ eventSequence: 2, eventKind: 'TRANSITION', fromStatus: 'ACTIVE',
+      toStatus: 'CANCELLED', changedByUserId: ACTOR, reason: INTEREST_ADJUSTMENT_CANCELLATION_REASON });
+    expect(fake.calls.find(({ sql }) => sql.startsWith('INSERT INTO loan_status_history'))?.sql).toContain('clock_timestamp()');
     expect(fake.calls.filter(({ sql }) => sql.startsWith('UPDATE payment_plan_entries SET pending_amount = 0'))).toHaveLength(1);
+    expect(changed(fake.calls).every(({ sql }) => !/^(UPDATE|INSERT) (payments|payment_applications|payment_annulments|loan_disbursements|cash_movements)/.test(sql))).toBe(true);
+  });
+
+  it('rolls back the interest, plan, status, audit and receipt when cancellation auditing fails', async () => {
+    const fake = setup(); fake.set((s) => {
+      s.payments[0] = { status: 'VALID', amount: '105.50', principal: '100.00', interest: '5.50' };
+      s.plan[0].pendingAmount = '14.50'; s.plan[1].pendingAmount = '0.00';
+    });
+    const before = structuredClone(fake.state()); fake.failStatusEvent();
+    const body = { ...financial('5.50', []), baseline: { ...input().baseline, financialBalance: '14.50',
+      plan: [{ id: FIRST, dueDate: '2026-10-01', pendingAmount: '14.50' }] } };
+    await expect(fake.execute(body)).rejects.toBeInstanceOf(LoanEditConflictError);
+    expect(fake.state()).toEqual(before); expect(fake.rollbacks()).toBe(1);
+  });
+
+  it('rolls back the plan when the conditional loan and status update fails', async () => {
+    const fake = setup(); fake.set((s) => {
+      s.payments[0] = { status: 'VALID', amount: '105.50', principal: '100.00', interest: '5.50' };
+      s.plan[0].pendingAmount = '14.50'; s.plan[1].pendingAmount = '0.00';
+    });
+    const before = structuredClone(fake.state()); fake.failUpdate();
+    const body = { ...financial('5.50', []), baseline: { ...input().baseline, financialBalance: '14.50',
+      plan: [{ id: FIRST, dueDate: '2026-10-01', pendingAmount: '14.50' }] } };
+    await expect(fake.execute(body)).rejects.toBeInstanceOf(LoanEditConflictError);
+    expect(fake.state()).toEqual(before); expect(fake.rollbacks()).toBe(1);
+    expect(fake.calls.some(({ sql }) => sql.startsWith('INSERT INTO loan_status_history'))).toBe(false);
   });
 
   it('uses B1 identity, ordering, soft-close and MAX sequence including zero history for a mixed draft', async () => {

@@ -26,12 +26,20 @@ export class EditLoanTypeormWriter implements LoanEditWriter {
         if (changes.observations !== undefined) { args.push(changes.observations); fields.push(`observations = $${args.length}`); }
         if (changes.interestAmount !== undefined) { args.push(changes.interestAmount); fields.push(`interest_amount = $${args.length}::numeric(18,2)`); }
         if (changes.totalAmount !== undefined) { args.push(changes.totalAmount); fields.push(`total_amount = $${args.length}::numeric(18,2)`); }
+        if (changes.status !== undefined) fields.push(`status = 'CANCELLED'`);
         if (!fields.length) return false;
         args.push(id);
         const raw: unknown = await manager.query(`UPDATE loans SET ${fields.join(', ')}, updated_at = now()
           WHERE id = $${args.length} AND status = 'ACTIVE' RETURNING id`, args);
         return Array.isArray(raw) && Array.isArray(raw[0]) && raw[0].length === 1
           && raw[0][0]?.id?.toLowerCase() === id.toLowerCase() && raw[1] === 1;
+      },
+      insertCancellationEvent: async (id, sequence, actorId, reason) => {
+        const raw: unknown = await manager.query(`INSERT INTO loan_status_history
+          (loan_id, event_sequence, event_kind, from_status, to_status, changed_at, changed_by_user_id, reason, payment_id, payment_annulment_id)
+          VALUES ($1,$2,'TRANSITION','ACTIVE','CANCELLED',clock_timestamp(),$3,$4,NULL,NULL) RETURNING id`,
+        [id, sequence, actorId, reason]);
+        return Array.isArray(raw) && raw.length === 1 && typeof raw[0]?.id === 'string';
       },
       claim: async (identity) => {
         try { return await this.operations.claim(manager, identity); }

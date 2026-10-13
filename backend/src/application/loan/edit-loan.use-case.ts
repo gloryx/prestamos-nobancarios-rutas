@@ -3,12 +3,14 @@ import type { LoanEditIdentity, LoanEditReceipt } from '../../domain/loan/loan-e
 import { loanEditBaselineMatches, loanEditFingerprint, normalizeLoanEditSnapshot, LoanEditInputError,
   type LoanEditCurrentSnapshot, type NormalizedLoanEditCommand } from './loan-edit.command';
 import type { LoanFinancialTotalsQuery, LoanFinancialTotalsReader } from './loan-financial-totals.reader';
+import { getNextLoanStatusEventSequence, LoanStatusHistorySequenceError } from './loan-status-history-sequence';
 import { applyPaymentPlanDraft } from '../payment/payment-plan-draft';
 
 export class LoanEditNotFoundError extends Error {}
 export class LoanEditConflictError extends Error {}
 export class LoanEditValidationError extends Error {}
 export class LoanEditUnsupportedFinancialError extends Error {}
+export const INTEREST_ADJUSTMENT_CANCELLATION_REASON = 'Cancelación automática por ajuste de interés.';
 
 export type LockedEditLoan = LoanFinancialAmounts & Readonly<{
   id: string; status: string; startDate: string; paymentFrequencyId: string; preferredPaymentMethodId: string; observations: string | null;
@@ -16,7 +18,9 @@ export type LockedEditLoan = LoanFinancialAmounts & Readonly<{
 export type LoanEditAdminChanges = Readonly<{
   paymentFrequencyId?: string; preferredPaymentMethodId?: string; observations?: string | null;
 }>;
-export type LoanEditChanges = LoanEditAdminChanges & Readonly<{ interestAmount?: string; totalAmount?: string }>;
+export type LoanEditChanges = LoanEditAdminChanges & Readonly<{
+  interestAmount?: string; totalAmount?: string; status?: 'CANCELLED';
+}>;
 export interface LoanEditTransaction {
   executor: LoanFinancialTotalsQuery;
   lockLoan(id: string): Promise<LockedEditLoan | undefined>;
@@ -24,6 +28,7 @@ export interface LoanEditTransaction {
   readPlan(id: string): Promise<LoanEditCurrentSnapshot['plan']>;
   isActiveReference(kind: 'frequency' | 'method', id: string): Promise<boolean>;
   updateLoan(id: string, changes: LoanEditChanges): Promise<boolean>;
+  insertCancellationEvent(id: string, sequence: number, actorId: string, reason: string): Promise<boolean>;
   claim(identity: LoanEditIdentity): Promise<LoanEditReceipt | undefined>;
 }
 export interface LoanEditWriter {
@@ -78,7 +83,7 @@ export class EditLoanUseCase {
         if (!interestChanged && command.plan !== undefined) throw new LoanEditValidationError('A payment plan requires an interest change.');
 
         const changes: { paymentFrequencyId?: string; preferredPaymentMethodId?: string; observations?: string | null;
-          interestAmount?: string; totalAmount?: string } = {};
+          interestAmount?: string; totalAmount?: string; status?: 'CANCELLED' } = {};
         if (command.changes.paymentFrequencyId !== undefined && command.changes.paymentFrequencyId !== loan.paymentFrequencyId.toLowerCase()) {
           if (!await tx.isActiveReference('frequency', command.changes.paymentFrequencyId)) throw new LoanEditValidationError('The payment frequency is inactive or does not exist.');
           changes.paymentFrequencyId = command.changes.paymentFrequencyId;
@@ -108,17 +113,31 @@ export class EditLoanUseCase {
           if (!proposed.valid) throw new LoanEditValidationError('The proposed loan financial state does not reconcile.');
           changes.interestAmount = money(newInterest);
           changes.totalAmount = money(newTotal);
+          if (newBalance === 0n) changes.status = 'CANCELLED';
           // The loan lock precedes both the shared plan writer and the Loan UPDATE.
           const drafted = await applyPaymentPlanDraft(tx.executor, loan.id, loan.startDate, newBalance,
             command.plan!.map((entry) => ({ id: entry.id, dueDate: entry.dueDate, pendingAmount: money(entry.pendingAmount) })));
           if (!await tx.updateLoan(loan.id, changes)) throw new LoanEditConflictError('The loan changed during the edit.');
+          if (newBalance === 0n) {
+            let sequence: number;
+            try {
+              sequence = await getNextLoanStatusEventSequence(tx.executor, loan.id);
+              if (sequence === 1) throw new LoanStatusHistorySequenceError();
+            } catch (error) {
+              if (error instanceof LoanStatusHistorySequenceError) throw new LoanEditConflictError('El historial del préstamo no está disponible.');
+              throw error;
+            }
+            if (!await tx.insertCancellationEvent(loan.id, sequence, command.actorId, INTEREST_ADJUSTMENT_CANCELLATION_REASON)) {
+              throw new LoanEditConflictError('No se pudo registrar la cancelación por ajuste de interés.');
+            }
+          }
           const persistedLoan = await tx.lockLoan(loan.id);
           const persistedPlan = await tx.readPlan(loan.id);
           const persistedTotals = await this.totalsReader.readValidTotals(tx.executor, loan.id);
           if (!persistedLoan || !persistedPlan || !persistedTotals || ![persistedLoan.principal, persistedLoan.interestAmount,
             persistedLoan.totalAmount, persistedTotals.paidAmount, persistedTotals.paidPrincipal, persistedTotals.paidInterest].every(isMoney)
             || persistedPlan.some((row) => !isMoney(row.pendingAmount) || cents(row.pendingAmount) < 0n)
-            || persistedLoan.id !== loan.id || persistedLoan.status !== loan.status || persistedLoan.startDate !== loan.startDate
+            || persistedLoan.id !== loan.id || persistedLoan.status !== (newBalance === 0n ? 'CANCELLED' : loan.status) || persistedLoan.startDate !== loan.startDate
             || cents(persistedLoan.principal) !== cents(loan.principal) || cents(persistedLoan.interestAmount) !== newInterest
             || cents(persistedLoan.totalAmount) !== newTotal) throw corrupt();
           try {

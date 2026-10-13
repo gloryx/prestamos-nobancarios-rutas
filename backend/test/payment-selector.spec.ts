@@ -67,6 +67,7 @@ describe('payment selector and context', () => {
     expect(context.lastValidPayment).toMatchObject({ paymentDate: '2026-01-02' });
     expect(context.preferredMethod).toMatchObject({ activeMethods: [{ id: 'method-1', name: 'Cash' }] });
     expect(context.paymentFrequency).toEqual({ intervalUnit: 'DAY', intervalValue: 14 });
+    expect(context.consolidations).toEqual([]);
     expect(context.summary).not.toHaveProperty('intervalUnit');
     expect(query.mock.calls.find(([sql]) => String(sql).includes('FROM loans l JOIN customers c'))![0]).toContain('JOIN payment_frequencies pf ON pf.id = l.payment_frequency_id');
     const planSql = query.mock.calls.find(([sql]) => String(sql).startsWith('SELECT e.id, e.due_date::text'))![0];

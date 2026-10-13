@@ -72,12 +72,12 @@ export class EconomicCapitalTypeOrmReader implements EconomicCapitalReader, Econ
           JOIN loan_refinancing_annulments correction ON correction.refinancing_id = corrected.id
           WHERE corrected.new_loan_id = l.id AND correction.annulment_type = 'DATA_CORRECTION')
       ORDER BY l.start_date, l.created_at, l.id LIMIT $2`, [toDate, MAX_ECONOMIC_PROVENANCE_LOANS + 1]);
-    const refinancings: EconomicRefinancingFact[] = await manager.query(`SELECT id AS "refinancingId",
-      origin_loan_id AS "originLoanId", new_loan_id AS "newLoanId", refinancing_date::text AS "refinancingDate",
-      created_at::text AS "createdAt",
-      outstanding_principal_transferred::text AS "outstandingPrincipalTransferred",
-      capitalized_outstanding_interest::text AS "capitalizedOutstandingInterest",
-      new_money_disbursed::text AS "newMoneyDisbursed", new_contractual_principal::text AS "newContractualPrincipal",
+    const refinancings: EconomicRefinancingFact[] = await manager.query(`SELECT r.id AS "refinancingId",
+      r.origin_loan_id AS "originLoanId", r.new_loan_id AS "newLoanId", r.refinancing_date::text AS "refinancingDate",
+      r.created_at::text AS "createdAt",
+      r.outstanding_principal_transferred::text AS "outstandingPrincipalTransferred",
+      r.capitalized_outstanding_interest::text AS "capitalizedOutstandingInterest",
+      r.new_money_disbursed::text AS "newMoneyDisbursed", r.new_contractual_principal::text AS "newContractualPrincipal",
       r.status AS status, annulment.annulment_type AS "annulmentType",
       annulment.effective_date::text AS "annulmentEffectiveDate"
       FROM loan_refinancings r

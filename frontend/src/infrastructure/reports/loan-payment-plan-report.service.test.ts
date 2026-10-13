@@ -47,13 +47,13 @@ const textFontSize = (page: string, text: string) => {
 };
 
 describe('existing shared loan payment-plan receipt', () => {
-  it('prints payment movements and contractual installment sequences without zero or annulled rows', async () => {
+  it('prints payment movements and consecutive current installments without zero or annulled rows', async () => {
     const [page] = pages(await createLoanPaymentPlanDocument(loan, now));
     expect(timelineRows(page)).toEqual([
       { reference: 'PAGO RECIBIDO', date: '01/02/2026', state: 'PAGO RECIBIDO' },
       { reference: 'PAGO RECIBIDO', date: '01/02/2026', state: 'PAGO RECIBIDO' },
-      { reference: 'Cuota 3', date: '01/02/2026', state: 'VENCIDA' },
-      { reference: 'Cuota 5', date: '02/04/2026', state: 'PENDIENTE' },
+      { reference: 'Cuota 1', date: '01/02/2026', state: 'VENCIDA' },
+      { reference: 'Cuota 2', date: '02/04/2026', state: 'PENDIENTE' },
     ]);
     expect(page.indexOf('(PAGOS RECIBIDOS) Tj')).toBeLessThan(page.indexOf('(CUOTAS PENDIENTES) Tj'));
     expect(page).not.toContain('CUOTA 1  01/03/2026');
@@ -70,7 +70,7 @@ describe('existing shared loan payment-plan receipt', () => {
   it('keeps verified applications internal while preserving the real payment and contractual pending rows', async () => {
     const fixture: LoanOperationalDetail = { ...loan, loanNumber: '4664', financialBalance: '200000.00', pendingTotal: '200000.00',
       validPayments: [{ id: 'ffc5ebe9-c24f-416d-9c01-7f4d7c60ac25', paymentDate: '2026-10-12', amount: '20000.00', status: 'VALID',
-        applications: [{ planEntryId: 'entry-15', sequence: 15, amountApplied: '20000.00' }] }],
+        applications: [{ planEntryId: 'entry-15', sequence: 15, amountApplied: '20000.00', pendingAfter: '0.00' }] }],
       plan: [
         { id: 'entry-15', sequence: 15, dueDate: '2026-10-08', pendingAmount: '0.00' },
         { id: 'entry-16', sequence: 16, dueDate: '2026-10-09', pendingAmount: '20000.00' },
@@ -82,9 +82,9 @@ describe('existing shared loan payment-plan receipt', () => {
     expect(page).not.toMatch(/Aplicado a cuota|entry-15|applications/);
     expect(timelineRows(page)).toEqual([
       { reference: 'PAGO RECIBIDO', date: '12/10/2026', state: 'PAGO RECIBIDO' },
-      { reference: 'Cuota 16', date: '09/10/2026', state: 'VENCIDA' },
-      { reference: 'Cuota 17', date: '10/10/2026', state: 'VENCIDA' },
-      { reference: 'Cuota 18', date: '12/10/2026', state: 'PENDIENTE' },
+      { reference: 'Cuota 2', date: '09/10/2026', state: 'VENCIDA' },
+      { reference: 'Cuota 3', date: '10/10/2026', state: 'VENCIDA' },
+      { reference: 'Cuota 4', date: '12/10/2026', state: 'PENDIENTE' },
     ]);
     expect(page).not.toContain('(CUOTA 15  12/10/2026  ) Tj');
   });
@@ -103,7 +103,7 @@ describe('existing shared loan payment-plan receipt', () => {
     expect(page).not.toContain('Sin aplicaciones históricas disponibles');
   });
 
-  it('prints reprogrammed pending installments with their contractual sequence, current date and pending amount', async () => {
+  it('prints personalized pending installments with their current consecutive sequence', async () => {
     const fixture = { ...loan, validPayments: [], plan: [
       { id: 'later-sequence', sequence: 12, dueDate: '2026-06-20', pendingAmount: '125.00' },
       { id: 'reprogrammed', sequence: 8, dueDate: '2026-05-10', pendingAmount: '275.00' },
@@ -111,8 +111,8 @@ describe('existing shared loan payment-plan receipt', () => {
     ] };
     const [page] = pages(await createLoanPaymentPlanDocument(fixture, now));
     expect(timelineRows(page)).toEqual([
-      { reference: 'Cuota 8', date: '10/05/2026', state: 'PENDIENTE' },
-      { reference: 'Cuota 12', date: '20/06/2026', state: 'PENDIENTE' },
+      { reference: 'Cuota 1', date: '10/05/2026', state: 'PENDIENTE' },
+      { reference: 'Cuota 2', date: '20/06/2026', state: 'PENDIENTE' },
     ]);
     expect(page).toContain('(¢275) Tj');
     expect(page).toContain('(¢125) Tj');
@@ -272,7 +272,7 @@ describe('existing shared loan payment-plan receipt', () => {
       expect(sheet).not.toContain('(SALDO ACTUAL) Tj');
     });
     const all = sheets.join('\n');
-    for (let sequence = 3; sequence <= 54; sequence += 1) {
+    for (let sequence = 1; sequence <= 52; sequence += 1) {
       const row = new RegExp(`\\(CUOTA ${sequence} {2}\\d{2}/\\d{2}/2026 {2}\\) Tj[\\s\\S]*?\\(PENDIENTE\\) Tj[\\s\\S]*?\\(¢1\\) Tj`);
       expect(sheets.filter((sheet) => row.test(sheet))).toHaveLength(1);
     }

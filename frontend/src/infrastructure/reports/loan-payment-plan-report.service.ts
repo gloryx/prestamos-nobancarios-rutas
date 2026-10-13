@@ -1,5 +1,6 @@
 import type { jsPDF } from 'jspdf';
 import type { LoanOperationalDetail } from '../../domain/entities/loan';
+import { numberCurrentPaymentPlan } from '../../domain/payment-plan-numbering';
 import { formatDateOnlyForDisplay } from '../../shared/utils/date';
 import { moneyFromCents, parseMoneyCents } from '../../shared/utils/money';
 import { getPdfMoneyText } from './loan-payment-plan-pdf.helpers';
@@ -55,8 +56,9 @@ export async function createLoanPaymentPlanDocument(loan: LoanOperationalDetail,
   const today = dateKey(now);
   const payments = loan.validPayments.filter((payment) => payment.status === 'VALID')
     .sort((a, b) => a.paymentDate.localeCompare(b.paymentDate) || a.id.localeCompare(b.id));
-  const pendingEntries = loan.plan.filter((entry) => (parseMoneyCents(entry.pendingAmount) ?? 0n) > 0n)
-    .sort((a, b) => a.dueDate.localeCompare(b.dueDate) || a.sequence - b.sequence || a.id.localeCompare(b.id));
+  const pendingEntries = numberCurrentPaymentPlan(loan.plan,
+    payments.flatMap((payment) => payment.applications ?? []))
+    .filter((entry) => (parseMoneyCents(entry.pendingAmount) ?? 0n) > 0n);
 
   function header(nameLines: string[], continuation = false, compact = false): number {
     const status = STATUS_LABELS[loan.status] ?? loan.status;

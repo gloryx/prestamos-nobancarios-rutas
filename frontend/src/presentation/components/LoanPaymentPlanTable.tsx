@@ -5,6 +5,7 @@ import { formatDateOnlyForDisplay } from "../../shared/utils/date";
 import { MoneyInput } from "./MoneyInput";
 import { getLoanPlanCondition } from "../helpers/loan";
 import type { PaymentApplication } from "../../domain/entities/payment";
+import { hasPaidPlanEvidence } from "../../domain/payment-plan-numbering";
 
 type LoanPaymentPlanTableProps = {
   plan: Array<LoanPlanEntry & { id?: string }>;
@@ -16,6 +17,7 @@ type LoanPaymentPlanTableProps = {
   numberLabel?: string;
   amountLabel?: string;
   paymentApplications?: PaymentApplication[];
+  hideReprogrammed?: boolean;
 };
 
 export function LoanPaymentPlanTable({
@@ -28,6 +30,7 @@ export function LoanPaymentPlanTable({
   numberLabel,
   amountLabel,
   paymentApplications = [],
+  hideReprogrammed = false,
 }: LoanPaymentPlanTableProps): ReactElement {
   const distributed = plan.reduce(
     (sum, entry) => sum + (parseMoneyCents(entry.pendingAmount) ?? 0n),
@@ -35,6 +38,14 @@ export function LoanPaymentPlanTable({
   );
   const totalCents = parseMoneyCents(total) ?? 0n;
   const difference = totalCents - distributed;
+  const rows = plan.map((entry, originalIndex) => {
+    const hasVerifiedPayment = 'id' in entry && typeof entry.id === 'string'
+      && hasPaidPlanEvidence(entry.id, paymentApplications);
+    return { entry, originalIndex, condition: getLoanPlanCondition(entry, hasVerifiedPayment) };
+  }).filter(({ condition }) => !hideReprogrammed || condition !== 'REPROGRAMADA');
+  if (!editable) rows.sort((left, right) => left.entry.dueDate.localeCompare(right.entry.dueDate)
+    || left.entry.sequence - right.entry.sequence
+    || ('id' in left.entry && 'id' in right.entry ? String(left.entry.id).localeCompare(String(right.entry.id)) : 0));
   const updateEntry = (index: number, update: Partial<LoanPlanEntry>) => {
     onChange?.(
       plan.map((entry, entryIndex) =>
@@ -50,7 +61,7 @@ export function LoanPaymentPlanTable({
     >
       <div className="loan-confirmation__plan-heading">
         <h3 id="loan-payment-plan-title">PLAN DE PAGOS</h3>
-        <span>{plan.length} Cuotas programadas</span>
+        <span>{rows.length} Cuotas programadas</span>
       </div>
       <div className="loan-confirmation__table-wrap">
         <table className="loan-confirmation__table">
@@ -64,20 +75,18 @@ export function LoanPaymentPlanTable({
             </tr>
           </thead>
           <tbody>
-            {plan.map((entry, index) => {
-              const hasVerifiedPayment = 'id' in entry && typeof entry.id === 'string'
-                && paymentApplications.some((application) => application.planEntryId === entry.id);
-              const condition = getLoanPlanCondition(entry, hasVerifiedPayment);
+            {rows.map(({ entry, originalIndex, condition }, index) => {
+              const displaySequence = index + 1;
               return (
-              <tr key={`${entry.sequence}-${index}`}>
-                <td>{entry.sequence}</td>
+              <tr key={'id' in entry && entry.id ? entry.id : `${entry.sequence}-${originalIndex}`}>
+                <td>{displaySequence}</td>
                 <td>
                   {editable ? (
                     <input
                       type="date"
                       value={entry.dueDate}
-                      aria-label={`Fecha de la cuota ${entry.sequence}`}
-                      onChange={(event) => updateEntry(index, { dueDate: event.target.value })}
+                      aria-label={`Fecha de la cuota ${displaySequence}`}
+                      onChange={(event) => updateEntry(originalIndex, { dueDate: event.target.value })}
                     />
                   ) : (
                     formatDateOnlyForDisplay(entry.dueDate)
@@ -87,8 +96,8 @@ export function LoanPaymentPlanTable({
                   {editable ? (
                     <MoneyInput
                       value={entry.pendingAmount}
-                      aria-label={`Monto de la cuota ${entry.sequence}`}
-                      onChange={(pendingAmount) => updateEntry(index, { pendingAmount })}
+                      aria-label={`Monto de la cuota ${displaySequence}`}
+                      onChange={(pendingAmount) => updateEntry(originalIndex, { pendingAmount })}
                     />
                   ) : (
                     formatCRC(entry.pendingAmount)
@@ -109,7 +118,7 @@ export function LoanPaymentPlanTable({
                       onClick={() =>
                         onChange?.(
                           plan
-                            .filter((_, entryIndex) => entryIndex !== index)
+                            .filter((_, entryIndex) => entryIndex !== originalIndex)
                             .map((item, itemIndex) => ({ ...item, sequence: itemIndex + 1 })),
                         )
                       }

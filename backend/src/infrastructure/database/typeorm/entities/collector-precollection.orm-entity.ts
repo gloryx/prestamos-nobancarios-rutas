@@ -18,6 +18,7 @@ export class CollectorPrecollectionOrmEntity {
   @Column({ name: 'route_id', type: 'uuid' }) routeId!: string;
   @Column({ name: 'customer_route_assignment_id', type: 'uuid' }) customerRouteAssignmentId!: string;
   @Column({ name: 'collector_route_assignment_id', type: 'uuid' }) collectorRouteAssignmentId!: string;
+  @Column({ name: 'collection_day_snapshot_id', type: 'uuid', nullable: true }) collectionDaySnapshotId!: string | null;
   @Column({ name: 'payment_method_id', type: 'uuid' }) paymentMethodId!: string;
   @Column({ name: 'custody_treatment', type: 'varchar', length: 24 }) custodyTreatment!: CollectorCustodyTreatment;
   @Column({ type: 'numeric', precision: 18, scale: 2 }) amount!: string;

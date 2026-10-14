@@ -1,6 +1,8 @@
 import 'reflect-metadata';
+import { validate } from 'class-validator';
 import { CollectorPrecollectionConflictError, CollectorPrecollectionValidationError } from '../src/domain/collector-precollection/collector-precollection.errors';
 import { CollectorPrecollectionController } from '../src/presentation/collector-precollection/collector-precollection.controller';
+import { CreateCollectorPrecollectionDto } from '../src/presentation/collector-precollection/collector-precollection.dto';
 import { PERMISSIONS_KEY } from '../src/presentation/security/security.decorators';
 
 const identity = { id: 'actor' } as never;
@@ -23,6 +25,18 @@ describe('collector precollection controller boundary', () => {
     await expect(controller.create(body, identity)).resolves.toEqual({ id: 'precollection' });
     expect(create.execute).toHaveBeenCalledWith(body, identity);
     expect(body).not.toHaveProperty('collectorId');
+  });
+
+  it('rejects company-received custody at the HTTP boundary', async () => {
+    const dto = Object.assign(new CreateCollectorPrecollectionDto(), {
+      customerId: '00000000-0000-4000-8000-000000000001',
+      loanId: '00000000-0000-4000-8000-000000000002',
+      paymentMethodId: '00000000-0000-4000-8000-000000000003',
+      custodyTreatment: 'COMPANY_RECEIVED', amount: '10.00', effectiveDate: '2026-10-12', idempotencyKey: 'key',
+    });
+    await expect(validate(dto)).resolves.toEqual(expect.arrayContaining([
+      expect.objectContaining({ property: 'custodyTreatment' }),
+    ]));
   });
 
   it('maps validation and conflict errors to structured HTTP responses', async () => {

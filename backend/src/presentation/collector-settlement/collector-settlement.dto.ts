@@ -1,4 +1,10 @@
-import { ArrayNotEmpty, ArrayUnique, IsArray, IsOptional, IsString, IsUUID, Matches, MaxLength } from 'class-validator';
+import { Type } from 'class-transformer';
+import { ArrayNotEmpty, ArrayUnique, IsArray, IsIn, IsInt, IsOptional, IsString, IsUUID, Matches, MaxLength, Min } from 'class-validator';
+
+export class EligibleCollectorPrecollectionsQueryDto {
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) page = 1;
+  @IsOptional() @Type(() => Number) @IsInt() @IsIn([10, 20, 50]) pageSize: 10 | 20 | 50 = 20;
+}
 
 export class CreateCollectorSettlementDto {
   @IsOptional() @IsUUID() collectorId?: string;

@@ -1,5 +1,5 @@
 import type { CurrentIdentity } from '../src/domain/security/security.types';
-import { CollectorPrecollectionValidationError } from '../src/domain/collector-precollection/collector-precollection.errors';
+import { CollectorPrecollectionForbiddenError, CollectorPrecollectionValidationError } from '../src/domain/collector-precollection/collector-precollection.errors';
 import type { CollectorPrecollectionStore } from '../src/application/collector-precollection/collector-precollection.ports';
 import {
   CancelCollectorPrecollectionUseCase,
@@ -38,6 +38,14 @@ describe('collector precollection application rules', () => {
     await new CreateCollectorPrecollectionUseCase(persistence, clock).execute({ ...input, notes: '  Door receipt  ' }, actor());
     expect(persistence.create).toHaveBeenCalledWith(expect.objectContaining({ notes: 'Door receipt' }), uuid(1),
       expect.stringContaining('Door receipt'));
+  });
+
+  it('rejects new precollections received directly by the company', () => {
+    const persistence = store();
+    expect(() => new CreateCollectorPrecollectionUseCase(persistence, clock).execute({
+      ...input, custodyTreatment: 'COMPANY_RECEIVED',
+    }, actor())).toThrow(expect.objectContaining({ reasonCode: 'CUSTODY_TREATMENT_INVALID', field: 'custodyTreatment' }));
+    expect(persistence.create).not.toHaveBeenCalled();
   });
 
   it.each(['2026-02-30', '2026/10/12', '2026-10-13'])('rejects invalid or future effective date %s', async (effectiveDate) => {
@@ -84,6 +92,13 @@ describe('collector precollection application rules', () => {
     expect(persistence.detail).toHaveBeenLastCalledWith(uuid(9), undefined);
     await useCase.execute(uuid(9), actor([], true));
     expect(persistence.detail).toHaveBeenLastCalledWith(uuid(9), undefined);
+  });
+
+  it('rejects receipt detail access without assigned or global view permission', async () => {
+    const persistence = store();
+    await expect(new GetCollectorPrecollectionDetailUseCase(persistence).execute(uuid(9), actor()))
+      .rejects.toBeInstanceOf(CollectorPrecollectionForbiddenError);
+    expect(persistence.detail).not.toHaveBeenCalled();
   });
 
   it('normalizes cancellation audit data and grants global scope only with global view', async () => {

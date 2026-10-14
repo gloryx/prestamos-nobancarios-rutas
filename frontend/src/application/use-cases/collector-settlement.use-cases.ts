@@ -5,6 +5,7 @@ export class CollectorSettlementService {
   constructor(private readonly repository: CollectorSettlementRepository) {}
   create(input: CreateCollectorSettlementInput) { return this.repository.create(input); }
   mine() { return this.repository.mine(); }
+  eligible(query: { page: number; pageSize: 10 | 20 | 50 }) { return this.repository.eligible(query); }
   list() { return this.repository.list(); }
   detail(id: string) { return this.repository.detail(id); }
   submit(id: string, input: CollectorSettlementActionInput) { return this.repository.submit(id, input); }

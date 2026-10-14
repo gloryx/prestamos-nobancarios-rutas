@@ -1,5 +1,5 @@
 import { CollectorPrecollectionValidationError } from './collector-precollection.errors';
-import { COLLECTOR_CUSTODY_TREATMENTS, type CollectorCustodyTreatment } from './collector-precollection.types';
+import type { CollectorCustodyTreatment } from './collector-precollection.types';
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const MONEY = /^(?:0|[1-9]\d{0,15})(?:\.\d{1,2})?$/;
@@ -46,8 +46,8 @@ export function normalizeCollectorPrecollectionInput(
   if (!UUID.test(input.paymentMethodId ?? '')) {
     throw new CollectorPrecollectionValidationError('Selecciona una forma de pago válida.', 'PAYMENT_METHOD_INVALID', 'paymentMethodId');
   }
-  if (!COLLECTOR_CUSTODY_TREATMENTS.includes(input.custodyTreatment)) {
-    throw new CollectorPrecollectionValidationError('Indica quién recibió físicamente el dinero.', 'CUSTODY_TREATMENT_INVALID', 'custodyTreatment');
+  if (input.custodyTreatment !== 'COLLECTOR_HELD') {
+    throw new CollectorPrecollectionValidationError('El cobro debe permanecer bajo custodia del cobrador hasta su liquidación.', 'CUSTODY_TREATMENT_INVALID', 'custodyTreatment');
   }
   if (!isStrictDate(input.effectiveDate) || input.effectiveDate > costaRicaToday) {
     throw new CollectorPrecollectionValidationError('La fecha del cobro no es válida ni puede ser futura.', 'EFFECTIVE_DATE_INVALID', 'effectiveDate');

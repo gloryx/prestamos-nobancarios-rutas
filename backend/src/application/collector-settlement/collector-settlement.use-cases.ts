@@ -51,6 +51,20 @@ export class ListCollectorSettlementsUseCase {
   }
 }
 
+export class ListEligibleCollectorPrecollectionsUseCase {
+  constructor(private readonly store: CollectorSettlementStore) {}
+  execute(query: { page: number; pageSize: number }, actor: CurrentIdentity) {
+    if (!can(actor, 'collector-settlements.self.view')) {
+      throw new CollectorSettlementForbiddenError('No tienes permiso para consultar cobros elegibles.');
+    }
+    if (!Number.isSafeInteger(query.page) || query.page < 1 || !Number.isSafeInteger(query.pageSize)
+      || query.pageSize < 1 || query.pageSize > 50) {
+      throw new CollectorSettlementValidationError('La paginación no es válida.', 'PAGINATION_INVALID');
+    }
+    return this.store.eligible(actor.id, query);
+  }
+}
+
 export class GetCollectorSettlementUseCase {
   constructor(private readonly store: CollectorSettlementStore) {}
   async execute(id: string, actor: CurrentIdentity) {

@@ -38,9 +38,17 @@ export class CollectorSettlementTypeOrmStore implements CollectorSettlementStore
       settlement.cancelled_at AS "cancelledAt" FROM collector_settlements settlement
       WHERE settlement.id = $1${scope}`, params);
     if (!settlement) return null;
-    const items = await executor.query(`SELECT id, settlement_id AS "settlementId", precollection_id AS "precollectionId",
-      declared_amount::text AS "declaredAmount", confirmed_amount::text AS "confirmedAmount", payment_id AS "paymentId"
-      FROM collector_settlement_items WHERE settlement_id = $1 ORDER BY created_at, id`, [id]);
+    const items = await executor.query(`SELECT item.id, item.settlement_id AS "settlementId",
+      item.precollection_id AS "precollectionId",
+      concat_ws(' ', customer.first_name, customer.middle_name, customer.first_last_name, customer.second_last_name) AS "customerName",
+      loan.loan_number::text AS "loanNumber", precollection.effective_date::text AS "effectiveDate",
+      item.declared_amount::text AS "declaredAmount", item.confirmed_amount::text AS "confirmedAmount",
+      item.payment_id AS "paymentId"
+      FROM collector_settlement_items item
+      JOIN collector_precollections precollection ON precollection.id = item.precollection_id
+      JOIN customers customer ON customer.id = precollection.customer_id
+      JOIN loans loan ON loan.id = precollection.loan_id
+      WHERE item.settlement_id = $1 ORDER BY item.created_at, item.id`, [id]);
     const actions = await executor.query(`SELECT id, action, actor_user_id AS "actorUserId", reason, created_at AS "createdAt"
       FROM collector_settlement_actions WHERE settlement_id = $1 ORDER BY created_at, id`, [id]);
     return { ...settlement, items, actions } as CollectorSettlementDetail;
@@ -108,6 +116,46 @@ export class CollectorSettlementTypeOrmStore implements CollectorSettlementStore
     const scope = actorUserId ? ` WHERE collector_user_id = $${params.push(actorUserId)}` : '';
     const rows = await this.source.query(`SELECT id FROM collector_settlements${scope} ORDER BY created_at DESC, id`, params);
     return Promise.all(rows.map((row: { id: string }) => this.detailWith(this.source, row.id))).then((items) => items.filter(Boolean) as CollectorSettlementDetail[]);
+  }
+  async eligible(actorUserId: string, query: { page: number; pageSize: number }) {
+    await this.assertActor(this.source, actorUserId);
+    const [items, aggregate] = await Promise.all([
+      this.source.query(`SELECT cp.id, cp.receipt_number AS "receiptNumber",
+        concat_ws(' ', customer.first_name, customer.middle_name, customer.first_last_name, customer.second_last_name) AS "customerName",
+        loan.loan_number::text AS "loanNumber", method.name AS "paymentMethodName",
+        cp.amount::text AS amount, cp.effective_date::text AS "effectiveDate"
+        FROM collector_precollections cp
+        JOIN customers customer ON customer.id = cp.customer_id
+        JOIN loans loan ON loan.id = cp.loan_id
+        JOIN payment_methods method ON method.id = cp.payment_method_id
+        WHERE cp.collector_user_id = $1 AND cp.status = 'RECORDED'
+          AND NOT EXISTS (SELECT 1 FROM collector_settlement_items item
+            WHERE item.precollection_id = cp.id AND item.active_reservation = true)
+        ORDER BY cp.effective_date, cp.recorded_at, cp.id LIMIT $2 OFFSET $3`,
+      [actorUserId, query.pageSize, (query.page - 1) * query.pageSize]),
+      this.source.query(`WITH owned AS (
+        SELECT cp.id, cp.amount, cp.status, reservation.status AS settlement_status
+        FROM collector_precollections cp
+        LEFT JOIN LATERAL (
+          SELECT settlement.status FROM collector_settlement_items item
+          JOIN collector_settlements settlement ON settlement.id = item.settlement_id
+          WHERE item.precollection_id = cp.id AND item.active_reservation = true
+          ORDER BY item.created_at, item.id LIMIT 1
+        ) reservation ON true
+        WHERE cp.collector_user_id = $1
+      ) SELECT
+        (COUNT(*) FILTER (WHERE status = 'RECORDED' AND settlement_status IS NULL))::int AS "availableCount",
+        COALESCE(SUM(amount) FILTER (WHERE status = 'RECORDED' AND settlement_status IS NULL),0)::numeric(18,2)::text AS "availableAmount",
+        (COUNT(*) FILTER (WHERE settlement_status = 'DRAFT'))::int AS "draftReservedCount",
+        COALESCE(SUM(amount) FILTER (WHERE settlement_status = 'DRAFT'),0)::numeric(18,2)::text AS "draftReservedAmount",
+        (COUNT(*) FILTER (WHERE settlement_status IN ('SUBMITTED','UNDER_REVIEW')))::int AS "submittedOrUnderReviewCount",
+        COALESCE(SUM(amount) FILTER (WHERE settlement_status IN ('SUBMITTED','UNDER_REVIEW')),0)::numeric(18,2)::text AS "submittedOrUnderReviewAmount"
+        FROM owned`, [actorUserId]),
+    ]);
+    const summary = aggregate[0] ?? { availableCount: 0, availableAmount: '0.00', draftReservedCount: 0,
+      draftReservedAmount: '0.00', submittedOrUnderReviewCount: 0, submittedOrUnderReviewAmount: '0.00' };
+    return { items, total: summary.availableCount, page: query.page, pageSize: query.pageSize,
+      totalPages: Math.ceil(summary.availableCount / query.pageSize), summary };
   }
   detail(id: string, actorUserId?: string) { return this.detailWith(this.source, id, actorUserId); }
 

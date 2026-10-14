@@ -3,11 +3,13 @@ import type { CollectorCustodyCommand, CollectorCustodyStore } from '../../../..
 import { CollectorCustodyConflictError, CollectorCustodyForbiddenError,
   CollectorCustodyNotFoundError } from '../../../../domain/collector-custody/collector-custody.errors';
 import type { CollectorCustodyEntry, CollectorCustodySummary } from '../../../../domain/collector-custody/collector-custody.types';
+import type { TransactionalCashMovementRecorder } from '../../../../application/cash-movement/cash-movement.use-cases';
+import { createHash } from 'node:crypto';
 
 const cents = (value: string) => { const negative = value.startsWith('-'); const [whole, fraction = ''] = (negative ? value.slice(1) : value).split('.'); const amount = BigInt(whole) * 100n + BigInt(fraction.padEnd(2, '0')); return negative ? -amount : amount; };
 const money = (value: bigint) => { const negative = value < 0n; const absolute = negative ? -value : value; return `${negative ? '-' : ''}${absolute / 100n}.${(absolute % 100n).toString().padStart(2, '0')}`; };
 export class CollectorCustodyTypeOrmStore implements CollectorCustodyStore {
-  constructor(private readonly source: DataSource) {}
+  constructor(private readonly source: DataSource, private readonly cash: TransactionalCashMovementRecorder) {}
   private async collector(executor: Pick<EntityManager, 'query'>, actorUserId: string, requested: string | undefined, allowGlobal: boolean) {
     const [actor] = await executor.query(`SELECT actor.id, collector.id AS "collectorId" FROM users actor
       LEFT JOIN collectors collector ON collector.user_id = actor.id AND collector.is_active = true
@@ -24,10 +26,14 @@ export class CollectorCustodyTypeOrmStore implements CollectorCustodyStore {
     const [safe] = await this.source.query(`SELECT
       COALESCE((SELECT SUM(CASE direction WHEN 'CREDIT' THEN amount ELSE -amount END)
         FROM collector_custody_entries WHERE collector_id = $1),0)::numeric(18,2)::text AS "declaredBalance",
+      COALESCE((SELECT SUM(CASE direction WHEN 'CREDIT' THEN amount ELSE -amount END)
+        FROM collector_custody_entries WHERE collector_id = $1
+          AND entry_type = 'COMPANY_TOP_UP'),0)::numeric(18,2)::text AS "companyContributionAmount",
       COALESCE((SELECT SUM(amount) FROM collector_precollections WHERE collector_id = $1
         AND custody_treatment = 'COLLECTOR_HELD' AND status IN ('RECORDED','SUBMITTED')),0)::numeric(18,2)::text AS "pendingAmount"`, [collectorId]);
     const declared = cents(safe.declaredBalance); const pending = cents(safe.pendingAmount);
-    return { collectorId, declaredBalance: money(declared), confirmedBalance: money(declared - pending),
+    return { collectorId, declaredBalance: money(declared), companyContributionAmount: safe.companyContributionAmount,
+      confirmedBalance: money(declared - pending),
       pendingAmount: safe.pendingAmount, differenceAmount: safe.pendingAmount };
   }
   async history(actorUserId: string, requested: string | undefined, allowGlobal: boolean) {
@@ -55,6 +61,16 @@ export class CollectorCustodyTypeOrmStore implements CollectorCustodyStore {
           reference, reason, notes, precollection_id AS "precollectionId", settlement_id AS "settlementId",
           reversed_entry_id AS "reversedEntryId", created_by_user_id AS "createdByUserId", created_at AS "createdAt"
           FROM collector_custody_entries WHERE id = $1`, [existing.id]);
+        if (kind === 'topup') {
+          const [cash] = await manager.query(`SELECT amount::text AS amount, movement_date::text AS "effectiveDate",
+            payment_method_id AS "paymentMethodId", observations AS reference, created_by_user_id AS "createdByUserId"
+            FROM cash_movements WHERE collector_custody_entry_id = $1 AND concept = 'COLLECTOR_CUSTODY_TRANSFER' FOR SHARE`, [existing.id]);
+          if (!cash || cash.amount !== entry.amount || cash.effectiveDate !== entry.effectiveDate
+            || cash.paymentMethodId !== entry.paymentMethodId || cash.reference !== entry.reference
+            || cash.createdByUserId !== entry.createdByUserId) {
+            throw new CollectorCustodyConflictError('El aporte no concilia con su salida de Caja.', 'TOP_UP_CASH_MISMATCH');
+          }
+        }
         return entry as CollectorCustodyEntry;
       }
       await manager.query(`SELECT pg_advisory_xact_lock_shared(hashtext('financial-closes-v2'))`);
@@ -90,6 +106,13 @@ export class CollectorCustodyTypeOrmStore implements CollectorCustodyStore {
           created_by_user_id AS "createdByUserId", created_at AS "createdAt"`,
       [collectorId, direction, entryType, command.amount, command.effectiveDate, command.paymentMethodId,
         command.reference, command.reason, command.notes, actorUserId, command.idempotencyKey, fingerprint]);
+      if (kind === 'topup') {
+        const cashKey = `collector-topup:${createHash('sha256').update(command.idempotencyKey).digest('hex')}`;
+        await this.cash.recordWithManager(manager, { direction: 'OUTFLOW', concept: 'COLLECTOR_CUSTODY_TRANSFER',
+          amount: command.amount, movementDate: command.effectiveDate, paymentMethodId: command.paymentMethodId!,
+          observations: command.reference, collectorCustodyEntryId: created.id, createdByUserId: actorUserId,
+          idempotencyKey: cashKey, idempotencyFingerprint: fingerprint });
+      }
       return created as CollectorCustodyEntry;
     });
   }

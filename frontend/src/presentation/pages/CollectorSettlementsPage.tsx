@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react';
-import { collectorPrecollections } from '../../app/collector-precollections';
 import { collectorSettlements } from '../../app/collector-settlements';
-import type { CollectorPrecollectionDetail } from '../../domain/entities/collector-precollection';
-import type { CollectorSettlementDetail, CollectorSettlementStatus } from '../../domain/entities/collector-settlement';
+import type { CollectorSettlementDetail, CollectorSettlementStatus,
+  EligibleCollectorPrecollectionPage } from '../../domain/entities/collector-settlement';
 import { costaRicaDateOnly, formatDateOnlyForDisplay, formatDateTimeForDisplay } from '../../shared/utils/date';
 import { formatCRC } from '../../shared/utils/money';
 import { MoneyInput } from '../components/MoneyInput';
@@ -18,11 +17,12 @@ export function CollectorSettlementsPage(): ReactElement { return <SettlementsVi
 export function SettlementManagementPage(): ReactElement { return <SettlementsView mine={false} />; }
 
 function SettlementsView({ mine }: { mine: boolean }): ReactElement {
-  const { can } = useAuth(); const [items, setItems] = useState<CollectorSettlementDetail[]>([]); const [eligible, setEligible] = useState<CollectorPrecollectionDetail[]>([]);
+  const { can } = useAuth(); const [items, setItems] = useState<CollectorSettlementDetail[]>([]);
+  const [eligibility, setEligibility] = useState<EligibleCollectorPrecollectionPage>(); const [eligiblePage, setEligiblePage] = useState(1);
   const [selectedIds, setSelectedIds] = useState<string[]>([]); const [selected, setSelected] = useState<CollectorSettlementDetail>(); const [tab, setTab] = useState<'ALL' | CollectorSettlementStatus>('ALL');
   const [loading, setLoading] = useState(true); const [error, setError] = useState(''); const [busy, setBusy] = useState(false); const [action, setAction] = useState<Action>(); const [reason, setReason] = useState('');
   const [delivery, setDelivery] = useState({ amount: '', date: costaRicaDateOnly(), paymentMethodId: '', reference: '', notes: '' }); const retries = useRef<Record<string, RetryKeyState>>({});
-  const load = useCallback(async () => { setLoading(true); setError(''); try { const [settlements, pending] = await Promise.all([mine ? collectorSettlements.mine() : collectorSettlements.list(), mine ? collectorPrecollections.mine({ status: 'RECORDED', page: 1, pageSize: 100 }) : Promise.resolve(undefined)]); setItems(settlements); if (pending) setEligible(pending.items); } catch (cause) { setError(errorMessage(cause, 'No se pudieron cargar las liquidaciones.')); } finally { setLoading(false); } }, [mine]);
+  const load = useCallback(async () => { setLoading(true); setError(''); try { const [settlements, pending] = await Promise.all([mine ? collectorSettlements.mine() : collectorSettlements.list(), mine ? collectorSettlements.eligible({ page: eligiblePage, pageSize: 20 }) : Promise.resolve(undefined)]); setItems(settlements); if (pending) { setEligibility(pending); if (pending.totalPages > 0 && eligiblePage > pending.totalPages) setEligiblePage(pending.totalPages); } } catch (cause) { setError(errorMessage(cause, 'No se pudieron cargar las liquidaciones.')); } finally { setLoading(false); } }, [eligiblePage, mine]);
   useEffect(() => { void load(); }, [load]);
   const create = async () => { if (!selectedIds.length || busy) return; const request = { precollectionIds: [...selectedIds].sort() }; const key = retryKeyFor(request, retries.current.create); retries.current.create = key; setBusy(true); setError(''); try { const created = await collectorSettlements.create({ precollectionIds: request.precollectionIds, idempotencyKey: key.key }); setSelected(created); setSelectedIds([]); delete retries.current.create; await load(); } catch (cause) { setError(errorMessage(cause, 'No se pudo crear el borrador de liquidación.')); } finally { setBusy(false); } };
   const openAction = (next: Action) => { setAction(next); setReason(''); setDelivery({ amount: '', date: costaRicaDateOnly(), paymentMethodId: '', reference: '', notes: '' }); setError(''); };
@@ -32,12 +32,48 @@ function SettlementsView({ mine }: { mine: boolean }): ReactElement {
   const availableActions = (item: CollectorSettlementDetail): Action[] => settlementActionsFor(item.status, mine, can);
   return <section className={`stage3b ${mine ? 'stage3b--collector' : 'stage3b--admin'}`} aria-labelledby="settlements-title"><header className="stage3b__heading"><div><span className="eyebrow">{mine ? 'COBRADOR' : 'LIQUIDACIONES'}</span><h1 id="settlements-title">{mine ? 'Mis liquidaciones' : 'Gestión de liquidaciones'}</h1><p>{mine ? 'Agrupá cobros registrados en un borrador y envialo explícitamente cuando esté listo.' : 'Listado completo cargado del servidor. Las pestañas filtran localmente este resultado sin simular paginación.'}</p></div></header>
     {error && <div className="catalog-message catalog-message--error" role="alert">{error}</div>}
-    {mine && <section className="stage3b__panel" aria-labelledby="eligible-title"><div className="stage3b__section-heading"><div><h2 id="eligible-title">Cobros pendientes elegibles</h2><p>Solo cobros propios en estado Registrado.</p></div><button className="button button--primary" disabled={!selectedIds.length || busy || !can('collector-settlements.self.create')} onClick={() => void create()}>{busy ? 'Creando…' : `Crear borrador (${selectedIds.length})`}</button></div>{!eligible.length ? <p className="stage3b__message">No hay cobros registrados pendientes de liquidar.</p> : <div className="stage3b__cards">{eligible.map((item) => <label className="stage3b-card stage3b-card--selectable" key={item.id}><input type="checkbox" checked={selectedIds.includes(item.id)} onChange={(event) => setSelectedIds(event.target.checked ? [...selectedIds, item.id] : selectedIds.filter((id) => id !== item.id))} /><span><strong>{item.customerName}</strong><span>{item.loanNumber} · {formatDateOnlyForDisplay(item.effectiveDate)}</span><strong>{formatCRC(item.amount)}</strong></span></label>)}</div>}</section>}
+    {mine && <EligiblePrecollectionsPanel result={eligibility} selectedIds={selectedIds} busy={busy}
+      canCreate={can('collector-settlements.self.create')} onSelection={setSelectedIds} onCreate={() => void create()}
+      onPage={setEligiblePage} />}
     <div className="stage3b__tabs" aria-label="Estados cargados"><button className={tab === 'ALL' ? 'active' : ''} onClick={() => setTab('ALL')}>Todas ({items.length})</button>{statuses.map((value) => <button className={tab === value ? 'active' : ''} key={value} onClick={() => setTab(value)}>{settlementStatusLabel[value]} ({count(value)})</button>)}</div>
     {loading ? <div className="catalog-message">Cargando liquidaciones…</div> : !filtered.length ? <div className="catalog-message">No hay liquidaciones en este estado dentro del resultado cargado.</div> : mine ? <div className="stage3b__cards">{filtered.map((item) => <SettlementCard item={item} actions={availableActions(item)} select={setSelected} act={(value) => { setSelected(item); openAction(value); }} key={item.id} />)}</div> : <SettlementTable items={filtered} actions={availableActions} select={setSelected} act={(item, value) => { setSelected(item); openAction(value); }} />}
-    {selected && !action && <SettlementDetail item={selected} actions={availableActions(selected)} close={() => setSelected(undefined)} act={openAction} />}
+    {selected && !action && (mine ? <CollectorSettlementDetail item={selected} actions={availableActions(selected)} close={() => setSelected(undefined)} act={openAction} /> : <SettlementDetail item={selected} actions={availableActions(selected)} close={() => setSelected(undefined)} act={openAction} />)}
     {selected && action && <SettlementActionDialog item={selected} action={action} reason={reason} setReason={setReason} delivery={delivery} setDelivery={setDelivery} busy={busy} close={() => setAction(undefined)} execute={() => void execute()} />}
   </section>;
+}
+
+export function EligiblePrecollectionsPanel({ result, selectedIds, busy, canCreate, onSelection, onCreate, onPage }: {
+  result?: EligibleCollectorPrecollectionPage; selectedIds: string[]; busy: boolean; canCreate: boolean;
+  onSelection: (ids: string[]) => void; onCreate: () => void; onPage: (page: number) => void;
+}): ReactElement {
+  const summary = result?.summary;
+  return <section className="stage3b__panel" aria-labelledby="eligible-title"><div className="stage3b__section-heading"><div><h2 id="eligible-title">Cobros pendientes elegibles</h2><p>Todos tus cobros registrados y libres, sin limitarse a la fecha de hoy.</p></div>{canCreate && <button className="button button--primary" disabled={!selectedIds.length || busy} onClick={onCreate}>{busy ? 'Creando…' : `Crear borrador (${selectedIds.length})`}</button>}</div>
+    {summary && <div className="stage3b__summary" aria-label="Resumen de cobros para liquidación"><article><span>Libres para liquidar</span><strong>{formatCRC(summary.availableAmount)}</strong><small>{summary.availableCount} cobros</small></article><article><span>Reservados en borradores</span><strong>{formatCRC(summary.draftReservedAmount)}</strong><small>{summary.draftReservedCount} cobros</small></article><article><span>Enviados o en revisión</span><strong>{formatCRC(summary.submittedOrUnderReviewAmount)}</strong><small>{summary.submittedOrUnderReviewCount} cobros</small></article></div>}
+    {!result?.items.length ? <p className="stage3b__message">No hay cobros registrados libres para liquidar.</p> : <div className="stage3b__cards">{result.items.map((item) => <label className="stage3b-card stage3b-card--selectable" key={item.id}><input type="checkbox" checked={selectedIds.includes(item.id)} onChange={(event) => onSelection(event.target.checked ? [...selectedIds, item.id] : selectedIds.filter((id) => id !== item.id))} /><span><strong>{item.customerName}</strong><span>{item.receiptNumber} · préstamo {item.loanNumber}</span><span>{item.paymentMethodName} · {formatDateOnlyForDisplay(item.effectiveDate)}</span><strong>{formatCRC(item.amount)}</strong></span></label>)}</div>}
+    {result && result.total > 0 && <div className="stage3b__pagination"><button className="button button--secondary" type="button" disabled={result.page <= 1 || busy} onClick={() => onPage(result.page - 1)}>Anterior</button><span>Página {result.page} de {Math.max(1, result.totalPages)} · {result.total} cobros libres</span><button className="button button--secondary" type="button" disabled={result.page >= result.totalPages || busy} onClick={() => onPage(result.page + 1)}>Siguiente</button></div>}
+  </section>;
+}
+
+export function CollectorSettlementDetail({ item, actions, close, act }: {
+  item: CollectorSettlementDetail; actions: Action[]; close: () => void; act: (action: Action) => void;
+}): ReactElement {
+  const confirmed = item.status === 'CONFIRMED';
+  const countLabel = `${item.items.length} ${item.items.length === 1 ? 'cobro incluido' : 'cobros incluidos'}`;
+  const pendingMessage = item.status === 'DRAFT'
+    ? 'Los importes confirmado, entregado, retenido y diferencia se completarán después de enviar y confirmar la liquidación.'
+    : item.status === 'SUBMITTED' || item.status === 'UNDER_REVIEW'
+      ? 'La liquidación aún no está confirmada. Esos importes se mostrarán cuando finalice la revisión.'
+      : 'Esta liquidación no fue confirmada, por eso no se muestran importes de confirmación o entrega.';
+  return <div className="dialog-backdrop settlement-detail-backdrop"><div className="dialog stage3b-dialog stage3b-dialog--wide settlement-detail-dialog" role="dialog" aria-modal="true" aria-labelledby="settlement-detail-title">
+    <header className="settlement-detail__header"><div><span className={`status-badge status-badge--${item.status.toLowerCase()}`}>{settlementStatusLabel[item.status]}</span><h3 id="settlement-detail-title">Detalle de liquidación</h3><p>Revisá cada cobro antes de continuar.</p></div></header>
+    <section className="settlement-detail__declared" aria-label="Total declarado"><span>Total declarado</span><strong>{formatCRC(item.totalDeclared)}</strong><small>{countLabel}</small></section>
+    {confirmed ? <section aria-labelledby="settlement-result-title"><h4 id="settlement-result-title">Resultado confirmado</h4><div className="stage3b__summary settlement-detail__result"><article><span>Confirmado</span><strong>{formatCRC(item.totalConfirmed)}</strong></article><article><span>Entregado</span><strong>{formatCRC(item.amountDelivered)}</strong></article><article><span>Retenido</span><strong>{formatCRC(item.retainedAmount)}</strong></article><article><span>Diferencia</span><strong>{formatCRC(item.differenceAmount)}</strong></article></div></section>
+      : <p className="settlement-detail__pending">{pendingMessage}</p>}
+    <section aria-labelledby="settlement-items-title"><div className="settlement-detail__section-heading"><h4 id="settlement-items-title">Cobros incluidos</h4><span>{countLabel}</span></div><div className="settlement-detail__items">{item.items.map((entry) => <article className="settlement-detail-item" key={entry.id}><div><strong>{entry.customerName}</strong><span>Préstamo {entry.loanNumber}</span></div><dl><div><dt>Fecha del cobro</dt><dd>{formatDateOnlyForDisplay(entry.effectiveDate)}</dd></div><div><dt>Monto declarado</dt><dd>{formatCRC(entry.declaredAmount)}</dd></div></dl></article>)}</div></section>
+    {confirmed && <section className="settlement-detail__delivery" aria-labelledby="settlement-delivery-title"><h4 id="settlement-delivery-title">Entrega confirmada</h4><p>{item.deliveryDate ? `${formatDateOnlyForDisplay(item.deliveryDate)} · ${item.deliveryReference ? `referencia ${item.deliveryReference}` : 'sin referencia'}` : 'Sin fecha de entrega registrada.'}</p></section>}
+    <section aria-labelledby="settlement-history-title"><h4 id="settlement-history-title">Historial de acciones</h4>{item.actions.length ? <ol className="stage3b__history">{item.actions.map((entry) => <li key={entry.id}><strong>{entry.action}</strong> · {formatDateTimeForDisplay(entry.createdAt)}{entry.reason ? ` · ${entry.reason}` : ''}</li>)}</ol> : <p className="stage3b__message">Sin acciones registradas.</p>}</section>
+    <div className="dialog-actions settlement-detail__actions"><button className="button button--secondary" type="button" onClick={close}>Cerrar</button>{actions.map((action) => <button className={`button ${action === 'reject' || action === 'cancel' ? 'button--danger' : 'button--primary'}`} type="button" key={action} onClick={() => act(action)}>{actionLabels[action]}</button>)}</div>
+  </div></div>;
 }
 
 const actionLabels: Record<Action, string> = { submit: 'Enviar', review: 'Iniciar revisión', reject: 'Rechazar', cancel: 'Cancelar', confirm: 'Confirmar' };

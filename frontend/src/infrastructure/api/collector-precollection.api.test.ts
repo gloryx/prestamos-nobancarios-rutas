@@ -33,13 +33,16 @@ describe('collector precollection API', () => {
   });
 
   it('preserves paginated indicators, navigation and nullable detail fields', async () => {
-    const item = { id: 'pre-1', collectorId: 'collector-1', collectorUserId: 'user-1', customerId: 'customer-1', loanId: 'loan-1',
+    const item = { id: 'pre-1', receiptNumber: 'CP-000000000001', collectorId: 'collector-1', collectorUserId: 'user-1',
+      customerId: 'customer-1', loanId: 'loan-1',
       routeId: 'route-1', customerRouteAssignmentId: 'customer-route-1', collectorRouteAssignmentId: 'collector-route-1',
       paymentMethodId: 'method-1', custodyTreatment: 'COLLECTOR_HELD', amount: '25.00', effectiveDate: '2026-10-12',
       reference: null, notes: null, status: 'RECORDED', recordedByUserId: 'user-1', recordedAt: '2026-10-12T12:00:00.000Z',
       cancelledByUserId: null, cancelledAt: null, cancellationReason: null, collectorName: 'Cobrador Uno', customerName: 'Ana Mora',
-      customerIdentification: '1-2345-6789', loanNumber: '42', routeName: 'Ruta Centro', paymentMethodName: 'Efectivo',
-      recordedByName: 'Cobrador Uno', cancelledByName: null };
+      customerIdentification: '1-2345-6789', customerPhone: '88887777', customerSecondaryPhone: '87776666', loanNumber: '42', routeName: 'Ruta Centro', paymentMethodName: 'Efectivo',
+      recordedByName: 'Cobrador Uno', cancelledByName: null, financialBalance: '100.00',
+      reservedPrecollections: '25.00', operationalBalance: '75.00', customerBalanceBefore: '100.00',
+      customerBalanceAfter: '75.00' };
     const page = { items: [item], total: 1, page: 1, pageSize: 20, totalPages: 1,
       indicators: { count: 1, total: '25.00', cash: '25.00', electronic: '0.00', pending: '25.00', cancelled: '0.00' },
       navigation: { selectedDate: '2026-10-12', today: '2026-10-12', previousDate: '2026-10-11', nextDate: null } };
@@ -57,7 +60,7 @@ describe('collector precollection API', () => {
       data: { fields: [{ field: 'amount', codes: ['AMOUNT_INVALID'], message: 'Invalid amount' }] },
     }) } as Response);
     const error = await new CollectorPrecollectionApi().create({ customerId: 'c', loanId: 'l', paymentMethodId: 'm',
-      custodyTreatment: 'COMPANY_RECEIVED', amount: '0', effectiveDate: '2026-10-12', idempotencyKey: 'key' })
+      custodyTreatment: 'COLLECTOR_HELD', amount: '0', effectiveDate: '2026-10-12', idempotencyKey: 'key' })
       .catch((failure: unknown) => failure);
     expect(error).toMatchObject({ status: 400, errorCode: 'VALIDATION_FAILED', reasonCode: 'AMOUNT_INVALID', requestId: 'request-1',
       fieldErrors: [{ field: 'amount', codes: ['AMOUNT_INVALID'], message: 'Invalid amount' }] });

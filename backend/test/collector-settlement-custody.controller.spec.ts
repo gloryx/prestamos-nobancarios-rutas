@@ -10,6 +10,7 @@ describe('Stage 3A HTTP boundaries', () => {
     const settlements = CollectorSettlementController.prototype;
     expect(Reflect.getMetadata(PERMISSIONS_KEY, settlements.create)).toEqual([]);
     expect(Reflect.getMetadata(PERMISSIONS_KEY, settlements.mine)).toEqual([]);
+    expect(Reflect.getMetadata(PERMISSIONS_KEY, settlements.eligible)).toEqual([]);
     expect(Reflect.getMetadata(PERMISSIONS_KEY, settlements.list)).toEqual(['collector-settlements.view']);
     expect(Reflect.getMetadata(PERMISSIONS_KEY, settlements.review)).toEqual(['collector-settlements.review']);
     expect(Reflect.getMetadata(PERMISSIONS_KEY, settlements.confirm)).toEqual(['collector-settlements.confirm']);
@@ -20,7 +21,7 @@ describe('Stage 3A HTTP boundaries', () => {
   });
 
   it('maps settlement conflicts and custody validation to the standard structured envelope', async () => {
-    const settlements = new CollectorSettlementController({} as never, {} as never, {} as never, {} as never,
+    const settlements = new CollectorSettlementController({} as never, {} as never, {} as never, {} as never, {} as never,
       { execute: jest.fn().mockRejectedValue(new CollectorSettlementConflictError('Closed', 'CLOSED_FINANCIAL_PERIOD')) } as never);
     await expect(settlements.confirm('id', {} as never, {} as never)).rejects.toMatchObject({ status: 409,
       response: { errorCode: 'RESOURCE_STATE_CONFLICT', reasonCode: 'CLOSED_FINANCIAL_PERIOD' } });

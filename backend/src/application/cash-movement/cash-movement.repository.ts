@@ -1,7 +1,7 @@
 import type { CashMovement, CashMovementConcept, CashMovementDirection } from '../../domain/cash-movement/cash-movement.types';
 export const CASH_MOVEMENT_REPOSITORY = Symbol('CASH_MOVEMENT_REPOSITORY');
 export type CashMovementFilters = { fromDate?: string; toDate?: string; direction?: CashMovementDirection; concept?: CashMovementConcept; paymentMethodId?: string; search?: string; page: number; pageSize: 20 | 50 | 100 };
-export type CreateCashMovement = { direction: CashMovementDirection; concept: CashMovementConcept; amount: string; movementDate: string; paymentMethodId: string; observations: string | null; reversedMovementId?: string | null; loanDisbursementId?: string | null; createdByUserId: string; idempotencyKey?: string | null; idempotencyFingerprint?: string | null };
+export type CreateCashMovement = { direction: CashMovementDirection; concept: CashMovementConcept; amount: string; movementDate: string; paymentMethodId: string; observations: string | null; reversedMovementId?: string | null; loanDisbursementId?: string | null; collectorCustodyEntryId?: string | null; createdByUserId: string; idempotencyKey?: string | null; idempotencyFingerprint?: string | null };
 export type PeriodSummary = { inflows: string; outflows: string; net: string; currentAvailable: string | null; openingDate: string | null };
 export type CashMovementListItem = CashMovement & { loanNumber?: string | null; reversedConcept?: CashMovementConcept | null };
 export type CashMovementBeforeWrite = (transactionContext: unknown) => Promise<void>;

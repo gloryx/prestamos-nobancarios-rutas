@@ -1,4 +1,4 @@
-import type { CollectorCustodyTreatment, CollectorPrecollectionDetail, CollectorPrecollectionPage,
+import type { CollectorPrecollectionDetail, CollectorPrecollectionPage,
   CollectorPrecollectionStatus } from '../../domain/entities/collector-precollection';
 
 export type CollectorPrecollectionListQuery = {
@@ -20,7 +20,7 @@ export type CreateCollectorPrecollectionInput = {
   customerId: string;
   loanId: string;
   paymentMethodId: string;
-  custodyTreatment: CollectorCustodyTreatment;
+  custodyTreatment: 'COLLECTOR_HELD';
   amount: string;
   effectiveDate: string;
   reference?: string;

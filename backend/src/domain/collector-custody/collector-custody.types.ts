@@ -27,6 +27,7 @@ export type CollectorCustodyEntry = {
 export type CollectorCustodySummary = {
   collectorId: string;
   declaredBalance: string;
+  companyContributionAmount: string;
   confirmedBalance: string;
   pendingAmount: string;
   differenceAmount: string;

@@ -6,6 +6,7 @@ import type {
 } from '../../../../application/collector-precollection/collector-precollection.ports';
 import type { NormalizedCollectorPrecollectionInput } from '../../../../domain/collector-precollection/collector-precollection.rules';
 import type { CollectorPrecollectionDetail } from '../../../../domain/collector-precollection/collector-precollection.types';
+import { calculateCustomerVisibleBalance } from '../../../../domain/collector-precollection/customer-visible-balance';
 import {
   CollectorPrecollectionConflictError,
   CollectorPrecollectionForbiddenError,
@@ -21,21 +22,28 @@ const cents = (value: string): bigint => {
   return BigInt(whole) * 100n + BigInt(fraction.padEnd(2, '0'));
 };
 
-const DETAIL_SQL = `SELECT cp.id,
+const DETAIL_SQL = `SELECT cp.id, cp.receipt_number AS "receiptNumber",
   cp.collector_id AS "collectorId", cp.collector_user_id AS "collectorUserId",
   cp.customer_id AS "customerId", cp.loan_id AS "loanId", cp.route_id AS "routeId",
   cp.customer_route_assignment_id AS "customerRouteAssignmentId",
   cp.collector_route_assignment_id AS "collectorRouteAssignmentId",
   cp.payment_method_id AS "paymentMethodId", cp.custody_treatment AS "custodyTreatment", cp.amount::text AS amount,
+  cp.customer_balance_before::text AS "customerBalanceBefore",
+  cp.customer_balance_after::text AS "customerBalanceAfter",
   cp.effective_date::text AS "effectiveDate", cp.reference, cp.notes, cp.status,
   cp.recorded_by_user_id AS "recordedByUserId", cp.recorded_at AS "recordedAt",
   cp.cancelled_by_user_id AS "cancelledByUserId", cp.cancelled_at AS "cancelledAt",
   cp.cancellation_reason AS "cancellationReason",
   concat_ws(' ', collector.first_name, collector.first_last_name, collector.second_last_name) AS "collectorName",
   concat_ws(' ', customer.first_name, customer.middle_name, customer.first_last_name, customer.second_last_name) AS "customerName",
-  customer.identification AS "customerIdentification", loan.loan_number::text AS "loanNumber",
+  customer.identification AS "customerIdentification", customer.primary_phone AS "customerPhone",
+  customer.secondary_phone AS "customerSecondaryPhone",
+  loan.loan_number::text AS "loanNumber",
   route.name AS "routeName", method.name AS "paymentMethodName", recorder.full_name AS "recordedByName",
-  canceller.full_name AS "cancelledByName"
+  canceller.full_name AS "cancelledByName",
+  balances.financial_balance::text AS "financialBalance",
+  balances.reserved_precollections::text AS "reservedPrecollections",
+  (balances.financial_balance - balances.reserved_precollections)::numeric(18,2)::text AS "operationalBalance"
   FROM collector_precollections cp
   JOIN collectors collector ON collector.id = cp.collector_id
   JOIN customers customer ON customer.id = cp.customer_id
@@ -43,7 +51,13 @@ const DETAIL_SQL = `SELECT cp.id,
   JOIN routes route ON route.id = cp.route_id
   JOIN payment_methods method ON method.id = cp.payment_method_id
   JOIN users recorder ON recorder.id = cp.recorded_by_user_id
-  LEFT JOIN users canceller ON canceller.id = cp.cancelled_by_user_id`;
+  LEFT JOIN users canceller ON canceller.id = cp.cancelled_by_user_id
+  JOIN LATERAL (SELECT
+    (loan.total_amount - COALESCE((SELECT SUM(payment.amount) FROM payments payment
+      WHERE payment.loan_id = loan.id AND payment.status = 'VALID'), 0))::numeric(18,2) AS financial_balance,
+    COALESCE((SELECT SUM(pending.amount) FROM collector_precollections pending
+      WHERE pending.loan_id = loan.id AND pending.status IN ('RECORDED','SUBMITTED')), 0)::numeric(18,2) AS reserved_precollections
+  ) balances ON TRUE`;
 
 export class CollectorPrecollectionTypeOrmStore implements CollectorPrecollectionStore {
   constructor(private readonly source: DataSource) {}
@@ -130,8 +144,17 @@ export class CollectorPrecollectionTypeOrmStore implements CollectorPrecollectio
         ($2::numeric(18,2) - COALESCE((SELECT SUM(payment.amount) FROM payments payment
           WHERE payment.loan_id = $1 AND payment.status = 'VALID'), 0))::numeric(18,2)::text AS "financialBalance",
         COALESCE((SELECT SUM(cp.amount) FROM collector_precollections cp
-          WHERE cp.loan_id = $1 AND cp.status IN ('RECORDED','SUBMITTED')), 0)::numeric(18,2)::text AS reserved`,
-      [input.loanId, loan.totalAmount]);
+          WHERE cp.loan_id = $1 AND cp.status IN ('RECORDED','SUBMITTED')), 0)::numeric(18,2)::text AS reserved,
+        ($2::numeric(18,2) - COALESCE((SELECT SUM(payment.amount) FROM payments payment
+          WHERE payment.loan_id = $1 AND payment.status = 'VALID' AND payment.payment_date <= $3), 0))
+          ::numeric(18,2)::text AS "customerFinancialBalance",
+        COALESCE((SELECT SUM(previous.amount) FROM collector_precollections previous
+          WHERE previous.loan_id = $1 AND previous.effective_date <= $3
+            AND previous.status NOT IN ('CANCELLED','REJECTED')
+            AND NOT EXISTS (SELECT 1 FROM collector_settlement_items item
+              JOIN payments linked_payment ON linked_payment.id = item.payment_id AND linked_payment.status = 'VALID'
+              WHERE item.precollection_id = previous.id)), 0)::numeric(18,2)::text AS "unappliedCustomerCollections"`,
+      [input.loanId, loan.totalAmount, input.effectiveDate]);
       if (cents(balance.planBalance) !== cents(balance.financialBalance) || cents(balance.financialBalance) < 0n) {
         throw new CollectorPrecollectionConflictError('El saldo operativo no concilia con el saldo financiero del préstamo.', 'OPERATIONAL_BALANCE_INVALID');
       }
@@ -140,15 +163,26 @@ export class CollectorPrecollectionTypeOrmStore implements CollectorPrecollectio
       if (cents(input.amount) > available) {
         throw new CollectorPrecollectionValidationError('El monto supera el saldo operativo disponible del préstamo.', 'AMOUNT_EXCEEDS_OPERATIONAL_BALANCE', 'amount');
       }
+      const customerBalance = calculateCustomerVisibleBalance(
+        balance.customerFinancialBalance,
+        balance.unappliedCustomerCollections,
+        input.amount,
+      );
+      if (cents(input.amount) > cents(customerBalance.before)) {
+        throw new CollectorPrecollectionValidationError('El monto supera el saldo visible del cliente.', 'AMOUNT_EXCEEDS_OPERATIONAL_BALANCE', 'amount');
+      }
 
       const [created] = await manager.query(`INSERT INTO collector_precollections
         (collector_id, collector_user_id, customer_id, loan_id, route_id, customer_route_assignment_id,
-          collector_route_assignment_id, payment_method_id, custody_treatment, amount, effective_date, reference, notes, status,
+          collector_route_assignment_id, payment_method_id, custody_treatment, amount,
+          customer_balance_before, customer_balance_after, effective_date, reference, notes, status,
           recorded_by_user_id, idempotency_key, idempotency_fingerprint)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::numeric(18,2),$11,$12,$13,'RECORDED',$2,$14,$15)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::numeric(18,2),$11::numeric(18,2),$12::numeric(18,2),
+          $13,$14,$15,'RECORDED',$2,$16,$17)
         RETURNING id`, [actor.collectorId, actorUserId, input.customerId, input.loanId, assignment.routeId,
         assignment.customerRouteAssignmentId, assignment.collectorRouteAssignmentId, input.paymentMethodId,
-        input.custodyTreatment, input.amount, input.effectiveDate, input.reference, input.notes, input.idempotencyKey, fingerprint]);
+        input.custodyTreatment, input.amount, customerBalance.before, customerBalance.after, input.effectiveDate,
+        input.reference, input.notes, input.idempotencyKey, fingerprint]);
       if (input.custodyTreatment === 'COLLECTOR_HELD') {
         await manager.query(`INSERT INTO collector_custody_entries
           (collector_id, direction, entry_type, amount, effective_date, payment_method_id, reference, notes,
@@ -232,6 +266,9 @@ export class CollectorPrecollectionTypeOrmStore implements CollectorPrecollectio
     actorUserId: string, allowGlobal: boolean) {
     return this.source.transaction(async (manager) => {
       await manager.query(`SELECT pg_advisory_xact_lock_shared(hashtext('financial-closes-v2'))`);
+      const [identity] = await manager.query(`SELECT loan_id AS "loanId" FROM collector_precollections WHERE id = $1`, [id]);
+      if (!identity) throw new CollectorPrecollectionNotFoundError('El cobro preliminar no existe.');
+      await manager.query(`SELECT id FROM loans WHERE id = $1 FOR UPDATE`, [identity.loanId]);
       const [row] = await manager.query(`SELECT id, status, collector_id AS "collectorId", custody_treatment AS "custodyTreatment",
         amount::text AS amount, effective_date::text AS "effectiveDate", payment_method_id AS "paymentMethodId",
         collector_user_id AS "collectorUserId",

@@ -1,13 +1,16 @@
 import type { CurrentIdentity } from '../src/domain/security/security.types';
 import type { CollectorSettlementStore } from '../src/application/collector-settlement/collector-settlement.ports';
 import { ConfirmCollectorSettlementUseCase, CreateCollectorSettlementUseCase, GetCollectorSettlementUseCase,
-  TransitionCollectorSettlementUseCase } from '../src/application/collector-settlement/collector-settlement.use-cases';
+  ListEligibleCollectorPrecollectionsUseCase, TransitionCollectorSettlementUseCase } from '../src/application/collector-settlement/collector-settlement.use-cases';
 
 const uuid = (n: number) => `00000000-0000-4000-8000-${n.toString(16).padStart(12, '0')}`;
 const identity = (permissions: string[] = [], superAdmin = false): CurrentIdentity => ({ id: uuid(1), username: 'user', fullName: 'User',
   role: { id: uuid(2), code: 'COLLECTOR', name: 'Collector', isSuperAdmin: superAdmin }, permissions, sessionId: uuid(3) });
 const result = { id: uuid(9), status: 'DRAFT', items: [] } as never;
 const store = (): jest.Mocked<CollectorSettlementStore> => ({ create: jest.fn().mockResolvedValue(result), list: jest.fn().mockResolvedValue([]),
+  eligible: jest.fn().mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 20, totalPages: 0,
+    summary: { availableCount: 0, availableAmount: '0.00', draftReservedCount: 0, draftReservedAmount: '0.00',
+      submittedOrUnderReviewCount: 0, submittedOrUnderReviewAmount: '0.00' } }),
   detail: jest.fn().mockResolvedValue(result), transition: jest.fn().mockResolvedValue(result), confirm: jest.fn().mockResolvedValue(result) });
 
 describe('collector settlement application rules', () => {
@@ -34,6 +37,17 @@ describe('collector settlement application rules', () => {
     await new TransitionCollectorSettlementUseCase(persistence).execute(uuid(9), 'cancel',
       { reason: ' Duplicate ', idempotencyKey: ' cancel ' }, identity(['collector-settlements.self.cancel']));
     expect(persistence.transition).toHaveBeenCalledWith(uuid(9), 'cancel', 'Duplicate', 'cancel', expect.any(String), uuid(1), false);
+  });
+
+  it('scopes paginated eligibility to the authenticated collector and honors superadmin', async () => {
+    const persistence = store();
+    const useCase = new ListEligibleCollectorPrecollectionsUseCase(persistence);
+    await useCase.execute({ page: 2, pageSize: 20 }, identity(['collector-settlements.self.view']));
+    await useCase.execute({ page: 1, pageSize: 50 }, identity([], true));
+    expect(persistence.eligible).toHaveBeenNthCalledWith(1, uuid(1), { page: 2, pageSize: 20 });
+    expect(persistence.eligible).toHaveBeenNthCalledWith(2, uuid(1), { page: 1, pageSize: 50 });
+    expect(() => useCase.execute({ page: 1, pageSize: 20 }, identity())).toThrow('No tienes permiso');
+    expect(() => useCase.execute({ page: 1, pageSize: 100 }, identity([], true))).toThrow('La paginación no es válida');
   });
 
   it('normalizes a partial delivery and requires its explicit method', async () => {

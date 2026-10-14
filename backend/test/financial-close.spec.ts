@@ -129,6 +129,21 @@ describe('financial close V2 economic model', () => {
     expect(values.get('RESULTADO_ECONOMICO_MES')).toBe('30000.00');
   });
 
+  it('treats a collector custody transfer only as a cash outflow', () => {
+    const opening = analyzed(februaryFacts, '2026-02-28'); const final = analyzed(februaryFacts, '2026-03-31');
+    const result = calculateFinancialClose({ period: '2026-03', openingDate: '2026-01-01', initialAvailableAmount: '100000.00',
+      initialPortfolio: '0.00', initialUncollectibleAmount: '0.00', openingEconomic: opening, finalEconomic: final,
+      profitability: profitability('2026-03', final),
+      cashFacts: [cashFact('OUTFLOW', 'COLLECTOR_CUSTODY_TRANSFER', '25000.00', '2026-03-20')],
+      cashBalances: { opening: '100000.00', closing: '75000.00' }, statusTransitions: [] });
+    const values = concepts(result);
+    expect(values.get('SALIDAS_CAJA')).toBe('25000.00');
+    expect(values.get('GASTOS_OPERATIVOS_NETOS')).toBe('0.00');
+    expect(values.get('RETIROS_CAPITAL_NETOS')).toBe('0.00');
+    expect(values.get('RESULTADO_ECONOMICO_MES')).toBe('0.00');
+    expect(values.get('VARIACION_CONCILIACION_CAJA')).toBe('0.00');
+  });
+
   it('reconciles a CASH_REFUND by restoring the origin, retiring the successor and reversing new money', () => {
     const opening = analyzed(openingFacts, '2026-01-31');
     const finalFacts: EconomicProvenanceFacts = {

@@ -28,7 +28,8 @@ describe('collector custody API', () => {
   });
 
   it('preserves summary decimals and nullable movement links', async () => {
-    const summary = { collectorId: 'collector-1', declaredBalance: '25.00', confirmedBalance: '10.00', pendingAmount: '15.00', differenceAmount: '0.00' };
+    const summary = { collectorId: 'collector-1', declaredBalance: '25.00', companyContributionAmount: '10.00',
+      confirmedBalance: '10.00', pendingAmount: '15.00', differenceAmount: '0.00' };
     const movements = [{ id: 'entry-1', collectorId: 'collector-1', direction: 'CREDIT', entryType: 'AUTHORIZED_ADJUSTMENT',
       amount: '5.00', effectiveDate: '2026-10-12', paymentMethodId: null, reference: null, reason: null, notes: null,
       precollectionId: null, settlementId: null, reversedEntryId: null, createdByUserId: 'manager-1', createdAt: '2026-10-12T12:00:00.000Z' }];

@@ -6,10 +6,13 @@ import type { CollectorCustodyClock, CollectorCustodyStore } from '../../applica
 import { CollectorCustodyTypeOrmStore } from '../../infrastructure/database/typeorm/repositories/collector-custody.typeorm-store';
 import { CostaRicaClock } from '../../infrastructure/time/costa-rica.clock';
 import { CollectorCustodyController } from './collector-custody.controller';
+import { CASH_MOVEMENT_TRANSACTIONAL_RECORDER, type TransactionalCashMovementRecorder } from '../../application/cash-movement/cash-movement.use-cases';
+import { CashMovementModule } from '../cash-movement/cash-movement.module';
 
-@Module({ controllers: [CollectorCustodyController], providers: [
+@Module({ imports: [CashMovementModule], controllers: [CollectorCustodyController], providers: [
   { provide: COLLECTOR_CUSTODY_CLOCK, useClass: CostaRicaClock },
-  { provide: COLLECTOR_CUSTODY_STORE, inject: [DataSource], useFactory: (source: DataSource) => new CollectorCustodyTypeOrmStore(source) },
+  { provide: COLLECTOR_CUSTODY_STORE, inject: [DataSource, CASH_MOVEMENT_TRANSACTIONAL_RECORDER],
+    useFactory: (source: DataSource, cash: TransactionalCashMovementRecorder) => new CollectorCustodyTypeOrmStore(source, cash) },
   { provide: ViewCollectorCustodyUseCase, inject: [COLLECTOR_CUSTODY_STORE], useFactory: (store: CollectorCustodyStore) => new ViewCollectorCustodyUseCase(store) },
   { provide: RecordCollectorCustodyUseCase, inject: [COLLECTOR_CUSTODY_STORE, COLLECTOR_CUSTODY_CLOCK],
     useFactory: (store: CollectorCustodyStore, clock: CollectorCustodyClock) => new RecordCollectorCustodyUseCase(store, clock) },

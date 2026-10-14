@@ -30,13 +30,12 @@ export function allowedOperationalDate(value: string, today = costaRicaDateOnly(
   return /^\d{4}-\d{2}-\d{2}$/.test(value) && value <= today;
 }
 
-export function validatePrecollectionCapture(input: { amount: string; effectiveDate: string; paymentMethodId: string; custodyTreatment: string }, busy = false): ApplicationFieldError[] {
+export function validatePrecollectionCapture(input: { amount: string; effectiveDate: string; paymentMethodId: string }, busy = false): ApplicationFieldError[] {
   if (busy) return [{ field: 'submission', codes: ['BUSY'], message: 'El registro ya está en proceso.' }];
   const errors: ApplicationFieldError[] = [];
   if (!positiveMoney(input.amount)) errors.push({ field: 'amount', codes: ['INVALID'], message: 'Ingresá un monto mayor que cero.' });
   if (!allowedOperationalDate(input.effectiveDate)) errors.push({ field: 'effectiveDate', codes: ['INVALID'], message: 'La fecha no puede ser futura.' });
-  if (!input.paymentMethodId) errors.push({ field: 'paymentMethodId', codes: ['REQUIRED'], message: 'Seleccioná una forma de pago activa.' });
-  if (!input.custodyTreatment) errors.push({ field: 'custodyTreatment', codes: ['REQUIRED'], message: 'Indicá quién recibió y conserva el dinero.' });
+  if (!input.paymentMethodId) errors.push({ field: 'paymentMethodId', codes: ['REQUIRED'], message: 'Seleccioná una forma de pago.' });
   return errors;
 }
 

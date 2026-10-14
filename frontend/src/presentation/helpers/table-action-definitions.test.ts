@@ -31,11 +31,12 @@ describe('table action definitions', () => {
 
   it('defines authorized Collector actions with conditional photo and linked-user labels', () => {
     const actions = visibleTableActions(collectorActionDefinitions(true, true, true), allowAll);
-    expect(actions.map((action) => action.key)).toEqual(['photo', 'edit', 'user', 'status']);
+    expect(actions.map((action) => action.key)).toEqual(['photo', 'edit', 'user', 'topup', 'status']);
     expect(actions.map((action) => [action.icon, action.label, action.title, action.ariaLabel])).toEqual([
       ['photo', 'Ver fotografía', 'Ver fotografía', 'Ver fotografía'],
       ['edit', 'Editar cobrador', 'Editar cobrador', 'Editar cobrador'],
       ['user-link', 'Cambiar usuario', 'Cambiar usuario', 'Cambiar usuario'],
+      ['hand-coins', 'Registrar aporte', 'Registrar aporte de dinero', 'Registrar aporte de dinero'],
       ['lock', 'Inactivar cobrador', 'Inactivar cobrador', 'Inactivar cobrador'],
     ]);
     expect(visibleTableActions(collectorActionDefinitions(false, false, false), allowAll).map((action) => action.key)).toEqual(['edit', 'user', 'status']);

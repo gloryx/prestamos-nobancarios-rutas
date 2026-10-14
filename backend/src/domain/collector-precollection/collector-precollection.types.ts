@@ -13,6 +13,7 @@ export type CollectorCustodyTreatment = (typeof COLLECTOR_CUSTODY_TREATMENTS)[nu
 
 export type CollectorPrecollection = {
   id: string;
+  receiptNumber: string;
   collectorId: string;
   collectorUserId: string;
   customerId: string;
@@ -23,6 +24,8 @@ export type CollectorPrecollection = {
   paymentMethodId: string;
   custodyTreatment: CollectorCustodyTreatment;
   amount: string;
+  customerBalanceBefore: string;
+  customerBalanceAfter: string;
   effectiveDate: string;
   reference: string | null;
   notes: string | null;
@@ -38,11 +41,16 @@ export type CollectorPrecollectionDetail = CollectorPrecollection & {
   collectorName: string;
   customerName: string;
   customerIdentification: string;
+  customerPhone: string;
+  customerSecondaryPhone: string | null;
   loanNumber: string;
   routeName: string;
   paymentMethodName: string;
   recordedByName: string;
   cancelledByName: string | null;
+  financialBalance: string;
+  reservedPrecollections: string;
+  operationalBalance: string;
 };
 
 export type CollectorPrecollectionIndicators = {

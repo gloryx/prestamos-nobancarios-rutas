@@ -6,8 +6,9 @@ const actorId = uuid(1); const otherActorId = uuid(9); const collectorId = uuid(
 const command = { amount: '25.00', effectiveDate: '2026-10-12', paymentMethodId: methodId,
   reference: 'ref', reason: 'reason', notes: null, idempotencyKey: 'movement-1' };
 
-function harness(balance = '100.00', summary = { declaredBalance: '0.00', pendingAmount: '0.00' }, reserved = '0.00') {
+function harness(balance = '100.00', summary = { declaredBalance: '0.00', companyContributionAmount: '0.00', pendingAmount: '0.00' }, reserved = '0.00') {
   const calls: Array<{ sql: string; params: unknown[] }> = []; const entries: Array<Record<string, unknown>> = [];
+  const cashEntries: Array<Record<string, unknown>> = [];
   const query = async (sql: string, params: unknown[] = []): Promise<unknown[]> => {
     calls.push({ sql, params });
     if (sql.includes('collector-custody-idempotency')) return [];
@@ -29,10 +30,18 @@ function harness(balance = '100.00', summary = { declaredBalance: '0.00', pendin
         createdByUserId: params[9], key: params[10], fingerprint: params[11] }; entries.push(entry); return [entry];
     }
     if (sql.includes('FROM collector_custody_entries WHERE id = $1')) return entries.filter((entry) => entry.id === params[0]);
+    if (sql.includes('FROM cash_movements WHERE collector_custody_entry_id')) return cashEntries.filter((entry) => entry.collectorCustodyEntryId === params[0]);
     throw new Error(`Unexpected query: ${sql}`);
   };
-  const source = { query, transaction: async <T>(work: (manager: { query: typeof query }) => Promise<T>) => work({ query }) };
-  return { store: new CollectorCustodyTypeOrmStore(source as unknown as DataSource), calls, entries };
+  const manager = { query };
+  const source = { query, transaction: async <T>(work: (value: typeof manager) => Promise<T>) => work(manager) };
+  const cash = { recordWithManager: jest.fn(async (value, input) => {
+    expect(value).toBe(manager);
+    const entry = { ...input, effectiveDate: input.movementDate, reference: input.observations,
+      collectorCustodyEntryId: input.collectorCustodyEntryId, createdByUserId: input.createdByUserId };
+    cashEntries.push(entry); return entry as never;
+  }) };
+  return { store: new CollectorCustodyTypeOrmStore(source as unknown as DataSource, cash), calls, entries, cashEntries, cash };
 }
 
 describe('collector custody TypeORM store', () => {
@@ -55,10 +64,10 @@ describe('collector custody TypeORM store', () => {
       .rejects.toMatchObject({ reasonCode: 'INSUFFICIENT_AVAILABLE_CUSTODY' });
   });
   it('does not let a debit consume funds reserved by pending precollections', async () => {
-    await expect(harness('100.00', { declaredBalance: '0.00', pendingAmount: '0.00' }, '80.00').store
+    await expect(harness('100.00', { declaredBalance: '0.00', companyContributionAmount: '0.00', pendingAmount: '0.00' }, '80.00').store
       .record('remittance', command, 'fingerprint', actorId, false))
       .rejects.toMatchObject({ reasonCode: 'INSUFFICIENT_AVAILABLE_CUSTODY' });
-    await expect(harness('100.00', { declaredBalance: '0.00', pendingAmount: '0.00' }, '75.00').store
+    await expect(harness('100.00', { declaredBalance: '0.00', companyContributionAmount: '0.00', pendingAmount: '0.00' }, '75.00').store
       .record('remittance', command, 'fingerprint', actorId, false)).resolves.toMatchObject({ amount: '25.00' });
   });
   it('rejects replay by a different active actor even for the same target collector and payload', async () => {
@@ -80,11 +89,15 @@ describe('collector custody TypeORM store', () => {
     expect(test.entries.map((entry) => [entry.direction, entry.entryType])).toEqual([
       ['CREDIT', 'COMPANY_TOP_UP'], ['CREDIT', 'AUTHORIZED_ADJUSTMENT'],
     ]);
+    expect(test.cash.recordWithManager).toHaveBeenCalledTimes(1);
+    expect(test.cashEntries[0]).toMatchObject({ direction: 'OUTFLOW', concept: 'COLLECTOR_CUSTODY_TRANSFER',
+      amount: '25.00', movementDate: '2026-10-12', paymentMethodId: methodId, observations: 'ref',
+      collectorCustodyEntryId: test.entries[0].id, createdByUserId: actorId });
   });
   it('formats negative confirmed custody with one leading sign', async () => {
-    const test = harness('100.00', { declaredBalance: '50.00', pendingAmount: '100.25' });
+    const test = harness('100.00', { declaredBalance: '50.00', companyContributionAmount: '25.00', pendingAmount: '100.25' });
     await expect(test.store.summary(actorId, undefined, false)).resolves.toMatchObject({
-      declaredBalance: '50.00', confirmedBalance: '-50.25', pendingAmount: '100.25',
+      declaredBalance: '50.00', companyContributionAmount: '25.00', confirmedBalance: '-50.25', pendingAmount: '100.25',
     });
   });
 });

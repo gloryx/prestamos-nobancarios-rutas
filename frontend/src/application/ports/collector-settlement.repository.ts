@@ -1,4 +1,4 @@
-import type { CollectorSettlementDetail } from '../../domain/entities/collector-settlement';
+import type { CollectorSettlementDetail, EligibleCollectorPrecollectionPage } from '../../domain/entities/collector-settlement';
 
 export type CreateCollectorSettlementInput = { collectorId?: string; precollectionIds: string[]; idempotencyKey: string };
 export type CollectorSettlementActionInput = { idempotencyKey: string };
@@ -15,6 +15,7 @@ export type ConfirmCollectorSettlementInput = {
 export interface CollectorSettlementRepository {
   create(input: CreateCollectorSettlementInput): Promise<CollectorSettlementDetail>;
   mine(): Promise<CollectorSettlementDetail[]>;
+  eligible(query: { page: number; pageSize: 10 | 20 | 50 }): Promise<EligibleCollectorPrecollectionPage>;
   list(): Promise<CollectorSettlementDetail[]>;
   detail(id: string): Promise<CollectorSettlementDetail>;
   submit(id: string, input: CollectorSettlementActionInput): Promise<CollectorSettlementDetail>;

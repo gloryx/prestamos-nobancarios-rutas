@@ -44,6 +44,7 @@ export function collectorActionDefinitions(isActive: boolean, hasPhoto: boolean,
     ...(hasPhoto ? [{ key: 'photo', icon: 'photo' as const, label: 'Ver fotografía', title: 'Ver fotografía', ariaLabel: 'Ver fotografía', permission: 'collectors.photo.view' }] : []),
     { key: 'edit', icon: 'edit', label: 'Editar cobrador', title: 'Editar cobrador', ariaLabel: 'Editar cobrador', permission: 'collectors.update' },
     { key: 'user', icon: 'user-link', label: hasUser ? 'Cambiar usuario' : 'Vincular usuario', title: hasUser ? 'Cambiar usuario' : 'Vincular usuario', ariaLabel: hasUser ? 'Cambiar usuario' : 'Vincular usuario', permission: 'collectors.user.assign' },
+    ...(isActive ? [{ key: 'topup', icon: 'hand-coins' as const, label: 'Registrar aporte', title: 'Registrar aporte de dinero', ariaLabel: 'Registrar aporte de dinero', permission: 'collector-custody.topup' }] : []),
     { key: 'status', icon: isActive ? 'lock' : 'unlock', label: isActive ? 'Inactivar cobrador' : 'Activar cobrador', title: isActive ? 'Inactivar cobrador' : 'Activar cobrador', ariaLabel: isActive ? 'Inactivar cobrador' : 'Activar cobrador', permission: 'collectors.status.change' },
   ];
 }

@@ -10,6 +10,7 @@ describe('collector settlement API', () => {
     const create = { collectorId: 'collector', precollectionIds: ['pre-1', 'pre-2'], idempotencyKey: 'create-key' };
     await api.create(create);
     await api.mine();
+    await api.eligible({ page: 2, pageSize: 50 });
     await api.list();
     await api.detail('settlement/id');
     await api.submit('settlement/id', { idempotencyKey: 'submit-key' });
@@ -21,14 +22,15 @@ describe('collector settlement API', () => {
     await api.confirm('settlement/id', confirm);
 
     const paths = fetchMock.mock.calls.map(([url]) => new URL(String(url)).pathname);
-    expect(paths).toEqual(['/collector-settlements', '/collector-settlements/mine', '/collector-settlements',
+    expect(paths).toEqual(['/collector-settlements', '/collector-settlements/mine', '/collector-settlements/eligible', '/collector-settlements',
       '/collector-settlements/settlement%2Fid', '/collector-settlements/settlement%2Fid/submit',
       '/collector-settlements/settlement%2Fid/review', '/collector-settlements/settlement%2Fid/reject',
       '/collector-settlements/settlement%2Fid/cancel', '/collector-settlements/settlement%2Fid/confirm']);
+    expect(Object.fromEntries(new URL(String(fetchMock.mock.calls[2][0])).searchParams)).toEqual({ page: '2', pageSize: '50' });
     expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toEqual(create);
-    expect(fetchMock.mock.calls.slice(4).map(([, options]) => JSON.parse(String(options?.body)).idempotencyKey))
+    expect(fetchMock.mock.calls.slice(5).map(([, options]) => JSON.parse(String(options?.body)).idempotencyKey))
       .toEqual(['submit-key', 'review-key', 'reject-key', 'cancel-key', 'confirm-key']);
-    expect(JSON.parse(String(fetchMock.mock.calls[8][1]?.body))).toEqual(confirm);
+    expect(JSON.parse(String(fetchMock.mock.calls[9][1]?.body))).toEqual(confirm);
   });
 
   it('preserves nullable delivery data, items and immutable action history', async () => {
@@ -38,9 +40,11 @@ describe('collector settlement API', () => {
       createdByUserId: 'user-1', createdAt: '2026-10-12T12:00:00.000Z', submittedByUserId: 'user-1',
       submittedAt: '2026-10-12T12:01:00.000Z', reviewedByUserId: 'manager-1', reviewedAt: '2026-10-12T12:02:00.000Z',
       confirmedByUserId: null, confirmedAt: null, rejectedByUserId: null, rejectedAt: null, cancelledByUserId: null, cancelledAt: null,
-      items: [{ id: 'item-1', settlementId: 'settlement-1', precollectionId: 'pre-1', declaredAmount: '25.00', confirmedAmount: null, paymentId: null }],
+      items: [{ id: 'item-1', settlementId: 'settlement-1', precollectionId: 'pre-1', customerName: 'Ana Mora',
+        loanNumber: '4764', effectiveDate: '2026-10-12', declaredAmount: '25.00', confirmedAmount: null, paymentId: null }],
       actions: [{ id: 'action-1', action: 'SUBMIT', actorUserId: 'user-1', reason: null, createdAt: '2026-10-12T12:01:00.000Z' }] };
     vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true, status: 200, json: async () => detail } as Response);
     await expect(new CollectorSettlementApi().detail('settlement-1')).resolves.toEqual(detail);
+    expect(detail.items[0]).toMatchObject({ customerName: 'Ana Mora', loanNumber: '4764', effectiveDate: '2026-10-12' });
   });
 });

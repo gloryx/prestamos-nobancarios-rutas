@@ -11,6 +11,7 @@ import type { CollectorCustodyTreatment, CollectorPrecollectionStatus } from '..
 @Index('IDX_collector_precollections_loan_reservation', ['loanId', 'status'])
 export class CollectorPrecollectionOrmEntity {
   @PrimaryGeneratedColumn('uuid') id!: string;
+  @Column({ name: 'receipt_number', type: 'varchar', length: 16, unique: true }) receiptNumber!: string;
   @Column({ name: 'collector_id', type: 'uuid' }) collectorId!: string;
   @Column({ name: 'collector_user_id', type: 'uuid' }) collectorUserId!: string;
   @Column({ name: 'customer_id', type: 'uuid' }) customerId!: string;
@@ -22,6 +23,8 @@ export class CollectorPrecollectionOrmEntity {
   @Column({ name: 'payment_method_id', type: 'uuid' }) paymentMethodId!: string;
   @Column({ name: 'custody_treatment', type: 'varchar', length: 24 }) custodyTreatment!: CollectorCustodyTreatment;
   @Column({ type: 'numeric', precision: 18, scale: 2 }) amount!: string;
+  @Column({ name: 'customer_balance_before', type: 'numeric', precision: 18, scale: 2 }) customerBalanceBefore!: string;
+  @Column({ name: 'customer_balance_after', type: 'numeric', precision: 18, scale: 2 }) customerBalanceAfter!: string;
   @Column({ name: 'effective_date', type: 'date' }) effectiveDate!: string;
   @Column({ type: 'varchar', length: 200, nullable: true }) reference!: string | null;
   @Column({ type: 'text', nullable: true }) notes!: string | null;

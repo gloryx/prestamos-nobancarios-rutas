@@ -55,10 +55,10 @@ describe('Stage 3B interaction safeguards', () => {
     expect(settled).toEqual(['latest']);
   });
 
-  it('requires method and explicit custody and blocks a second in-flight capture', () => {
-    expect(validatePrecollectionCapture({ amount: '10', effectiveDate: '2026-10-12', paymentMethodId: '', custodyTreatment: '' })
-      .map((error) => error.field)).toEqual(['paymentMethodId', 'custodyTreatment']);
-    expect(validatePrecollectionCapture({ amount: '10', effectiveDate: '2026-10-12', paymentMethodId: 'cash', custodyTreatment: 'COLLECTOR_HELD' }, true))
+  it('requires a payment method and blocks a second in-flight capture', () => {
+    expect(validatePrecollectionCapture({ amount: '10', effectiveDate: '2026-10-12', paymentMethodId: '' })
+      .map((error) => error.field)).toEqual(['paymentMethodId']);
+    expect(validatePrecollectionCapture({ amount: '10', effectiveDate: '2026-10-12', paymentMethodId: 'cash' }, true))
       .toMatchObject([{ field: 'submission', codes: ['BUSY'] }]);
   });
 });

@@ -14,7 +14,9 @@ const collectorAssignmentId = uuid(7);
 const methodId = uuid(8);
 
 type Options = { actor?: boolean; assigned?: boolean; activeMethod?: boolean; closedThrough?: string | null;
-  planBalance?: string; financialBalance?: string; reserved?: string; methodName?: string; custodyBalance?: string };
+  planBalance?: string; financialBalance?: string; reserved?: string; methodName?: string; custodyBalance?: string;
+  detailFinancialBalance?: string; detailReserved?: string; customerFinancialBalance?: string;
+  unappliedCustomerCollections?: string };
 
 function harness(options: Options = {}) {
   const calls: Array<{ sql: string; params: unknown[] }> = [];
@@ -43,13 +45,17 @@ function harness(options: Options = {}) {
       customerRouteAssignmentId: customerAssignmentId, collectorRouteAssignmentId: collectorAssignmentId, routeId,
     }];
     if (sql.includes('AS "planBalance"')) return [{ planBalance: options.planBalance ?? '100.00',
-      financialBalance: options.financialBalance ?? '100.00', reserved: options.reserved ?? '0.00' }];
+      financialBalance: options.financialBalance ?? '100.00', reserved: options.reserved ?? '0.00',
+      customerFinancialBalance: options.customerFinancialBalance ?? options.financialBalance ?? '100.00',
+      unappliedCustomerCollections: options.unappliedCustomerCollections ?? options.reserved ?? '0.00' }];
     if (sql.startsWith('INSERT INTO collector_precollections')) {
       const id = uuid(20 + rows.length);
-      rows.push({ id, collectorId, collectorUserId: actorUserId, customerId, loanId, routeId,
+      rows.push({ id, receiptNumber: `CP-${(rows.length + 1).toString().padStart(12, '0')}`, collectorId,
+        collectorUserId: actorUserId, customerId, loanId, routeId,
         customerRouteAssignmentId: customerAssignmentId, collectorRouteAssignmentId: collectorAssignmentId,
-        paymentMethodId: methodId, custodyTreatment: params[8], amount: params[9], effectiveDate: params[10], reference: params[11], notes: params[12],
-        status: 'RECORDED', recordedByUserId: actorUserId, idempotencyKey: params[13], fingerprint: params[14],
+        paymentMethodId: methodId, custodyTreatment: params[8], amount: params[9], customerBalanceBefore: params[10],
+        customerBalanceAfter: params[11], effectiveDate: params[12], reference: params[13], notes: params[14],
+        status: 'RECORDED', recordedByUserId: actorUserId, idempotencyKey: params[15], fingerprint: params[16],
         cancellationKey: null, cancellationReason: null });
       return [{ id }];
     }
@@ -63,11 +69,18 @@ function harness(options: Options = {}) {
     if (sql.includes('AS balance') && sql.includes('collector_custody_entries')) return [{
       balance: options.custodyBalance ?? '25.00', reservedOther: '0.00',
     }];
+    if (sql.includes('SELECT loan_id AS "loanId" FROM collector_precollections WHERE id = $1')) {
+      return rows.filter((item) => item.id === params[0]).map((item) => ({ loanId: item.loanId }));
+    }
     if (sql.includes('FROM collector_precollections cp') && sql.includes('WHERE cp.id = $1')) {
       const row = rows.find((item) => item.id === params[0]);
+      const financialBalance = options.detailFinancialBalance ?? '100.00';
+      const reservedPrecollections = options.detailReserved ?? rows.filter((item) => item.loanId === row?.loanId &&
+        ['RECORDED', 'SUBMITTED'].includes(String(item.status))).reduce((total, item) => total + Number(item.amount), 0).toFixed(2);
       return row ? [{ ...row, collectorName: 'Collector', customerName: 'Customer', customerIdentification: '1',
-        loanNumber: '10', routeName: 'Route', paymentMethodName: options.methodName ?? 'EFECTIVO',
-        recordedByName: 'Collector', cancelledByName: null }] : [];
+        customerPhone: '88888888', customerSecondaryPhone: null, loanNumber: '10', routeName: 'Route', paymentMethodName: options.methodName ?? 'EFECTIVO',
+        recordedByName: 'Collector', cancelledByName: null, financialBalance, reservedPrecollections,
+        operationalBalance: (Number(financialBalance) - Number(reservedPrecollections)).toFixed(2) }] : [];
     }
     if (sql.includes('cancellation_idempotency_key AS "cancellationKey"') && sql.includes('FOR UPDATE')) {
       return rows.filter((item) => item.id === params[0]).map((item) => ({ id: item.id, status: item.status,
@@ -78,6 +91,7 @@ function harness(options: Options = {}) {
     if (sql.includes('WHERE cancellation_idempotency_key = $1 FOR SHARE')) {
       return rows.filter((item) => item.cancellationKey === params[0]).map((item) => ({ id: item.id }));
     }
+    if (sql === 'SELECT id FROM loans WHERE id = $1 FOR UPDATE') return [{ id: params[0] }];
     if (sql.startsWith('UPDATE collector_precollections SET status')) {
       const row = rows.find((item) => item.id === params[4])!;
       Object.assign(row, { status: 'CANCELLED', cancellationReason: params[0], cancelledByUserId: params[1],
@@ -105,6 +119,68 @@ describe('collector precollection TypeORM store', () => {
       .toEqual(['INSERT INTO collector_precollections', 'INSERT INTO collector_custody_entries']);
     expect(custody).toHaveLength(1);
     expect(calls.some(({ sql }) => /INSERT INTO (payments|cash_movements|payment_applications)/.test(sql))).toBe(false);
+  });
+
+  it('projects confirmed, pending and estimated balances from all current loan reservations', async () => {
+    const { store, calls } = harness({ detailFinancialBalance: '80.00', detailReserved: '35.00' });
+    await expect(store.create(command, actorUserId, 'fingerprint')).resolves.toMatchObject({
+      customerPhone: '88888888', customerSecondaryPhone: null, financialBalance: '80.00', reservedPrecollections: '35.00', operationalBalance: '45.00',
+    });
+    const detailSql = calls.find(({ sql }) => sql.includes('FROM collector_precollections cp') && sql.includes('WHERE cp.id = $1'))?.sql ?? '';
+    expect(detailSql).toContain("payment.status = 'VALID'");
+    expect(detailSql).toContain("pending.status IN ('RECORDED','SUBMITTED')");
+    expect(detailSql).not.toContain('pending.effective_date');
+  });
+
+  it('persists a historical customer balance snapshot scoped to the loan and effective cutoff', async () => {
+    const { store, calls } = harness({ customerFinancialBalance: '560000.00', unappliedCustomerCollections: '20000.00',
+      planBalance: '560000.00', financialBalance: '560000.00' });
+    await expect(store.create({ ...command, amount: '10000.00' }, actorUserId, 'fingerprint')).resolves.toMatchObject({
+      customerBalanceBefore: '540000.00', customerBalanceAfter: '530000.00',
+    });
+    const balanceSql = calls.find(({ sql }) => sql.includes('AS "customerFinancialBalance"'))?.sql ?? '';
+    expect(balanceSql).toContain('payment.loan_id = $1');
+    expect(balanceSql).toContain('payment.payment_date <= $3');
+    expect(balanceSql).toContain('previous.loan_id = $1');
+    expect(balanceSql).toContain('previous.effective_date <= $3');
+    expect(balanceSql).toContain("previous.status NOT IN ('CANCELLED','REJECTED')");
+    expect(balanceSql).toContain('item.precollection_id = previous.id');
+    expect(balanceSql).toContain("linked_payment.status = 'VALID'");
+  });
+
+  it('keeps the saved customer balance unchanged after conversion to a firm payment and on replay', async () => {
+    const configuration: Options = { customerFinancialBalance: '100.00', unappliedCustomerCollections: '20.00' };
+    const { store, rows } = harness(configuration);
+    const created = await store.create({ ...command, amount: '10.00' }, actorUserId, 'fingerprint');
+    expect(created).toMatchObject({ customerBalanceBefore: '80.00', customerBalanceAfter: '70.00' });
+    Object.assign(rows[0], { status: 'SETTLED' });
+    configuration.customerFinancialBalance = '90.00';
+    configuration.unappliedCustomerCollections = '10.00';
+    await expect(store.detail(created.id)).resolves.toMatchObject({
+      status: 'SETTLED', customerBalanceBefore: '80.00', customerBalanceAfter: '70.00',
+    });
+    await expect(store.create({ ...command, amount: '10.00' }, actorUserId, 'fingerprint')).resolves.toMatchObject({
+      id: created.id, customerBalanceBefore: '80.00', customerBalanceAfter: '70.00',
+    });
+  });
+
+  it('accumulates pending captures across days and removes cancelled or settled captures without a double discount', async () => {
+    const configuration: Options = { detailFinancialBalance: '100.00' };
+    const { store, rows } = harness(configuration);
+    const first = await store.create({ ...command, amount: '20.00', effectiveDate: '2026-10-10', idempotencyKey: 'day-1' }, actorUserId, 'day-1');
+    const second = await store.create({ ...command, amount: '15.00', effectiveDate: '2026-10-11', idempotencyKey: 'day-2' }, actorUserId, 'day-2');
+    const cancelled = await store.create({ ...command, amount: '10.00', effectiveDate: '2026-10-12', idempotencyKey: 'day-3' }, actorUserId, 'day-3');
+    Object.assign(rows.find((row) => row.id === cancelled.id)!, { status: 'CANCELLED' });
+    await expect(store.detail(first.id)).resolves.toMatchObject({
+      financialBalance: '100.00', reservedPrecollections: '35.00', operationalBalance: '65.00',
+    });
+
+    Object.assign(rows.find((row) => row.id === first.id)!, { status: 'SETTLED' });
+    Object.assign(rows.find((row) => row.id === second.id)!, { status: 'SETTLED' });
+    configuration.detailFinancialBalance = '65.00';
+    await expect(store.detail(first.id)).resolves.toMatchObject({
+      status: 'SETTLED', financialBalance: '65.00', reservedPrecollections: '0.00', operationalBalance: '65.00',
+    });
   });
 
   it('replays the same create key and rejects a different fingerprint', async () => {
@@ -143,7 +219,7 @@ describe('collector precollection TypeORM store', () => {
   });
 
   it('cancels once with audit and makes cancellation idempotent', async () => {
-    const { store, rows, custody } = harness();
+    const { store, rows, custody, calls } = harness();
     const created = await store.create(command, actorUserId, 'fingerprint');
     await expect(store.cancel(created.id, 'Duplicate', 'cancel-1', 'cancel-fingerprint', actorUserId, false))
       .resolves.toMatchObject({ status: 'CANCELLED', cancellationReason: 'Duplicate' });
@@ -151,6 +227,11 @@ describe('collector precollection TypeORM store', () => {
       .resolves.toMatchObject({ status: 'CANCELLED' });
     expect(rows).toHaveLength(1);
     expect(custody.map((entry) => entry.type)).toEqual(['CUSTOMER_COLLECTION', 'REVERSAL']);
+    const loanLock = calls.findIndex(({ sql }) => sql === 'SELECT id FROM loans WHERE id = $1 FOR UPDATE');
+    const precollectionLock = calls.findIndex(({ sql }) => sql.includes('cancellation_idempotency_key AS "cancellationKey"'));
+    const cancellation = calls.findIndex(({ sql }) => sql.startsWith('UPDATE collector_precollections SET status'));
+    expect(loanLock).toBeLessThan(precollectionLock);
+    expect(precollectionLock).toBeLessThan(cancellation);
   });
 
   it('serializes cancellation with custody debits and rejects a reversal that would make custody negative', async () => {

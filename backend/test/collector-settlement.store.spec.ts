@@ -16,6 +16,13 @@ function harness(options: { failSecond?: boolean; status?: string; collectorUser
   const query = async (sql: string, params: unknown[] = []): Promise<unknown[]> => {
     calls.push({ sql, params });
     if (sql.includes('FROM users actor')) return [{ id: params[0], collectorId: params[0] === state.collectorUserId ? collectorId : null }];
+    if (sql.includes('cp.receipt_number AS "receiptNumber"')) return [
+      { id: uuid(41), receiptNumber: 'CP-000000000001', customerName: 'Customer One', loanNumber: '4764',
+        paymentMethodName: 'Cash', amount: '60.00', effectiveDate: '2026-10-10' },
+    ];
+    if (sql.startsWith('WITH owned AS')) return [{ availableCount: 101, availableAmount: '110.00',
+      draftReservedCount: 2, draftReservedAmount: '70.00', submittedOrUnderReviewCount: 3,
+      submittedOrUnderReviewAmount: '90.00' }];
     if (sql.includes("pg_advisory_xact_lock(hashtext('collector-settlement-action:'")) return [];
     if (sql.includes('FROM collector_settlement_actions action')) return actions.filter((item) => item.key === params[0]).map((item) => ({
       settlementId: item.settlementId, action: item.action, actorUserId: item.actorUserId,
@@ -23,6 +30,12 @@ function harness(options: { failSecond?: boolean; status?: string; collectorUser
     }));
     if (sql.includes("pg_advisory_xact_lock_shared(hashtext('financial-closes-v2'))")) return [];
     if (sql.includes("pg_advisory_xact_lock(hashtext('collector-custody:'")) return [];
+    if (sql.includes('JOIN collector_precollections precollection ON')) return [
+      { id: uuid(31), settlementId, precollectionId: uuid(41), customerName: 'Customer One', loanNumber: '4764',
+        effectiveDate: '2026-10-12', declaredAmount: '60.00', confirmedAmount: null, paymentId: null },
+      { id: uuid(32), settlementId, precollectionId: uuid(42), customerName: 'Customer Two', loanNumber: '4735',
+        effectiveDate: '2026-10-13', declaredAmount: '40.00', confirmedAmount: null, paymentId: null },
+    ];
     if (sql.includes('FROM collector_settlements WHERE id = $1 FOR UPDATE')) return [{ id: settlementId, status: state.status,
       collectorId, collectorUserId: state.collectorUserId, actionKey: null, actionFingerprint: null }];
     if (sql.includes('FROM financial_openings')) return [{ openingDate: '2026-01-01' }];
@@ -102,6 +115,38 @@ describe('collector settlement TypeORM confirmation', () => {
     expect(index('FROM collector_settlement_items item')).toBeLessThan(index('SELECT id FROM loans'));
     expect(index('SELECT id FROM loans')).toBeLessThan(index("pg_advisory_xact_lock(hashtext('collector-custody:'"));
     expect(index("pg_advisory_xact_lock(hashtext('collector-custody:'")).toBeLessThan(index('AS balance'));
+  });
+});
+
+describe('collector settlement eligibility', () => {
+  it('lists an explicit page of owned unreserved records and summarizes each reservation bucket once', async () => {
+    const test = harness();
+    await expect(test.store.eligible(actorId, { page: 2, pageSize: 50 })).resolves.toMatchObject({
+      items: [expect.objectContaining({ receiptNumber: 'CP-000000000001' })], total: 101, page: 2,
+      pageSize: 50, totalPages: 3,
+      summary: { availableAmount: '110.00', draftReservedAmount: '70.00', submittedOrUnderReviewAmount: '90.00' },
+    });
+    const list = test.calls.find(({ sql }) => sql.includes('cp.receipt_number AS "receiptNumber"'))!;
+    expect(list.sql).not.toContain('effective_date BETWEEN');
+    expect(list.sql).toContain("cp.status = 'RECORDED'");
+    expect(list.sql).toContain('item.active_reservation = true');
+    expect(list.params).toEqual([actorId, 50, 50]);
+    expect(test.calls.find(({ sql }) => sql.startsWith('WITH owned AS'))?.params).toEqual([actorId]);
+  });
+});
+
+describe('collector settlement detail', () => {
+  it('enriches items from precollections after applying the settlement ownership scope', async () => {
+    const test = harness();
+    await expect(test.store.detail(settlementId, actorId)).resolves.toMatchObject({ items: [
+      { customerName: 'Customer One', loanNumber: '4764', effectiveDate: '2026-10-12', declaredAmount: '60.00' },
+      { customerName: 'Customer Two', loanNumber: '4735', effectiveDate: '2026-10-13', declaredAmount: '40.00' },
+    ] });
+    const settlement = test.calls.find(({ sql }) => sql.includes('FROM collector_settlements settlement'))!;
+    expect(settlement.sql).toContain('settlement.collector_user_id = $2');
+    expect(settlement.params).toEqual([settlementId, actorId]);
+    expect(test.calls.find(({ sql }) => sql.includes('JOIN collector_precollections precollection ON'))?.params)
+      .toEqual([settlementId]);
   });
 });
 

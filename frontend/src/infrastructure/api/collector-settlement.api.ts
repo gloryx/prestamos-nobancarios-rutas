@@ -1,6 +1,6 @@
 import type { CollectorSettlementActionInput, CollectorSettlementReasonedActionInput, CollectorSettlementRepository, ConfirmCollectorSettlementInput,
   CreateCollectorSettlementInput } from '../../application/ports/collector-settlement.repository';
-import type { CollectorSettlementDetail } from '../../domain/entities/collector-settlement';
+import type { CollectorSettlementDetail, EligibleCollectorPrecollectionPage } from '../../domain/entities/collector-settlement';
 import { apiClient } from './api-client';
 
 export class CollectorSettlementApi implements CollectorSettlementRepository {
@@ -8,6 +8,9 @@ export class CollectorSettlementApi implements CollectorSettlementRepository {
     return apiClient.request('/collector-settlements', { method: 'POST', body: JSON.stringify(input) });
   }
   mine(): Promise<CollectorSettlementDetail[]> { return apiClient.request('/collector-settlements/mine'); }
+  eligible(query: { page: number; pageSize: 10 | 20 | 50 }): Promise<EligibleCollectorPrecollectionPage> {
+    return apiClient.request(`/collector-settlements/eligible?${new URLSearchParams({ page: String(query.page), pageSize: String(query.pageSize) })}`);
+  }
   list(): Promise<CollectorSettlementDetail[]> { return apiClient.request('/collector-settlements'); }
   detail(id: string): Promise<CollectorSettlementDetail> { return apiClient.request(`/collector-settlements/${encodeURIComponent(id)}`); }
   submit(id: string, input: CollectorSettlementActionInput) { return this.action(id, 'submit', input); }

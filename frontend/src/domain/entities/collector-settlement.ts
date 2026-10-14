@@ -34,6 +34,9 @@ export type CollectorSettlementItem = {
   id: string;
   settlementId: string;
   precollectionId: string;
+  customerName: string;
+  loanNumber: string;
+  effectiveDate: string;
   declaredAmount: string;
   confirmedAmount: string | null;
   paymentId: string | null;
@@ -50,4 +53,30 @@ export type CollectorSettlementAction = {
 export type CollectorSettlementDetail = CollectorSettlement & {
   items: CollectorSettlementItem[];
   actions: CollectorSettlementAction[];
+};
+
+export type EligibleCollectorPrecollection = {
+  id: string;
+  receiptNumber: string;
+  customerName: string;
+  loanNumber: string;
+  paymentMethodName: string;
+  amount: string;
+  effectiveDate: string;
+};
+
+export type EligibleCollectorPrecollectionPage = {
+  items: EligibleCollectorPrecollection[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+  summary: {
+    availableCount: number;
+    availableAmount: string;
+    draftReservedCount: number;
+    draftReservedAmount: string;
+    submittedOrUnderReviewCount: number;
+    submittedOrUnderReviewAmount: string;
+  };
 };

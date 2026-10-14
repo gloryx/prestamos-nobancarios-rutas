@@ -12,6 +12,7 @@ import { CollectorPrecollectionTypeOrmStore } from '../src/infrastructure/databa
 import { CollectorCustodyTypeOrmStore } from '../src/infrastructure/database/typeorm/repositories/collector-custody.typeorm-store';
 import { CollectorSettlementTypeOrmStore } from '../src/infrastructure/database/typeorm/repositories/collector-settlement.typeorm-store';
 import { CollectorTypeOrmRepository } from '../src/infrastructure/database/typeorm/repositories/collector.typeorm-repository';
+import type { TransactionalCashMovementRecorder } from '../src/application/cash-movement/cash-movement.use-cases';
 import { CollectorOrmEntity, PermissionOrmEntity, RoleOrmEntity, RolePermissionOrmEntity,
   UserOrmEntity, UserSessionOrmEntity } from '../src/infrastructure/database/typeorm/entities';
 
@@ -138,11 +139,21 @@ suite('collector settlements and custody on isolated PostgreSQL', () => {
       throw new Error(`Collector-finance PostgreSQL identity mismatch: ${JSON.stringify(identity)}`);
     }
     const [state] = await db.query(`SELECT COUNT(*)::int AS migrations FROM migrations`);
-    if (state.migrations !== 28) throw new Error('Collector-finance tests require exactly 28 applied migrations.');
+    if (state.migrations !== 33) throw new Error('Collector-finance tests require exactly 33 applied migrations.');
     const totals = new LoanFinancialTotalsTypeormReader();
     const registrar = new TransactionalPaymentRegistrar(totals);
     precollections = new CollectorPrecollectionTypeOrmStore(db);
-    custody = new CollectorCustodyTypeOrmStore(db);
+    const cash: TransactionalCashMovementRecorder = { recordWithManager: async (context, input) => {
+      const manager = context as EntityManager;
+      const [created] = await manager.query(`INSERT INTO cash_movements
+        (direction,concept,amount,movement_date,payment_method_id,observations,collector_custody_entry_id,
+         created_by_user_id,idempotency_key,idempotency_fingerprint)
+        VALUES ($1,$2,$3::numeric(18,2),$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
+      [input.direction, input.concept, input.amount, input.movementDate, input.paymentMethodId, input.observations,
+        input.collectorCustodyEntryId, input.createdByUserId, input.idempotencyKey, input.idempotencyFingerprint]);
+      return created;
+    } };
+    custody = new CollectorCustodyTypeOrmStore(db, cash);
     settlements = new CollectorSettlementTypeOrmStore(db, registrar);
     createPrecollection = new CreateCollectorPrecollectionUseCase(precollections, clock);
     cancelPrecollection = new CancelCollectorPrecollectionUseCase(precollections);
@@ -167,8 +178,9 @@ suite('collector settlements and custody on isolated PostgreSQL', () => {
     [ids.collector, day, ids.method, ids.actor, randomUUID()])).rejects.toMatchObject({
       code: '23514', constraint: 'CHK_collector_custody_entries_shape_v2',
     });
-    const companyReceived = await createPrecollection.execute({ ...(await newLoan()), paymentMethodId: ids.method,
-      custodyTreatment: 'COMPANY_RECEIVED', amount: '10.00', effectiveDate: day, idempotencyKey: randomUUID() }, actor);
+    const companyReceived = await precollections.create({ ...(await newLoan()), paymentMethodId: ids.method,
+      custodyTreatment: 'COMPANY_RECEIVED', amount: '10.00', effectiveDate: day, reference: null, notes: null,
+      idempotencyKey: randomUUID() }, ids.actor, 'historical-company-received');
     await expect(db.query(`INSERT INTO collector_custody_entries
       (collector_id,direction,entry_type,amount,effective_date,payment_method_id,precollection_id,
        created_by_user_id,idempotency_key,idempotency_fingerprint)
@@ -189,6 +201,13 @@ suite('collector settlements and custody on isolated PostgreSQL', () => {
     const [count] = await db.query(`SELECT COUNT(*)::int AS count FROM collector_custody_entries
       WHERE idempotency_key = $1`, [key]);
     expect(count.count).toBe(1);
+    const [pair] = await db.query(`SELECT COUNT(*)::int AS count FROM cash_movements cash
+      JOIN collector_custody_entries custody ON custody.id = cash.collector_custody_entry_id
+      WHERE custody.idempotency_key = $1 AND cash.concept = 'COLLECTOR_CUSTODY_TRANSFER'
+        AND cash.direction = 'OUTFLOW' AND cash.amount = custody.amount
+        AND cash.movement_date = custody.effective_date AND cash.payment_method_id = custody.payment_method_id
+        AND cash.observations = custody.reference AND cash.created_by_user_id = custody.created_by_user_id`, [key]);
+    expect(pair.count).toBe(1);
   });
 
   it('rolls back payments, allocations and state when a later settlement item fails', async () => {
@@ -266,6 +285,35 @@ suite('collector settlements and custody on isolated PostgreSQL', () => {
        FROM collector_custody_entries) AS balance
       FROM collector_precollections cp WHERE cp.id=$1`, [precollection.id]);
     expect(state).toEqual({ status: 'CANCELLED', reversals: 1, remittances: 0, balance: '0.00' });
+  });
+
+  it('keeps a cancelled receipt number and assigns the next number without duplicating retries', async () => {
+    const firstLoan = await newLoan();
+    const createKey = randomUUID();
+    const command = { ...firstLoan, paymentMethodId: ids.method, custodyTreatment: 'COLLECTOR_HELD' as const,
+      amount: '25.00', effectiveDate: day, reference: null, notes: 'Receipt sequence test',
+      idempotencyKey: createKey };
+    const first = await createPrecollection.execute(command, actor);
+    const replayed = await createPrecollection.execute(command, actor);
+    expect(replayed).toMatchObject({ id: first.id, receiptNumber: first.receiptNumber });
+
+    const cancellationKey = randomUUID();
+    const cancelled = await cancelPrecollection.execute(first.id, 'Duplicate collection', cancellationKey, actor);
+    const cancellationReplay = await cancelPrecollection.execute(first.id, 'Duplicate collection', cancellationKey, actor);
+    expect(cancelled).toMatchObject({ id: first.id, status: 'CANCELLED', receiptNumber: first.receiptNumber });
+    expect(cancellationReplay).toMatchObject({ id: first.id, status: 'CANCELLED', receiptNumber: first.receiptNumber });
+
+    const secondLoan = await newLoan();
+    const second = await createPrecollection.execute({ ...command, ...secondLoan,
+      idempotencyKey: randomUUID() }, actor);
+    expect(second.receiptNumber).not.toBe(first.receiptNumber);
+    expect(Number(second.receiptNumber.slice(3))).toBe(Number(first.receiptNumber.slice(3)) + 1);
+
+    const [receipts] = await db.query(`SELECT COUNT(*)::int AS count,
+      COUNT(DISTINCT receipt_number)::int AS distinct,
+      MIN(receipt_number) FILTER (WHERE id=$1) AS "cancelledReceipt"
+      FROM collector_precollections WHERE id IN ($1,$2)`, [first.id, second.id]);
+    expect(receipts).toEqual({ count: 2, distinct: 2, cancelledReceipt: first.receiptNumber });
   });
 
   it('blocks reassignment obligations and serializes one user across two collectors', async () => {

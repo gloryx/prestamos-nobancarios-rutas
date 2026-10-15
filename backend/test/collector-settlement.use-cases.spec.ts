@@ -1,13 +1,15 @@
 import type { CurrentIdentity } from '../src/domain/security/security.types';
 import type { CollectorSettlementStore } from '../src/application/collector-settlement/collector-settlement.ports';
 import { ConfirmCollectorSettlementUseCase, CreateCollectorSettlementUseCase, GetCollectorSettlementUseCase,
-  ListEligibleCollectorPrecollectionsUseCase, TransitionCollectorSettlementUseCase } from '../src/application/collector-settlement/collector-settlement.use-cases';
+  ListCollectorSettlementDeliveryMethodsUseCase, ListEligibleCollectorPrecollectionsUseCase,
+  TransitionCollectorSettlementUseCase } from '../src/application/collector-settlement/collector-settlement.use-cases';
 
 const uuid = (n: number) => `00000000-0000-4000-8000-${n.toString(16).padStart(12, '0')}`;
 const identity = (permissions: string[] = [], superAdmin = false): CurrentIdentity => ({ id: uuid(1), username: 'user', fullName: 'User',
   role: { id: uuid(2), code: 'COLLECTOR', name: 'Collector', isSuperAdmin: superAdmin }, permissions, sessionId: uuid(3) });
 const result = { id: uuid(9), status: 'DRAFT', items: [] } as never;
 const store = (): jest.Mocked<CollectorSettlementStore> => ({ create: jest.fn().mockResolvedValue(result), list: jest.fn().mockResolvedValue([]),
+  activeDeliveryMethods: jest.fn().mockResolvedValue([{ id: uuid(7), name: 'Efectivo' }]),
   eligible: jest.fn().mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 20, totalPages: 0,
     summary: { availableCount: 0, availableAmount: '0.00', draftReservedCount: 0, draftReservedAmount: '0.00',
       submittedOrUnderReviewCount: 0, submittedOrUnderReviewAmount: '0.00' } }),
@@ -50,6 +52,13 @@ describe('collector settlement application rules', () => {
     expect(() => useCase.execute({ page: 1, pageSize: 100 }, identity([], true))).toThrow('La paginación no es válida');
   });
 
+  it('lists only the delivery methods exposed by the settlement store', async () => {
+    const persistence = store();
+    await expect(new ListCollectorSettlementDeliveryMethodsUseCase(persistence).execute())
+      .resolves.toEqual([{ id: uuid(7), name: 'Efectivo' }]);
+    expect(persistence.activeDeliveryMethods).toHaveBeenCalledTimes(1);
+  });
+
   it('normalizes a partial delivery and requires its explicit method', async () => {
     const persistence = store();
     const useCase = new ConfirmCollectorSettlementUseCase(persistence, { today: () => '2026-10-12' });
@@ -60,6 +69,19 @@ describe('collector settlement application rules', () => {
       deliveryReference: ' ref ', deliveryNotes: ' notes ', idempotencyKey: ' confirm ' }, actor);
     expect(persistence.confirm).toHaveBeenCalledWith(uuid(9), expect.objectContaining({ amountDelivered: '5.00',
       deliveryReference: 'ref', deliveryNotes: 'notes', idempotencyKey: 'confirm' }), expect.any(String), uuid(1));
+  });
+
+  it('allows zero delivery without a method and rejects an invalid method for positive delivery', async () => {
+    const persistence = store();
+    const useCase = new ConfirmCollectorSettlementUseCase(persistence, { today: () => '2026-10-12' });
+    const actor = identity(['collector-settlements.confirm']);
+    await useCase.execute(uuid(9), { amountDelivered: '0', deliveryDate: '2026-10-12', deliveryPaymentMethodId: null,
+      deliveryReference: null, deliveryNotes: null, idempotencyKey: 'zero' }, actor);
+    expect(persistence.confirm).toHaveBeenCalledWith(uuid(9), expect.objectContaining({ amountDelivered: '0.00',
+      deliveryPaymentMethodId: null }), expect.any(String), uuid(1));
+    expect(() => useCase.execute(uuid(9), { amountDelivered: '1', deliveryDate: '2026-10-12',
+      deliveryPaymentMethodId: 'invalid', deliveryReference: null, deliveryNotes: null, idempotencyKey: 'invalid' }, actor))
+      .toThrow('Selecciona la forma de entrega');
   });
 
   it.each(['2026-02-30', '2026-10-13'])('rejects invalid or future delivery date %s', (deliveryDate) => {

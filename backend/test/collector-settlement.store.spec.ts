@@ -5,7 +5,7 @@ const uuid = (n: number) => `00000000-0000-4000-8000-${n.toString(16).padStart(1
 const settlementId = uuid(1); const collectorId = uuid(2); const actorId = uuid(3); const otherActorId = uuid(5);
 const methodId = uuid(4);
 
-function harness(options: { failSecond?: boolean; status?: string; collectorUserId?: string } = {}) {
+function harness(options: { failSecond?: boolean; status?: string; collectorUserId?: string; inactiveDeliveryMethod?: boolean } = {}) {
   const calls: Array<{ sql: string; params: unknown[] }> = [];
   const actions: Array<{ settlementId: string; action: string; actorUserId: string; reason: unknown; key: string; fingerprint: string }> = [];
   const state = { status: options.status ?? 'UNDER_REVIEW', collectorUserId: options.collectorUserId ?? actorId };
@@ -48,7 +48,8 @@ function harness(options: { failSecond?: boolean; status?: string; collectorUser
     ];
     if (sql.startsWith('SELECT id FROM loans')) return [{ id: uuid(11) }, { id: uuid(12) }];
     if (sql.includes('AS balance') && sql.includes('collector_custody_entries')) return [{ balance: '60.00', reservedOther: '0.00' }];
-    if (sql.includes('FROM payment_methods')) return [{ id: methodId }];
+    if (sql.includes('SELECT id, name FROM payment_methods')) return [{ id: methodId, name: 'Cash' }];
+    if (sql.includes('FROM payment_methods')) return options.inactiveDeliveryMethod ? [] : [{ id: methodId }];
     if (sql.startsWith('SELECT precollection_id AS "precollectionId"')) return [{ precollectionId: uuid(41) }];
     if (sql.startsWith('INSERT INTO collector_settlement_actions')) {
       if (sql.includes("VALUES ($1,'CONFIRM'")) actions.push({ settlementId: params[0] as string, action: 'CONFIRM',
@@ -107,6 +108,15 @@ describe('collector settlement TypeORM confirmation', () => {
     expect(test.calls.some(({ sql }) => sql.startsWith('UPDATE collector_settlements SET status'))).toBe(false);
   });
 
+  it('rejects an inactive delivery method before writing remittance or confirmation', async () => {
+    const test = harness({ inactiveDeliveryMethod: true });
+    await expect(test.store.confirm(settlementId, command, 'fingerprint', actorId))
+      .rejects.toMatchObject({ reasonCode: 'DELIVERY_METHOD_INACTIVE' });
+    expect(test.calls.some(({ sql }) => sql.startsWith('INSERT INTO collector_custody_entries'))).toBe(false);
+    expect(test.actions).toHaveLength(0);
+    expect(test.calls.some(({ sql }) => sql.startsWith('UPDATE collector_settlements SET status'))).toBe(false);
+  });
+
   it('takes close, settlement, item, loan and custody locks before reading custody balance', async () => {
     const test = harness(); await test.store.confirm(settlementId, command, 'fingerprint', actorId);
     const index = (part: string) => test.calls.findIndex(({ sql }) => sql.includes(part));
@@ -132,6 +142,16 @@ describe('collector settlement eligibility', () => {
     expect(list.sql).toContain('item.active_reservation = true');
     expect(list.params).toEqual([actorId, 50, 50]);
     expect(test.calls.find(({ sql }) => sql.startsWith('WITH owned AS'))?.params).toEqual([actorId]);
+  });
+});
+
+describe('collector settlement delivery methods', () => {
+  it('returns only active methods in catalog order', async () => {
+    const test = harness();
+    await expect(test.store.activeDeliveryMethods()).resolves.toEqual([{ id: methodId, name: 'Cash' }]);
+    const query = test.calls.find(({ sql }) => sql.includes('SELECT id, name FROM payment_methods'))!;
+    expect(query.sql).toContain('WHERE is_active = true');
+    expect(query.sql).toContain('ORDER BY display_order, id');
   });
 });
 

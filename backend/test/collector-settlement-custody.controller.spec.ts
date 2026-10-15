@@ -4,6 +4,7 @@ import { CollectorCustodyController } from '../src/presentation/collector-custod
 import { CollectorSettlementConflictError } from '../src/domain/collector-settlement/collector-settlement.errors';
 import { CollectorCustodyValidationError } from '../src/domain/collector-custody/collector-custody.errors';
 import { PERMISSIONS_KEY } from '../src/presentation/security/security.decorators';
+import { COLLECTION_MANAGER_DEFAULTS, COLLECTOR_DEFAULTS } from '../src/shared/constants/security';
 
 describe('Stage 3A HTTP boundaries', () => {
   it('publishes dynamic self scope and authoritative global action permissions', () => {
@@ -12,6 +13,9 @@ describe('Stage 3A HTTP boundaries', () => {
     expect(Reflect.getMetadata(PERMISSIONS_KEY, settlements.mine)).toEqual([]);
     expect(Reflect.getMetadata(PERMISSIONS_KEY, settlements.eligible)).toEqual([]);
     expect(Reflect.getMetadata(PERMISSIONS_KEY, settlements.list)).toEqual(['collector-settlements.view']);
+    expect(Reflect.getMetadata(PERMISSIONS_KEY, settlements.deliveryMethods)).toEqual(['collector-settlements.confirm']);
+    expect(COLLECTION_MANAGER_DEFAULTS).toContain('collector-settlements.confirm');
+    expect(COLLECTOR_DEFAULTS).not.toContain('collector-settlements.confirm');
     expect(Reflect.getMetadata(PERMISSIONS_KEY, settlements.review)).toEqual(['collector-settlements.review']);
     expect(Reflect.getMetadata(PERMISSIONS_KEY, settlements.confirm)).toEqual(['collector-settlements.confirm']);
     const custody = CollectorCustodyController.prototype;
@@ -21,7 +25,7 @@ describe('Stage 3A HTTP boundaries', () => {
   });
 
   it('maps settlement conflicts and custody validation to the standard structured envelope', async () => {
-    const settlements = new CollectorSettlementController({} as never, {} as never, {} as never, {} as never, {} as never,
+    const settlements = new CollectorSettlementController({} as never, {} as never, {} as never, {} as never, {} as never, {} as never,
       { execute: jest.fn().mockRejectedValue(new CollectorSettlementConflictError('Closed', 'CLOSED_FINANCIAL_PERIOD')) } as never);
     await expect(settlements.confirm('id', {} as never, {} as never)).rejects.toMatchObject({ status: 409,
       response: { errorCode: 'RESOURCE_STATE_CONFLICT', reasonCode: 'CLOSED_FINANCIAL_PERIOD' } });

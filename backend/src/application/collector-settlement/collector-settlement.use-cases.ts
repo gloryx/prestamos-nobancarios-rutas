@@ -51,6 +51,11 @@ export class ListCollectorSettlementsUseCase {
   }
 }
 
+export class ListCollectorSettlementDeliveryMethodsUseCase {
+  constructor(private readonly store: CollectorSettlementStore) {}
+  execute() { return this.store.activeDeliveryMethods(); }
+}
+
 export class ListEligibleCollectorPrecollectionsUseCase {
   constructor(private readonly store: CollectorSettlementStore) {}
   execute(query: { page: number; pageSize: number }, actor: CurrentIdentity) {

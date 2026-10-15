@@ -157,6 +157,9 @@ export class CollectorSettlementTypeOrmStore implements CollectorSettlementStore
     return { items, total: summary.availableCount, page: query.page, pageSize: query.pageSize,
       totalPages: Math.ceil(summary.availableCount / query.pageSize), summary };
   }
+  activeDeliveryMethods() {
+    return this.source.query(`SELECT id, name FROM payment_methods WHERE is_active = true ORDER BY display_order, id`);
+  }
   detail(id: string, actorUserId?: string) { return this.detailWith(this.source, id, actorUserId); }
 
   async transition(id: string, action: 'submit' | 'review' | 'reject' | 'cancel', reason: string | null,

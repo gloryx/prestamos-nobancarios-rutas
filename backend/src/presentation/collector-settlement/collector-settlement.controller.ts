@@ -4,7 +4,7 @@ import type { CurrentIdentity } from '../../domain/security/security.types';
 import { CollectorSettlementConflictError, CollectorSettlementForbiddenError, CollectorSettlementNotFoundError,
   CollectorSettlementValidationError } from '../../domain/collector-settlement/collector-settlement.errors';
 import { ConfirmCollectorSettlementUseCase, CreateCollectorSettlementUseCase, GetCollectorSettlementUseCase,
-  ListCollectorSettlementsUseCase, ListEligibleCollectorPrecollectionsUseCase,
+  ListCollectorSettlementDeliveryMethodsUseCase, ListCollectorSettlementsUseCase, ListEligibleCollectorPrecollectionsUseCase,
   TransitionCollectorSettlementUseCase } from '../../application/collector-settlement/collector-settlement.use-cases';
 import { CurrentUser, RequirePermissions } from '../security/security.decorators';
 import { ConfirmCollectorSettlementDto, CreateCollectorSettlementDto, EligibleCollectorPrecollectionsQueryDto,
@@ -15,6 +15,7 @@ export class CollectorSettlementController {
   constructor(private readonly createUseCase: CreateCollectorSettlementUseCase,
     private readonly listUseCase: ListCollectorSettlementsUseCase,
     private readonly eligibleUseCase: ListEligibleCollectorPrecollectionsUseCase,
+    private readonly deliveryMethodsUseCase: ListCollectorSettlementDeliveryMethodsUseCase,
     private readonly detailUseCase: GetCollectorSettlementUseCase,
     private readonly transitionUseCase: TransitionCollectorSettlementUseCase,
     private readonly confirmUseCase: ConfirmCollectorSettlementUseCase) {}
@@ -28,6 +29,8 @@ export class CollectorSettlementController {
   }
   @Get() @RequirePermissions('collector-settlements.view')
   async list(@CurrentUser() actor: CurrentIdentity) { return this.handle(() => this.listUseCase.execute(actor, false)); }
+  @Get('delivery-methods') @RequirePermissions('collector-settlements.confirm')
+  deliveryMethods() { return this.deliveryMethodsUseCase.execute(); }
   @Get(':id') @RequirePermissions()
   async detail(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() actor: CurrentIdentity) { return this.handle(() => this.detailUseCase.execute(id, actor)); }
   @Post(':id/submit') @RequirePermissions()
